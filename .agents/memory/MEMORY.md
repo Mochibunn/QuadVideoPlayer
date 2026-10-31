@@ -1,1 +1,2 @@
 - [Product requirements](product-requirements.md) — Native Android tablet player, OLED-black theme, and the user's chosen purple primary.
+- [Android SDK compatibility](android-sdk.md) — Inspect Google's package metadata before treating a required SDK version as unavailable.

@@ -1,5 +1,9 @@
+import { createContext, useContext } from 'react';
 import { useColorScheme } from 'react-native';
 import colors from '@/constants/colors';
+
+export type ColorTokens = typeof colors.dark;
+export const ColorContext = createContext<ColorTokens | null>(null);
 
 /**
  * Returns the design tokens for the current color scheme.
@@ -14,7 +18,9 @@ import colors from '@/constants/colors';
  * device's appearance setting.
  */
 export function useColors() {
+  const selectedColors = useContext(ColorContext);
   const scheme = useColorScheme();
-  const palette = scheme === 'dark' ? colors.dark : colors.light;
+  const palette =
+    selectedColors ?? (scheme === 'dark' ? colors.dark : colors.light);
   return { ...palette, radius: colors.radius };
 }

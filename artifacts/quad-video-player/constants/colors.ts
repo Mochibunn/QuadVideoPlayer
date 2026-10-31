@@ -12,6 +12,20 @@
  * The useColors() hook will automatically pick it up.
  */
 
+export const themePresets = [
+  { id: 'amethyst', name: 'Amethyst', primary: '#6b5cb1', accent: '#211b36', accentForeground: '#e4ddff' },
+  { id: 'silver', name: 'Silver', primary: '#dddddd', accent: '#292929', accentForeground: '#f2f2f2' },
+  { id: 'emerald', name: 'Emerald', primary: '#109b61', accent: '#0d2a1d', accentForeground: '#c6f3db' },
+  { id: 'coral', name: 'Coral', primary: '#f6392c', accent: '#351a19', accentForeground: '#ffd8d5' },
+  { id: 'sunflower', name: 'Sunflower', primary: '#ffd248', accent: '#332b13', accentForeground: '#fff1ba' },
+  { id: 'blue-hour', name: 'Blue Hour', primary: '#8297c9', accent: '#202638', accentForeground: '#e0e8ff' },
+  { id: 'dusty-rose', name: 'Dusty Rose', primary: '#c5849c', accent: '#32202a', accentForeground: '#ffe0eb' },
+  { id: 'sage', name: 'Sage', primary: '#80aa91', accent: '#1e2b23', accentForeground: '#d7f1e0' },
+  { id: 'soft-lilac', name: 'Soft Lilac', primary: '#ad98cf', accent: '#292338', accentForeground: '#eee3ff' },
+] as const;
+
+export type ThemeId = (typeof themePresets)[number]['id'];
+
 const colors = {
   light: {
     // Legacy aliases (kept for backward compatibility)
@@ -76,5 +90,30 @@ const colors = {
   // CSS variable. This value applies to cards, buttons, inputs, and modals.
   radius: 8,
 };
+
+function foregroundFor(hex: string) {
+  const channels = hex
+    .replace('#', '')
+    .match(/.{2}/g)!
+    .map((channel) => parseInt(channel, 16) / 255)
+    .map((channel) =>
+      channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+    );
+  const luminance =
+    0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  return luminance > 0.179 ? '#000000' : '#ffffff';
+}
+
+export function getThemeColors(themeId: ThemeId) {
+  const preset = themePresets.find((theme) => theme.id === themeId) ?? themePresets[0];
+  return {
+    ...colors.dark,
+    tint: preset.primary,
+    primary: preset.primary,
+    primaryForeground: foregroundFor(preset.primary),
+    accent: preset.accent,
+    accentForeground: preset.accentForeground,
+  };
+}
 
 export default colors;

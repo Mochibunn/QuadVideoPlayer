@@ -1,4 +1,5 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -10,20 +11,38 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
+  Switch,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useColors } from '@/hooks/useColors';
+import { ColorContext, useColors } from '@/hooks/useColors';
+import {
+  getThemeColors,
+  themePresets,
+  type ThemeId,
+} from '@/constants/colors';
 
 type VideoAsset = {
   id: string;
   name: string;
   uri: string;
 };
+
+type ActivePanel = 'settings' | 'pool' | null;
+
+const THEME_STORAGE_KEY = 'quad-video-player.theme';
+const NORMALIZE_STORAGE_KEY = 'quad-video-player.normalize';
+const SYNC_STORAGE_KEY = 'quad-video-player.sync';
+
+function isThemeId(value: string | null): value is ThemeId {
+  return themePresets.some((theme) => theme.id === value);
+}
 
 const VIDEO_EXTENSIONS = new Set([
   '3gp',
@@ -162,17 +181,26 @@ function VideoTile({
   pool,
   index,
   globalPlaying,
+  normalizeLoudness,
+  linkedVolume,
+  sharedVolume,
+  onSharedVolumeChange,
 }: {
   asset: VideoAsset;
   pool: VideoAsset[];
   index: number;
   globalPlaying: boolean;
+  normalizeLoudness: boolean;
+  linkedVolume: boolean;
+  sharedVolume: number;
+  onSharedVolumeChange: (volume: number) => void;
 }) {
   const colors = useColors();
   const [currentAsset, setCurrentAsset] = useState(asset);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
-  const [volume, setVolume] = useState(START_VOLUME);
+  const [individualVolume, setIndividualVolume] = useState(START_VOLUME);
+  const volume = linkedVolume ? sharedVolume : individualVolume;
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [volumeTrackWidth, setVolumeTrackWidth] = useState(0);
@@ -181,7 +209,7 @@ function VideoTile({
 
   const player = useVideoPlayer({ uri: asset.uri }, (videoPlayer) => {
     videoPlayer.loop = false;
-    videoPlayer.volume = START_VOLUME;
+    videoPlayer.volume = linkedVolume ? sharedVolume : START_VOLUME;
     videoPlayer.muted = false;
     videoPlayer.audioMixingMode = 'mixWithOthers';
     videoPlayer.keepScreenOnWhilePlaying = true;
@@ -244,14 +272,25 @@ function VideoTile({
     }
   }, [globalPlaying, player]);
 
+  const commitVolume = useCallback(
+    (nextVolume: number) => {
+      if (linkedVolume) {
+        onSharedVolumeChange(nextVolume);
+      } else {
+        setIndividualVolume(nextVolume);
+      }
+      if (nextVolume > 0) setIsMuted(false);
+    },
+    [linkedVolume, onSharedVolumeChange],
+  );
+
   const setVolumeFromTouch = useCallback(
     (locationX: number, width: number) => {
       if (width <= 0) return;
       const nextVolume = Math.min(1, Math.max(0, locationX / width));
-      setVolume(nextVolume);
-      if (nextVolume > 0) setIsMuted(false);
+      commitVolume(nextVolume);
     },
-    [],
+    [commitVolume],
   );
 
   const toggleTilePlayback = () => {
@@ -385,10 +424,9 @@ function VideoTile({
           accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
           onAccessibilityAction={({ nativeEvent }) => {
             if (nativeEvent.actionName === 'increment') {
-              setVolume((current) => Math.min(1, current + 0.05));
-              setIsMuted(false);
+              commitVolume(Math.min(1, volume + 0.05));
             } else if (nativeEvent.actionName === 'decrement') {
-              setVolume((current) => Math.max(0, current - 0.05));
+              commitVolume(Math.max(0, volume - 0.05));
             }
           }}
           onLayout={(event) => setVolumeTrackWidth(event.nativeEvent.layout.width)}
@@ -426,13 +464,89 @@ function VideoTile({
 }
 
 export default function QuadVideoPlayerScreen() {
-  const colors = useColors();
+  const [themeId, setThemeId] = useState<ThemeId>('amethyst');
+  const colors = getThemeColors(themeId);
+  const [themeLoaded, setThemeLoaded] = useState(false);
+  const [normalizeEnabled, setNormalizeEnabled] = useState(false);
+  const [syncEnabled, setSyncEnabled] = useState(true);
+  const [playbackSettingsLoaded, setPlaybackSettingsLoaded] = useState(false);
+  const [sharedVolume, setSharedVolume] = useState(START_VOLUME);
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [pool, setPool] = useState<VideoAsset[]>([]);
   const [activeVideos, setActiveVideos] = useState<VideoAsset[]>([]);
   const [session, setSession] = useState(0);
   const [globalPlaying, setGlobalPlaying] = useState(true);
   const [isPicking, setIsPicking] = useState(false);
   const [sourceLabel, setSourceLabel] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(THEME_STORAGE_KEY)
+      .then((storedTheme) => {
+        if (mounted && isThemeId(storedTheme)) setThemeId(storedTheme);
+      })
+      .catch(() => {
+        Alert.alert(
+          'Theme settings unavailable',
+          'The selected theme could not be loaded. The default theme is active.',
+        );
+      })
+      .finally(() => {
+        if (mounted) setThemeLoaded(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!themeLoaded) return;
+    AsyncStorage.setItem(THEME_STORAGE_KEY, themeId).catch(() => {
+      Alert.alert(
+        'Could not save theme',
+        'This theme will be used until the app is restarted.',
+      );
+    });
+  }, [themeId, themeLoaded]);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.multiGet([NORMALIZE_STORAGE_KEY, SYNC_STORAGE_KEY])
+      .then(([normalizeEntry, syncEntry]) => {
+        if (!mounted) return;
+        if (normalizeEntry[1] !== null) {
+          setNormalizeEnabled(normalizeEntry[1] === 'true');
+        }
+        if (syncEntry[1] !== null) {
+          setSyncEnabled(syncEntry[1] === 'true');
+        }
+      })
+      .catch(() => {
+        Alert.alert(
+          'Audio settings unavailable',
+          'Default volume settings will be used.',
+        );
+      })
+      .finally(() => {
+        if (mounted) setPlaybackSettingsLoaded(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!playbackSettingsLoaded) return;
+    AsyncStorage.multiSet([
+      [NORMALIZE_STORAGE_KEY, String(normalizeEnabled)],
+      [SYNC_STORAGE_KEY, String(syncEnabled)],
+    ]).catch(() => {
+      Alert.alert(
+        'Could not save audio settings',
+        'These settings will reset when the app is restarted.',
+      );
+    });
+  }, [normalizeEnabled, playbackSettingsLoaded, syncEnabled]);
 
   const startStreams = useCallback((videos: VideoAsset[]) => {
     if (videos.length === 0) {
@@ -529,6 +643,21 @@ export default function QuadVideoPlayerScreen() {
     }
   };
 
+  const removeFromPool = (asset: VideoAsset) => {
+    const remaining = pool.filter((item) => item.id !== asset.id);
+    setPool(remaining);
+    if (remaining.length === 0) {
+      setActiveVideos([]);
+      setGlobalPlaying(false);
+      return;
+    }
+    if (activeVideos.length > 0) {
+      setActiveVideos(pickInitialVideos(remaining));
+      setSession((current) => current + 1);
+      setGlobalPlaying(true);
+    }
+  };
+
   const toggleAll = () => setGlobalPlaying((playing) => !playing);
 
   const stopPlayback = () => {
@@ -537,6 +666,7 @@ export default function QuadVideoPlayerScreen() {
   };
 
   return (
+    <ColorContext.Provider value={colors}>
     <SafeAreaView
       edges={['top', 'bottom', 'left', 'right']}
       style={[
@@ -586,6 +716,12 @@ export default function QuadVideoPlayerScreen() {
                 />
                 <ActionButton
                   compact
+                  icon="list"
+                  label={`View ${pool.length} selected videos`}
+                  onPress={() => setActivePanel('pool')}
+                />
+                <ActionButton
+                  compact
                   icon="shuffle"
                   label="Shuffle all four streams"
                   onPress={() => startStreams(pool)}
@@ -621,6 +757,12 @@ export default function QuadVideoPlayerScreen() {
                 />
               </>
             )}
+            <ActionButton
+              compact
+              icon="settings"
+              label="Settings"
+              onPress={() => setActivePanel('settings')}
+            />
           </View>
         </View>
 
@@ -633,6 +775,10 @@ export default function QuadVideoPlayerScreen() {
                 pool={pool}
                 index={index}
                 globalPlaying={globalPlaying}
+                normalizeLoudness={normalizeEnabled && syncEnabled}
+                linkedVolume={normalizeEnabled && !syncEnabled}
+                sharedVolume={sharedVolume}
+                onSharedVolumeChange={setSharedVolume}
               />
             ))}
           </View>
@@ -690,7 +836,208 @@ export default function QuadVideoPlayerScreen() {
           </View>
         )}
       </View>
+      <Modal
+        visible={activePanel === 'settings'}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActivePanel(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalPanel,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+                  Settings
+                </Text>
+                <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+                  Choose an accent for the OLED-black player.
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close settings"
+                onPress={() => setActivePanel(null)}
+                style={styles.modalClose}
+              >
+                <Feather name="x" size={20} color={colors.foreground} />
+              </Pressable>
+            </View>
+            <View
+              style={[
+                styles.settingRow,
+                { borderColor: colors.border, backgroundColor: colors.secondary },
+              ]}
+            >
+              <View style={styles.settingCopy}>
+                <Text style={[styles.settingTitle, { color: colors.foreground }]}>
+                  Normalize volume
+                </Text>
+                <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
+                  Make audio levels more consistent.
+                </Text>
+              </View>
+              <Switch
+                accessibilityLabel="Normalize volume"
+                value={normalizeEnabled}
+                onValueChange={setNormalizeEnabled}
+                trackColor={{ false: colors.muted, true: colors.accent }}
+                thumbColor={normalizeEnabled ? colors.primary : colors.mutedForeground}
+              />
+            </View>
+            {normalizeEnabled && (
+              <View
+                style={[
+                  styles.settingRow,
+                  styles.syncSettingRow,
+                  { borderColor: colors.border, backgroundColor: colors.secondary },
+                ]}
+              >
+                <View style={styles.settingCopy}>
+                  <Text style={[styles.settingTitle, { color: colors.foreground }]}>
+                    Sync
+                  </Text>
+                  <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
+                    {syncEnabled
+                      ? 'True per-video loudness normalization'
+                      : 'One shared slider level for all players'}
+                  </Text>
+                </View>
+                <Switch
+                  accessibilityLabel="Sync true loudness normalization"
+                  value={syncEnabled}
+                  onValueChange={setSyncEnabled}
+                  trackColor={{ false: colors.muted, true: colors.accent }}
+                  thumbColor={syncEnabled ? colors.primary : colors.mutedForeground}
+                />
+              </View>
+            )}
+            <Text style={[styles.themeSectionTitle, { color: colors.mutedForeground }]}>
+              Accent themes
+            </Text>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.themeGrid}
+              showsVerticalScrollIndicator={false}
+            >
+              {themePresets.map((theme) => {
+                const isSelected = theme.id === themeId;
+                return (
+                  <Pressable
+                    key={theme.id}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={`${theme.name} theme`}
+                    onPress={() => setThemeId(theme.id)}
+                    style={[
+                      styles.themeOption,
+                      {
+                        backgroundColor: colors.secondary,
+                        borderColor: isSelected ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.themeSwatch, { backgroundColor: theme.primary }]} />
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.themeName, { color: colors.foreground }]}
+                    >
+                      {theme.name}
+                    </Text>
+                    {isSelected && (
+                      <Feather name="check" size={15} color={colors.primary} />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={activePanel === 'pool'}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setActivePanel(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalPanel,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+                  Video pool
+                </Text>
+                <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+                  {pool.length} {pool.length === 1 ? 'video' : 'videos'} · Removing
+                  clips here keeps the original files on your device.
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close video pool"
+                onPress={() => setActivePanel(null)}
+                style={styles.modalClose}
+              >
+                <Feather name="x" size={20} color={colors.foreground} />
+              </Pressable>
+            </View>
+            {pool.length > 0 ? (
+              <ScrollView
+                style={styles.poolList}
+                contentContainerStyle={styles.poolListContent}
+                showsVerticalScrollIndicator
+              >
+                {pool.map((asset) => (
+                  <View
+                    key={asset.id}
+                    style={[
+                      styles.poolRow,
+                      { borderBottomColor: colors.border },
+                    ]}
+                  >
+                    <View style={styles.poolFileIcon}>
+                      <Feather name="film" size={16} color={colors.primary} />
+                    </View>
+                    <Text
+                      numberOfLines={1}
+                      ellipsizeMode="middle"
+                      style={[styles.poolFileName, { color: colors.foreground }]}
+                    >
+                      {asset.name}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${asset.name} from the pool`}
+                      onPress={() => removeFromPool(asset)}
+                      style={({ pressed }) => [
+                        styles.removeFileButton,
+                        pressed && styles.pressedButton,
+                      ]}
+                    >
+                      <Feather name="trash-2" size={17} color={colors.destructive} />
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : (
+              <Text style={[styles.emptyPool, { color: colors.mutedForeground }]}>
+                The pool is empty. Select files or a folder to add videos.
+              </Text>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
+    </ColorContext.Provider>
   );
 }
 
@@ -842,4 +1189,67 @@ const styles = StyleSheet.create({
     letterSpacing: 0.25,
     textAlign: 'center',
   },
+  modalBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+  },
+  modalPanel: {
+    width: '76%',
+    maxWidth: 760,
+    maxHeight: '86%',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginBottom: 16,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '700' },
+  modalSubtitle: { fontSize: 12, lineHeight: 18, marginTop: 4, maxWidth: 560 },
+  modalClose: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalScroll: { flexGrow: 0 },
+  themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 2 },
+  themeOption: {
+    width: '31%',
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 10,
+  },
+  themeSwatch: { width: 18, height: 18, borderRadius: 9 },
+  themeName: { flex: 1, fontSize: 13, fontWeight: '600' },
+  poolList: { flexGrow: 0, maxHeight: 460 },
+  poolListContent: { paddingBottom: 4 },
+  poolRow: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 5,
+  },
+  poolFileIcon: { width: 30, alignItems: 'center' },
+  poolFileName: { flex: 1, fontSize: 14, fontWeight: '500' },
+  removeFileButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyPool: { paddingVertical: 28, fontSize: 14, textAlign: 'center' },
 });
