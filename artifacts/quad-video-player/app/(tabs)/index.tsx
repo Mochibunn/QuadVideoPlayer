@@ -774,7 +774,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingHorizontal: 16,
-    backgroundColor: 'rgba(7, 10, 14, 0.82)',
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
   },
   videoStatusText: { fontSize: 12, textAlign: 'center' },
   retryButton: {

@@ -7,6 +7,8 @@ export default function TabLayout() {
         headerShown: false,
         tabBarStyle: { display: 'none' },
       }}
-    />
+    >
+      <Tabs.Screen name="index" options={{ title: 'Quad' }} />
+    </Tabs>
   );
 }
