@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Modal,
   Platform,
   Pressable,
@@ -22,6 +23,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ColorContext, useColors } from '@/hooks/useColors';
+import BackgroundAudioMixer from '@/components/audio/BackgroundAudioMixer';
 import {
   getThemeColors,
   themePresets,
@@ -34,7 +36,7 @@ type VideoAsset = {
   uri: string;
 };
 
-type ActivePanel = 'settings' | 'pool' | null;
+type ActivePanel = 'settings' | 'pool' | 'audio' | null;
 
 const THEME_STORAGE_KEY = 'quad-video-player.theme';
 const NORMALIZE_STORAGE_KEY = 'quad-video-player.normalize';
@@ -59,6 +61,7 @@ const VIDEO_EXTENSIONS = new Set([
 
 const STREAM_COUNT = 4;
 const START_VOLUME = 0.25;
+const NORMALIZATION_APK_ERROR = 'Loudness normalization requires the standalone Android APK, not Expo Go.';
 
 function isSupportedVideo(name: string) {
   const extension = name.split('.').pop()?.toLowerCase() ?? '';
@@ -261,6 +264,25 @@ function VideoTile({
   }, [player, volume]);
 
   useEffect(() => {
+    if (pool.length > 0 && !pool.some((item) => item.id === currentAssetRef.current.id)) {
+      void advance();
+    }
+  }, [advance, pool]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const nativePlayer = player as typeof player & { normalizeLoudness?: boolean };
+    if (typeof nativePlayer.normalizeLoudness === 'boolean') {
+      nativePlayer.normalizeLoudness = normalizeLoudness;
+    } else if (normalizeLoudness) {
+      setErrorMessage(NORMALIZATION_APK_ERROR);
+    }
+    if (!normalizeLoudness) {
+      setErrorMessage((current) => current === NORMALIZATION_APK_ERROR ? '' : current);
+    }
+  }, [normalizeLoudness, player]);
+
+  useEffect(() => {
     player.muted = isMuted;
   }, [isMuted, player]);
 
@@ -415,7 +437,7 @@ function VideoTile({
         </Pressable>
         <View
           accessibilityRole="adjustable"
-          accessibilityLabel={`Volume for stream ${index + 1}`}
+          accessibilityLabel={linkedVolume ? 'Shared volume for all streams' : `Volume for stream ${index + 1}`}
           accessibilityValue={{
             min: 0,
             max: 100,
@@ -471,6 +493,7 @@ export default function QuadVideoPlayerScreen() {
   const [syncEnabled, setSyncEnabled] = useState(true);
   const [playbackSettingsLoaded, setPlaybackSettingsLoaded] = useState(false);
   const [sharedVolume, setSharedVolume] = useState(START_VOLUME);
+  const [backgroundTrackCount, setBackgroundTrackCount] = useState(0);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [pool, setPool] = useState<VideoAsset[]>([]);
   const [activeVideos, setActiveVideos] = useState<VideoAsset[]>([]);
@@ -651,11 +674,6 @@ export default function QuadVideoPlayerScreen() {
       setGlobalPlaying(false);
       return;
     }
-    if (activeVideos.length > 0) {
-      setActiveVideos(pickInitialVideos(remaining));
-      setSession((current) => current + 1);
-      setGlobalPlaying(true);
-    }
   };
 
   const toggleAll = () => setGlobalPlaying((playing) => !playing);
@@ -693,6 +711,7 @@ export default function QuadVideoPlayerScreen() {
                 {pool.length > 0
                   ? `${pool.length} ${pool.length === 1 ? 'video' : 'videos'} · ${sourceLabel}`
                   : 'FOUR INDEPENDENT STREAMS'}
+                {backgroundTrackCount > 0 ? ` · ${backgroundTrackCount} audio` : ''}
               </Text>
             </View>
           </View>
@@ -716,12 +735,6 @@ export default function QuadVideoPlayerScreen() {
                 />
                 <ActionButton
                   compact
-                  icon="list"
-                  label={`View ${pool.length} selected videos`}
-                  onPress={() => setActivePanel('pool')}
-                />
-                <ActionButton
-                  compact
                   icon="shuffle"
                   label="Shuffle all four streams"
                   onPress={() => startStreams(pool)}
@@ -730,13 +743,13 @@ export default function QuadVideoPlayerScreen() {
                 <ActionButton
                   compact
                   icon={globalPlaying ? 'pause' : 'play'}
-                  label={globalPlaying ? 'Pause all streams' : 'Play all streams'}
+                  label={globalPlaying ? 'Pause all videos' : 'Play all videos'}
                   onPress={toggleAll}
                 />
                 <ActionButton
                   compact
                   icon="square"
-                  label="Stop playback"
+                  label="Stop video playback"
                   onPress={stopPlayback}
                 />
               </>
@@ -756,6 +769,20 @@ export default function QuadVideoPlayerScreen() {
                   primary
                 />
               </>
+            )}
+            <ActionButton
+              compact
+              icon="music"
+              label={`Background audio: ${backgroundTrackCount} ${backgroundTrackCount === 1 ? 'track' : 'tracks'}`}
+              onPress={() => setActivePanel('audio')}
+            />
+            {pool.length > 0 && (
+              <ActionButton
+                compact
+                icon="list"
+                label={`View ${pool.length} selected videos`}
+                onPress={() => setActivePanel('pool')}
+              />
             )}
             <ActionButton
               compact
@@ -855,7 +882,7 @@ export default function QuadVideoPlayerScreen() {
                   Settings
                 </Text>
                 <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
-                  Choose an accent for the OLED-black player.
+                  Audio controls and OLED-black accent themes.
                 </Text>
               </View>
               <Pressable
@@ -885,6 +912,7 @@ export default function QuadVideoPlayerScreen() {
                 accessibilityLabel="Normalize volume"
                 value={normalizeEnabled}
                 onValueChange={setNormalizeEnabled}
+                disabled={Platform.OS !== 'android'}
                 trackColor={{ false: colors.muted, true: colors.accent }}
                 thumbColor={normalizeEnabled ? colors.primary : colors.mutedForeground}
               />
@@ -903,7 +931,7 @@ export default function QuadVideoPlayerScreen() {
                   </Text>
                   <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
                     {syncEnabled
-                      ? 'True per-video loudness normalization'
+                      ? 'Live per-video loudness normalization'
                       : 'One shared slider level for all players'}
                   </Text>
                 </View>
@@ -991,12 +1019,13 @@ export default function QuadVideoPlayerScreen() {
               </Pressable>
             </View>
             {pool.length > 0 ? (
-              <ScrollView
+              <FlatList
+                data={pool}
+                keyExtractor={(asset) => asset.id}
                 style={styles.poolList}
                 contentContainerStyle={styles.poolListContent}
                 showsVerticalScrollIndicator
-              >
-                {pool.map((asset) => (
+                renderItem={({ item: asset }) => (
                   <View
                     key={asset.id}
                     style={[
@@ -1026,8 +1055,8 @@ export default function QuadVideoPlayerScreen() {
                       <Feather name="trash-2" size={17} color={colors.destructive} />
                     </Pressable>
                   </View>
-                ))}
-              </ScrollView>
+                )}
+              />
             ) : (
               <Text style={[styles.emptyPool, { color: colors.mutedForeground }]}>
                 The pool is empty. Select files or a folder to add videos.
@@ -1036,6 +1065,11 @@ export default function QuadVideoPlayerScreen() {
           </View>
         </View>
       </Modal>
+      <BackgroundAudioMixer
+        visible={activePanel === 'audio'}
+        onClose={() => setActivePanel(null)}
+        onCountChange={setBackgroundTrackCount}
+      />
     </SafeAreaView>
     </ColorContext.Provider>
   );
@@ -1220,6 +1254,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalScroll: { flexGrow: 0 },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  syncSettingRow: { marginLeft: 16 },
+  settingCopy: { flex: 1 },
+  settingTitle: { fontSize: 14, fontWeight: '600' },
+  settingDescription: { fontSize: 12, lineHeight: 18, marginTop: 3 },
+  themeSectionTitle: { fontSize: 12, fontWeight: '600', marginTop: 6, marginBottom: 10 },
   themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 2 },
   themeOption: {
     width: '31%',

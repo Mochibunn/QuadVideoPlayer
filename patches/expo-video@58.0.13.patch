@@ -1,0 +1,349 @@
+diff --git a/android/src/main/java/expo/modules/video/VideoModule.kt b/android/src/main/java/expo/modules/video/VideoModule.kt
+index c2711344c58758e0ce5b71572d59c930330f0103..14ce19acfc7f0fa0278addeee152b9a140a30a1b 100644
+--- a/android/src/main/java/expo/modules/video/VideoModule.kt
++++ b/android/src/main/java/expo/modules/video/VideoModule.kt
+@@ -104,6 +104,14 @@ class VideoModule : Module() {
+           ref.volume = volume
+         }
+ 
++      Property("normalizeLoudness")
++        .get { ref: VideoPlayer ->
++          ref.normalizeLoudness
++        }
++        .set { ref: VideoPlayer, enabled: Boolean ->
++          ref.normalizeLoudness = enabled
++        }
++
+       Property("currentTime")
+         .get { ref: VideoPlayer ->
+           // TODO: we shouldn't block the thread, but there are no events for the player position change,
+diff --git a/android/src/main/java/expo/modules/video/player/LoudnessNormalizerAudioProcessor.kt b/android/src/main/java/expo/modules/video/player/LoudnessNormalizerAudioProcessor.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..11bdecc8a40e1f1fc36c6c49c6624e5e0adce39e
+--- /dev/null
++++ b/android/src/main/java/expo/modules/video/player/LoudnessNormalizerAudioProcessor.kt
+@@ -0,0 +1,185 @@
++package expo.modules.video.player
++
++import androidx.media3.common.C
++import androidx.media3.common.audio.AudioProcessor
++import androidx.media3.common.audio.BaseAudioProcessor
++import androidx.media3.common.util.UnstableApi
++import java.nio.ByteBuffer
++import java.nio.ByteOrder
++import java.util.ArrayDeque
++import kotlin.math.PI
++import kotlin.math.abs
++import kotlin.math.exp
++import kotlin.math.log10
++import kotlin.math.min
++import kotlin.math.pow
++import kotlin.math.tan
++
++@UnstableApi
++internal class LoudnessNormalizerAudioProcessor : BaseAudioProcessor() {
++  @Volatile
++  var enabled = false
++
++  private var windowSquareSum = 0.0
++  private var windowSampleCount = 0
++  private var gain = 1.0
++  private var wantedGain = 1.0
++  private var channel = 0
++  private var filters = emptyArray<KWeightingFilter>()
++  private val energies = ArrayDeque<Double>()
++  private var attack = 0.0
++  private var release = 0.0
++
++  override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
++    return if (
++      inputAudioFormat.encoding == C.ENCODING_PCM_16BIT ||
++      inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
++    ) {
++      filters = Array(inputAudioFormat.channelCount) { KWeightingFilter(inputAudioFormat.sampleRate) }
++      val samplesPerSecond = inputAudioFormat.sampleRate.toDouble() * inputAudioFormat.channelCount
++      attack = 1.0 - exp(-1.0 / (samplesPerSecond * 0.15))
++      release = 1.0 - exp(-1.0 / (samplesPerSecond * 1.5))
++      inputAudioFormat
++    } else {
++      AudioProcessor.AudioFormat.NOT_SET
++    }
++  }
++
++  override fun queueInput(inputBuffer: ByteBuffer) {
++    val outputBuffer = replaceOutputBuffer(inputBuffer.remaining()).order(ByteOrder.LITTLE_ENDIAN)
++    val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
++    if (!enabled) {
++      outputBuffer.put(input)
++      resetLevels()
++      outputBuffer.flip()
++      return
++    }
++
++    val format = inputAudioFormat
++    val floatPcm = format.encoding == C.ENCODING_PCM_FLOAT
++    val samplesPerWindow = (format.sampleRate * format.channelCount * 2 / 5).coerceAtLeast(1)
++    val preview = input.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN)
++    var peak = 0.0
++    while (preview.remaining() >= if (floatPcm) 4 else 2) {
++      val sample = if (floatPcm) preview.float.toDouble() else preview.short.toDouble() / 32768.0
++      if (sample.isFinite()) peak = maxOf(peak, abs(sample))
++    }
++    val peakGainCeiling = if (peak > 0.0) 0.98 / peak else 4.0
++    while (input.remaining() >= if (format.encoding == C.ENCODING_PCM_FLOAT) 4 else 2) {
++      val sample = if (format.encoding == C.ENCODING_PCM_FLOAT) {
++        input.float.toDouble()
++      } else {
++        input.short.toDouble() / 32768.0
++      }.let { if (it.isFinite()) it.coerceIn(-1.0, 1.0) else 0.0 }
++
++      val weighted = filters[channel].process(sample)
++      // Android's six/eight-channel PCM order places LFE at index 3.
++      val channelWeight = when {
++        format.channelCount >= 6 && channel == 3 -> 0.0
++        format.channelCount >= 6 && channel >= 4 -> 1.41
++        else -> 1.0
++      }
++      windowSquareSum += weighted * weighted * channelWeight
++      channel = (channel + 1) % format.channelCount
++      windowSampleCount += 1
++      if (windowSampleCount >= samplesPerWindow) {
++        val energy = windowSquareSum / windowSampleCount * format.channelCount
++        // BS.1770 K-weighting and absolute/relative gating, measured live.
++        // Eight 400 ms windows avoid whole-file scans and retain quick source changes.
++        if (energy > 10.0.pow((-70.0 + 0.691) / 10.0)) {
++          energies.addLast(energy)
++          if (energies.size > 8) energies.removeFirst()
++          val relativeGate = energies.average() / 10.0
++          val gated = energies.filter { it >= relativeGate }.average()
++          val loudness = -0.691 + 10.0 * log10(gated)
++          wantedGain = 10.0.pow((-18.0 - loudness).coerceIn(-12.0, 12.0) / 20.0)
++        }
++        windowSquareSum = 0.0
++        windowSampleCount = 0
++      }
++
++      gain += (wantedGain - gain) * if (wantedGain < gain) attack else release
++      val normalized = (sample * min(gain, peakGainCeiling)).coerceIn(-0.98, 0.98)
++      if (format.encoding == C.ENCODING_PCM_FLOAT) {
++        outputBuffer.putFloat(normalized.toFloat())
++      } else {
++        outputBuffer.putShort((normalized * 32767.0).toInt().toShort())
++      }
++    }
++    outputBuffer.flip()
++  }
++
++  override fun onFlush() {
++    resetLevels()
++  }
++
++  override fun onReset() {
++    resetLevels()
++  }
++
++  private fun resetLevels() {
++    windowSquareSum = 0.0
++    windowSampleCount = 0
++    gain = 1.0
++    wantedGain = 1.0
++    channel = 0
++    energies.clear()
++    filters.forEach { it.reset() }
++  }
++}
++
++// Coefficients from ITU-R BS.1770's pre-filter and RLB weighting stages.
++private class KWeightingFilter(sampleRate: Int) {
++  private val shelf: Biquad
++  private val highPass: Biquad
++
++  init {
++    var k = tan(PI * 1681.974450955533 / sampleRate)
++    val vh = 10.0.pow(3.999843853973347 / 20.0)
++    val vb = vh.pow(0.4996667741545416)
++    val q = 0.7071752369554196
++    var a0 = 1.0 + k / q + k * k
++    shelf = Biquad(
++      (vh + vb * k / q + k * k) / a0,
++      2.0 * (k * k - vh) / a0,
++      (vh - vb * k / q + k * k) / a0,
++      2.0 * (k * k - 1.0) / a0,
++      (1.0 - k / q + k * k) / a0
++    )
++    k = tan(PI * 38.13547087602444 / sampleRate)
++    val hpQ = 0.5003270373238773
++    a0 = 1.0 + k / hpQ + k * k
++    highPass = Biquad(
++      1.0, -2.0, 1.0,
++      2.0 * (k * k - 1.0) / a0,
++      (1.0 - k / hpQ + k * k) / a0
++    )
++  }
++
++  fun process(sample: Double) = highPass.process(shelf.process(sample))
++  fun reset() {
++    shelf.reset()
++    highPass.reset()
++  }
++}
++
++private class Biquad(
++  private val b0: Double,
++  private val b1: Double,
++  private val b2: Double,
++  private val a1: Double,
++  private val a2: Double
++) {
++  private var z1 = 0.0
++  private var z2 = 0.0
++  fun process(sample: Double): Double {
++    val output = b0 * sample + z1
++    z1 = b1 * sample - a1 * output + z2
++    z2 = b2 * sample - a2 * output
++    return output
++  }
++  fun reset() {
++    z1 = 0.0
++    z2 = 0.0
++  }
++}
+diff --git a/android/src/main/java/expo/modules/video/player/VideoPlayer.kt b/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
+index 7ccce9681477328701755792fdc3bab09b428e30..ccbbfdbdb9624043dfedad1594f955fe1f75707b 100644
+--- a/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
++++ b/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
+@@ -20,6 +20,9 @@ import androidx.media3.exoplayer.DecoderReuseEvaluation
+ import androidx.media3.exoplayer.DefaultRenderersFactory
+ import androidx.media3.exoplayer.ExoPlayer
+ import androidx.media3.exoplayer.analytics.AnalyticsListener
++import androidx.media3.exoplayer.audio.AudioCapabilities
++import androidx.media3.exoplayer.audio.AudioSink
++import androidx.media3.exoplayer.audio.DefaultAudioSink
+ import androidx.media3.exoplayer.hls.HlsManifest
+ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+ import androidx.media3.session.MediaSession
+@@ -61,7 +64,21 @@ import kotlin.time.DurationUnit
+ @UnstableApi
+ class VideoPlayer(val context: Context, appContext: AppContext, source: VideoSource?, playerBuilderOptions: expo.modules.video.records.PlayerBuilderOptions? = null) : AutoCloseable, SharedObject(appContext), IntervalUpdateEmitter {
+   // This improves the performance of playing DRM-protected content
+-  private var renderersFactory = DefaultRenderersFactory(context)
++  private val loudnessNormalizer = LoudnessNormalizerAudioProcessor()
++  private var renderersFactory = object : DefaultRenderersFactory(context) {
++    override fun buildAudioSink(
++      context: Context,
++      enableFloatOutput: Boolean,
++      enableAudioTrackPlaybackParams: Boolean
++    ): AudioSink {
++      return DefaultAudioSink.Builder(context)
++        .setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
++        .setAudioProcessors(arrayOf(loudnessNormalizer))
++        .setEnableFloatOutput(false)
++        .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
++        .build()
++    }
++  }
+     .forceEnableMediaCodecAsynchronousQueueing()
+     .setEnableDecoderFallback(true)
+   private val listeners: MutableList<WeakReference<VideoPlayerListener>> = mutableListOf()
+@@ -108,6 +125,11 @@ class VideoPlayer(val context: Context, appContext: AppContext, source: VideoSou
+ 
+   // Volume of the player if there was no mute applied.
+   var userVolume = 1f
++  var normalizeLoudness: Boolean
++    get() = loudnessNormalizer.enabled
++    set(value) {
++      loudnessNormalizer.enabled = value
++    }
+   var status: PlayerStatus = IDLE
+   var requiresLinearPlayback = false
+   var staysActiveInBackground = false
+diff --git a/android/src/test/java/expo/modules/video/player/LoudnessNormalizerAudioProcessorTest.kt b/android/src/test/java/expo/modules/video/player/LoudnessNormalizerAudioProcessorTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..bcded0e74ef67d366a11fea4786906b63ec8128a
+--- /dev/null
++++ b/android/src/test/java/expo/modules/video/player/LoudnessNormalizerAudioProcessorTest.kt
+@@ -0,0 +1,84 @@
++package expo.modules.video.player
++
++import androidx.media3.common.C
++import androidx.media3.common.audio.AudioProcessor
++import androidx.media3.common.util.UnstableApi
++import org.junit.Assert.assertArrayEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import java.nio.ByteBuffer
++import java.nio.ByteOrder
++import kotlin.math.PI
++import kotlin.math.abs
++import kotlin.math.sin
++import kotlin.math.sqrt
++
++@UnstableApi
++class LoudnessNormalizerAudioProcessorTest {
++  private fun processor(enabled: Boolean): LoudnessNormalizerAudioProcessor {
++    return LoudnessNormalizerAudioProcessor().apply {
++      configure(AudioProcessor.AudioFormat(48000, 1, C.ENCODING_PCM_16BIT))
++      flush()
++      this.enabled = enabled
++    }
++  }
++
++  @Test
++  fun disabledIsBitExact() {
++    val processor = processor(false)
++    val bytes = byteArrayOf(0, 0, 127, 127, -1, -1, 0, -128)
++    processor.queueInput(ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN))
++    val actual = ByteArray(bytes.size)
++    processor.output.get(actual)
++    assertArrayEquals(bytes, actual)
++  }
++
++  @Test
++  fun quietAndLoudInputsConvergeToMatchingLoudness() {
++    val quiet = finalRms(0.06)
++    val loud = finalRms(0.5)
++    assertTrue("Quiet input must actually be amplified", quiet > 0.08)
++    assertTrue("Loud input must actually be attenuated", loud < 0.2)
++    assertTrue("Different input levels should converge: $quiet / $loud", abs(quiet / loud - 1.0) < 0.08)
++  }
++
++  @Test
++  fun normalizedPcmDoesNotClip() {
++    val processor = processor(true)
++    repeat(600) { block ->
++      val amplitude = if (block < 500) 0.04 else 0.99
++      processor.queueInput(tone(amplitude, block * 960))
++      val output = processor.output.order(ByteOrder.LITTLE_ENDIAN)
++      while (output.remaining() >= 2) {
++        assertTrue(abs(output.short.toInt()) <= 32113)
++      }
++    }
++  }
++
++  private fun finalRms(amplitude: Double): Double {
++    val processor = processor(true)
++    var sum = 0.0
++    var count = 0
++    repeat(600) { block ->
++      processor.queueInput(tone(amplitude, block * 960))
++      val output = processor.output.order(ByteOrder.LITTLE_ENDIAN)
++      while (output.remaining() >= 2) {
++        val sample = output.short.toDouble() / 32768.0
++        if (block >= 500) {
++          sum += sample * sample
++          count += 1
++        }
++      }
++    }
++    return sqrt(sum / count)
++  }
++
++  private fun tone(amplitude: Double, offset: Int): ByteBuffer {
++    return ByteBuffer.allocateDirect(960 * 2).order(ByteOrder.LITTLE_ENDIAN).apply {
++      repeat(960) { sample ->
++        putShort((sin(2.0 * PI * 1000.0 * (offset + sample) / 48000) * amplitude * 32767).toInt().toShort())
++      }
++      flip()
++    }
++  }
++}

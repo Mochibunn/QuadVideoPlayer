@@ -1,2 +1,3 @@
 - [Product requirements](product-requirements.md) — Native Android tablet player, OLED-black theme, and the user's chosen purple primary.
 - [Android SDK compatibility](android-sdk.md) — Inspect Google's package metadata before treating a required SDK version as unavailable.
+- [Expo native patches](expo-native-patches.md) — Patched Android modules must build from source; precompiled publications otherwise omit local Kotlin changes.

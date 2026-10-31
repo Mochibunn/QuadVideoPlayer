@@ -18,8 +18,10 @@ if [[ ! -f android/gradlew ]]; then
 fi
 
 cd android
-./gradlew :app:assembleRelease \
+./gradlew :expo-video:testDebugUnitTest :app:assembleRelease \
   -PreactNativeArchitectures=arm64-v8a \
+  -Pandroid.enableMinifyInReleaseBuilds="${ANDROID_MINIFY:-false}" \
+  -Pandroid.enableShrinkResourcesInReleaseBuilds="${ANDROID_MINIFY:-false}" \
   --no-daemon --max-workers=2
 
 OUTPUT="$WORKSPACE/generated-artifacts/android"
