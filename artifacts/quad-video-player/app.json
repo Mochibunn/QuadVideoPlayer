@@ -3,6 +3,7 @@
     "name": "Quad Video Player",
     "slug": "quad-video-player",
     "version": "1.0.0",
+    "platforms": ["ios", "android"],
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "quad-video-player",
@@ -14,10 +15,6 @@
       "supportsTablet": false
     },
     "android": {},
-    "web": {
-      "favicon": "./assets/images/icon.png",
-      "output": "static"
-    },
     "plugins": [
       "expo-router",
       "expo-video"
