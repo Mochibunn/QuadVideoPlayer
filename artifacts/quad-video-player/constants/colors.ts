@@ -16,7 +16,7 @@ const colors = {
   light: {
     // Legacy aliases (kept for backward compatibility)
     text: '#f5f7fa',
-    tint: '#54d7b8',
+    tint: '#6b5cb1',
 
     // Core surfaces
     background: '#000000',
@@ -27,11 +27,11 @@ const colors = {
     cardForeground: '#f5f7fa',
 
     // Primary action color (buttons, links, active states)
-    primary: '#54d7b8',
-    primaryForeground: '#00120e',
+    primary: '#6b5cb1',
+    primaryForeground: '#ffffff',
 
     // Secondary / less-emphasis interactive surfaces
-    secondary: '#111316',
+    secondary: '#15121c',
     secondaryForeground: '#f5f7fa',
 
     // Muted / subdued elements (dividers, timestamps, placeholders)
@@ -39,8 +39,8 @@ const colors = {
     mutedForeground: '#969da7',
 
     // Accent highlights (badges, selected items, focus rings)
-    accent: '#0b2723',
-    accentForeground: '#c8fff2',
+    accent: '#211b36',
+    accentForeground: '#e4ddff',
 
     // Destructive actions (delete, error states)
     destructive: '#ff786e',
@@ -53,19 +53,19 @@ const colors = {
 
   dark: {
     text: '#f5f7fa',
-    tint: '#54d7b8',
+    tint: '#6b5cb1',
     background: '#000000',
     foreground: '#f5f7fa',
     card: '#050607',
     cardForeground: '#f5f7fa',
-    primary: '#54d7b8',
-    primaryForeground: '#00120e',
-    secondary: '#111316',
+    primary: '#6b5cb1',
+    primaryForeground: '#ffffff',
+    secondary: '#15121c',
     secondaryForeground: '#f5f7fa',
     muted: '#1b1e23',
     mutedForeground: '#969da7',
-    accent: '#0b2723',
-    accentForeground: '#c8fff2',
+    accent: '#211b36',
+    accentForeground: '#e4ddff',
     destructive: '#ff786e',
     destructiveForeground: '#ffffff',
     border: '#1c2026',

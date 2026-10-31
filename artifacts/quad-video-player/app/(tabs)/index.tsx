@@ -285,7 +285,7 @@ function VideoTile({
     >
       <View style={[styles.tileHeader, { borderBottomColor: colors.border }]}>
         <View style={[styles.streamNumber, { backgroundColor: colors.accent }]}>
-          <Text style={[styles.streamNumberText, { color: colors.primary }]}>
+          <Text style={[styles.streamNumberText, { color: colors.accentForeground }]}>
             0{index + 1}
           </Text>
         </View>
@@ -335,7 +335,7 @@ function VideoTile({
               onPress={() => void retry()}
               style={[styles.retryButton, { borderColor: colors.border }]}
             >
-              <Text style={[styles.retryText, { color: colors.primary }]}>Retry</Text>
+              <Text style={[styles.retryText, { color: colors.accentForeground }]}>Retry</Text>
             </Pressable>
           </View>
         )}
@@ -371,7 +371,7 @@ function VideoTile({
           <Feather
             name={isMuted || volume === 0 ? 'volume-x' : 'volume-2'}
             size={17}
-            color={isMuted ? colors.primary : colors.foreground}
+            color={isMuted ? colors.accentForeground : colors.foreground}
           />
         </Pressable>
         <View

@@ -1,0 +1,1 @@
+- [Product requirements](product-requirements.md) — Native Android tablet player, OLED-black theme, and the user's chosen purple primary.
