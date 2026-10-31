@@ -1,5 +1,6 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import { Directory } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -40,18 +41,45 @@ const VIDEO_EXTENSIONS = new Set([
 const STREAM_COUNT = 4;
 const START_VOLUME = 0.25;
 
-function fileNameFromUri(uri: string) {
-  const lastPart = uri.split('/').pop() ?? 'Video';
-  try {
-    return decodeURIComponent(lastPart);
-  } catch {
-    return lastPart;
-  }
-}
-
 function isSupportedVideo(name: string) {
   const extension = name.split('.').pop()?.toLowerCase() ?? '';
   return VIDEO_EXTENSIONS.has(extension);
+}
+
+async function scanFolderForVideos(rootUri: string) {
+  const videos: VideoAsset[] = [];
+  const folders = [rootUri];
+  const visitedFolders = new Set<string>();
+  let unreadableSubfolders = 0;
+
+  while (folders.length > 0) {
+    const directoryUri = folders.pop()!;
+    if (visitedFolders.has(directoryUri)) continue;
+    visitedFolders.add(directoryUri);
+
+    let entries: ReturnType<Directory['list']>;
+    try {
+      entries = new Directory(directoryUri).list();
+    } catch (error) {
+      if (directoryUri === rootUri) throw error;
+      unreadableSubfolders += 1;
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (entry instanceof Directory) {
+        folders.push(entry.uri);
+      } else if (isSupportedVideo(entry.name)) {
+        videos.push({
+          id: entry.uri,
+          name: entry.name,
+          uri: entry.uri,
+        });
+      }
+    }
+  }
+
+  return { videos, unreadableSubfolders };
 }
 
 function shuffled<T>(items: T[]) {
@@ -470,22 +498,26 @@ export default function QuadVideoPlayerScreen() {
         await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
       if (!permission.granted) return;
 
-      const entries = await FileSystem.StorageAccessFramework.readDirectoryAsync(
+      const { videos, unreadableSubfolders } = await scanFolderForVideos(
         permission.directoryUri,
       );
-      const videos = entries
-        .map((uri) => ({ uri, name: fileNameFromUri(uri) }))
-        .filter((item) => isSupportedVideo(item.name))
-        .map((item) => ({ ...item, id: item.uri }));
 
       if (videos.length === 0) {
         Alert.alert(
           'No videos found',
-          'Choose a folder that contains supported videos directly inside it.',
+          unreadableSubfolders > 0
+            ? 'No supported videos were found in the folders the app could read.'
+            : 'Choose a folder tree that contains supported videos.',
         );
       } else {
         setSourceLabel('Folder');
         startStreams(videos);
+        if (unreadableSubfolders > 0) {
+          Alert.alert(
+            'Some subfolders were skipped',
+            `Started playback with ${videos.length} videos. ${unreadableSubfolders} subfolder${unreadableSubfolders === 1 ? ' was' : 's were'} unavailable.`,
+          );
+        }
       }
     } catch (error) {
       Alert.alert(
