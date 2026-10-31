@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Quad Video Player",
+    "slug": "quad-video-player",
+    "version": "1.0.0",
+    "orientation": "landscape",
+    "icon": "./assets/images/icon.png",
+    "scheme": "quad-video-player",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#090d12"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {},
+    "web": {
+      "favicon": "./assets/images/icon.png",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-video"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

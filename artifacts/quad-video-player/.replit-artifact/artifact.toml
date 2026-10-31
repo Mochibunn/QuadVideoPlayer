@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/"
+title = "Quad Video Player"
+description = "An Android tablet app for choosing a set of local videos and playing four independently looping, randomly selected streams at once, with playback and volume controls."
+version = "1.0.0"
+id = "artifacts/quad-video-player"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 22938
+
+[services.development]
+run = "pnpm --filter @workspace/quad-video-player run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/quad-video-player", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/quad-video-player", "run", "serve" ]
+
+[services.env]
+PORT = "22938"
+BASE_PATH = "/"
