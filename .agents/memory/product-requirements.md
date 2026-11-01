@@ -66,3 +66,13 @@ package-name change as a separate application, without the previous app's data.
 
 **How to apply:** Preserve this identity in future builds; do not replace it with
 an Expo-generated default or rename it for routine updates.
+
+The Android navigation area must also remain OLED-black, with light buttons.
+
+**Why:** The user reported the white system navigation bar as an eyesore.
+Expo's navigation style names describe button color, not background color;
+`dark` requests dark buttons and can trigger a light Android contrast scrim.
+
+**How to apply:** Use light navigation content, disable navigation contrast
+enforcement, and keep the underlying activity/app background true black.
+Preserve the existing immersive playback behavior.

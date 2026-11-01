@@ -810,7 +810,7 @@ export default function QuadVideoPlayerScreen() {
       ]}
     >
       <StatusBar hidden />
-      <NavigationBar hidden={hasVideos} style="dark" />
+      <NavigationBar hidden={hasVideos} style="light" />
       <View
         style={[styles.screen, !hasVideos && styles.browserScreen]}
         onTouchStart={controls.hold}
