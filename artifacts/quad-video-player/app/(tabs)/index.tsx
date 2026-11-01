@@ -5,6 +5,7 @@ import { Directory } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
+import { NavigationBar } from 'expo-navigation-bar';
 import { useEventListener } from 'expo';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -20,8 +21,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ColorContext, useColors } from '@/hooks/useColors';
+import { useAutoHideControls } from '@/hooks/useAutoHideControls';
 import BackgroundAudioMixer from '@/components/audio/BackgroundAudioMixer';
 import SettingSwitch from '@/components/SettingSwitch';
 import { getVideoAudioMode } from '@/lib/audio-mode';
@@ -178,6 +180,8 @@ function VideoTile({
   sharedVolume,
   onSharedVolumeChange,
   fillVideos,
+  controlsVisible,
+  onRevealControls,
 }: {
   asset: VideoAsset;
   pool: VideoAsset[];
@@ -188,8 +192,11 @@ function VideoTile({
   sharedVolume: number;
   onSharedVolumeChange: (volume: number) => void;
   fillVideos: boolean;
+  controlsVisible: boolean;
+  onRevealControls: () => void;
 }) {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const [currentAsset, setCurrentAsset] = useState(asset);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
@@ -335,27 +342,6 @@ function VideoTile({
         { backgroundColor: colors.card, borderColor: colors.border },
       ]}
     >
-      <View style={[styles.tileHeader, { borderBottomColor: colors.border }]}>
-        <View style={[styles.streamNumber, { backgroundColor: colors.accent }]}>
-          <Text style={[styles.streamNumberText, { color: colors.accentForeground }]}>
-            0{index + 1}
-          </Text>
-        </View>
-        <Text
-          numberOfLines={1}
-          ellipsizeMode="middle"
-          style={[styles.videoName, { color: colors.foreground }]}
-        >
-          {currentAsset.name}
-        </Text>
-        <View
-          style={[
-            styles.liveDot,
-            { backgroundColor: errorMessage ? colors.destructive : colors.primary },
-          ]}
-        />
-      </View>
-
       <View style={[styles.videoFrame, { backgroundColor: colors.background }]}>
         <VideoView
           player={player}
@@ -364,8 +350,15 @@ function VideoTile({
           nativeControls={false}
           surfaceType="textureView"
         />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          accessibilityRole="button"
+          accessibilityLabel={`Show playback controls for stream ${index + 1}`}
+          accessible={!controlsVisible}
+          onPress={onRevealControls}
+        />
         {isLoading && !errorMessage && (
-          <View style={styles.videoStatus}>
+          <View pointerEvents="none" style={styles.videoStatus}>
             <ActivityIndicator color={colors.primary} />
             <Text style={[styles.videoStatusText, { color: colors.mutedForeground }]}>
               Loading video
@@ -393,7 +386,38 @@ function VideoTile({
         )}
       </View>
 
-      <View style={[styles.tileControls, { borderTopColor: colors.border }]}>
+      {controlsVisible && (
+      <View style={[
+        styles.tileHeader,
+        {
+          backgroundColor: colors.playbackOverlay,
+          top: index < 2 ? 60 + insets.top : 0,
+          paddingLeft: 10 + (index % 2 === 0 ? insets.left : 0),
+          paddingRight: 10 + (index % 2 === 1 ? insets.right : 0),
+        },
+      ]}>
+        <View style={[styles.streamNumber, { backgroundColor: colors.accent }]}>
+          <Text style={[styles.streamNumberText, { color: colors.accentForeground }]}>
+            0{index + 1}
+          </Text>
+        </View>
+        <Text numberOfLines={1} ellipsizeMode="middle" style={[styles.videoName, { color: colors.foreground }]}>
+          {currentAsset.name}
+        </Text>
+        <View style={[styles.liveDot, { backgroundColor: errorMessage ? colors.destructive : colors.primary }]} />
+      </View>
+      )}
+
+      {controlsVisible && (
+      <View style={[
+        styles.tileControls,
+        {
+          backgroundColor: colors.playbackOverlay,
+          paddingBottom: index >= 2 ? insets.bottom + 4 : 4,
+          paddingLeft: 8 + (index % 2 === 0 ? insets.left : 0),
+          paddingRight: 8 + (index % 2 === 1 ? insets.right : 0),
+        },
+      ]}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${isPlaying ? 'Pause' : 'Play'} stream ${index + 1}`}
@@ -472,6 +496,7 @@ function VideoTile({
           {Math.round(volume * 100)}
         </Text>
       </View>
+      )}
     </View>
   );
 }
@@ -494,6 +519,9 @@ export default function QuadVideoPlayerScreen() {
   const [globalPlaying, setGlobalPlaying] = useState(true);
   const [isPicking, setIsPicking] = useState(false);
   const [sourceLabel, setSourceLabel] = useState('');
+  const insets = useSafeAreaInsets();
+  const hasVideos = activeVideos.length > 0;
+  const controls = useAutoHideControls(hasVideos, activePanel !== null || isPicking);
 
   useEffect(() => {
     let mounted = true;
@@ -686,15 +714,33 @@ export default function QuadVideoPlayerScreen() {
   return (
     <ColorContext.Provider value={colors}>
     <SafeAreaView
-      edges={['top', 'bottom', 'left', 'right']}
+      edges={hasVideos ? [] : ['top', 'bottom', 'left', 'right']}
       style={[
         styles.safeArea,
         { backgroundColor: colors.background },
-        Platform.OS === 'web' && styles.webSafeArea,
+        Platform.OS === 'web' && !hasVideos && styles.webSafeArea,
       ]}
     >
       <StatusBar hidden />
-      <View style={styles.screen}>
+      <NavigationBar hidden={hasVideos} style="dark" />
+      <View
+        style={[styles.screen, !hasVideos && styles.browserScreen]}
+        onTouchStart={controls.hold}
+        onTouchEnd={(event) => {
+          if (event.nativeEvent.touches.length === 0) controls.release();
+        }}
+        onTouchCancel={controls.release}
+      >
+        {(!hasVideos || controls.visible) && (
+        <View style={hasVideos ? [
+          styles.toolbarOverlay,
+          {
+            backgroundColor: colors.playbackOverlay,
+            paddingTop: insets.top,
+            paddingLeft: Math.max(12, insets.left),
+            paddingRight: Math.max(12, insets.right),
+          },
+        ] : styles.browserToolbar}>
         <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
           <View style={styles.brandBlock}>
             <View style={styles.brandMark}>
@@ -792,6 +838,8 @@ export default function QuadVideoPlayerScreen() {
             />
           </View>
         </View>
+        </View>
+        )}
 
         {activeVideos.length > 0 ? (
           <View style={styles.grid}>
@@ -809,6 +857,8 @@ export default function QuadVideoPlayerScreen() {
                 sharedVolume={sharedVolume}
                 onSharedVolumeChange={setSharedVolume}
                 fillVideos={fillVideos}
+                controlsVisible={controls.visible}
+                onRevealControls={controls.reveal}
               />
             ))}
               </View>
@@ -1096,14 +1146,16 @@ export default function QuadVideoPlayerScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   webSafeArea: { paddingTop: 67, paddingBottom: 34 },
-  screen: { flex: 1, paddingHorizontal: 12, paddingBottom: 8 },
+  screen: { flex: 1 },
+  browserScreen: { paddingHorizontal: 12, paddingBottom: 8 },
+  browserToolbar: { marginBottom: 8 },
+  toolbarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
   topBar: {
     minHeight: 60,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 8,
     paddingHorizontal: 4,
   },
   brandBlock: { flexDirection: 'row', alignItems: 'center', gap: 11 },
@@ -1136,29 +1188,28 @@ const styles = StyleSheet.create({
   pressedButton: { opacity: 0.72, transform: [{ scale: 0.97 }] },
   grid: {
     flex: 1,
-    gap: 8,
   },
   gridRow: {
     flex: 1,
     minHeight: 0,
     flexDirection: 'row',
-    gap: 8,
   },
   tile: {
     flex: 1,
     minWidth: 0,
     minHeight: 0,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
   },
   tileHeader: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 2,
     height: 34,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   streamNumber: {
     width: 25,
@@ -1170,7 +1221,7 @@ const styles = StyleSheet.create({
   streamNumberText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
   videoName: { flex: 1, fontSize: 12, fontWeight: '500' },
   liveDot: { width: 7, height: 7, borderRadius: 4, marginLeft: 4 },
-  videoFrame: { flex: 1, overflow: 'hidden' },
+  videoFrame: { ...StyleSheet.absoluteFill, overflow: 'hidden' },
   videoStatus: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
@@ -1189,22 +1240,27 @@ const styles = StyleSheet.create({
   },
   retryText: { fontSize: 12, fontWeight: '600' },
   tileControls: {
-    height: 42,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    minHeight: 52,
+    paddingTop: 4,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
   iconControl: {
-    width: 34,
-    height: 34,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   volumeTrackHitbox: {
     flex: 1,
-    height: 30,
+    height: 44,
     justifyContent: 'center',
     paddingHorizontal: 4,
   },

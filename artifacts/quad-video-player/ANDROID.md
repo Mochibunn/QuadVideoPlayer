@@ -68,6 +68,16 @@ both processing and slider linking. Background-audio tracks remain independent.
 
 ## Display options and launch
 
+Playback uses the entire app window as a gapless 2×2 grid: no toolbar, filename
+row or volume-control row reserves space around the video. Android's navigation
+bar is hidden during playback; an edge swipe can reveal system navigation.
+
+Tap a video to reveal the toolbar and per-video controls. These are translucent
+overlays and disappear after 4.5 seconds without interaction. Holding a control,
+opening a panel or file picker, or using a screen reader keeps controls visible.
+After closing a panel or returning to the app, a fresh idle interval starts.
+Showing or hiding controls never remounts the video views or restarts streams.
+
 The default purple accent is named **GameCubed**; its saved identifier is kept
 unchanged so existing selections survive updates. Eight additional pastel
 accents retain OLED-black surfaces. The entire settings body scrolls beneath a

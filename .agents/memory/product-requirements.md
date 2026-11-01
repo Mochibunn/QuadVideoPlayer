@@ -38,3 +38,13 @@ The default purple theme is called “GameCubed,” not Amethyst. The user also 
 **Why:** The user explicitly requested these appearance and display behaviors.
 
 **How to apply:** Preserve the default purple color while using its requested display name. Fit must show the whole video; Fill may crop but must not stretch or spill outside the video's quarter.
+
+The user wants on-screen controls to auto-hide and each video to occupy its
+actual quarter of the whole screen, not a smaller rectangle between controls.
+
+**Why:** The user reported that individual control rows were reducing the video
+areas and preventing true full-screen quadrants.
+
+**How to apply:** Toolbar, filename and volume controls must overlay playback
+rather than reserve layout space. Keep a gapless 2×2 viewport, reveal controls
+on touch, and never resize or restart video players when controls hide.

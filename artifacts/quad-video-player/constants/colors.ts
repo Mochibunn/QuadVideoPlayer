@@ -42,6 +42,7 @@ const colors = {
 
     // Core surfaces
     background: '#000000',
+    playbackOverlay: '#000000c9',
     foreground: '#f5f7fa',
 
     // Cards / elevated surfaces
@@ -77,6 +78,7 @@ const colors = {
     text: '#f5f7fa',
     tint: '#6b5cb1',
     background: '#000000',
+    playbackOverlay: '#000000c9',
     foreground: '#f5f7fa',
     card: '#050607',
     cardForeground: '#f5f7fa',
