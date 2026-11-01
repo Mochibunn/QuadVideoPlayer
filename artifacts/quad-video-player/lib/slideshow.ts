@@ -2,12 +2,12 @@ export type SlideshowImage = { id: string; name: string; uri: string };
 export type SlideshowInstance = {
   id: string; enabled: boolean; index: number; scale: number;
   sourceId?: string;
-  opacity: number; x: number; y: number; bounce: boolean; seconds: number; speed: number;
+  opacity: number; x: number; y: number; bounce: boolean; shuffle: boolean; seconds: number; speed: number;
 };
 export type Slideshow = { enabled: boolean; pool: SlideshowImage[]; instances: SlideshowInstance[] };
 export const DEFAULT_INSTANCE: SlideshowInstance = {
   id: 'slideshow-1', enabled: true, index: 0, scale: 30, opacity: 0.8,
-  x: 50, y: 50, bounce: true, seconds: 8, speed: 20,
+  x: 50, y: 50, bounce: true, shuffle: false, seconds: 8, speed: 20,
 };
 export const DEFAULT_SLIDESHOW: Slideshow = { enabled: false, pool: [], instances: [{ ...DEFAULT_INSTANCE }] };
 function bounded(value: unknown, fallback: number, min: number, max: number) {
@@ -39,6 +39,7 @@ export function parseSlideshow(value: unknown): Slideshow {
       scale: bounded(item.scale, 30, 10, 100), opacity: bounded(item.opacity, 0.8, 0, 1),
       x: bounded(item.x, 50, 0, 100), y: bounded(item.y, 50, 0, 100),
       bounce: item.bounce === undefined ? true : item.bounce === true,
+      shuffle: item.shuffle === true,
       seconds: Math.round(bounded(item.seconds, 8, 1, 60)), speed: bounded(item.speed, 20, 5, 80),
     };
   });
@@ -54,6 +55,15 @@ export function addSlideshow(s: Slideshow): Slideshow {
     y: (s.instances.length * 61 + 20) % 101,
   };
   return { ...s, enabled: true, instances: [...s.instances, instance] };
+}
+export function nextSlideshowIndex(length: number, current: number, shuffle: boolean, random: () => number = Math.random) {
+  const count = Math.max(0, Math.floor(length));
+  if (count <= 1) return 0;
+  if (!shuffle) return ((Math.floor(current) + 1) % count + count) % count;
+  const choices = Array.from({ length: count }, (_, index) => index).filter((index) => index !== current);
+  const sample = random();
+  const normalized = Number.isFinite(sample) ? Math.max(0, Math.min(0.999999999, sample)) : 0;
+  return choices[Math.floor(normalized * choices.length)];
 }
 export function filterSlideshowPool(s: Slideshow, keep: (image: SlideshowImage) => boolean): Slideshow {
   const pool = s.pool.filter(keep);

@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
-import ts from 'typescript';
 import vm from 'node:vm';
+import ts from 'typescript';
 async function load(name) {
-  const source = await readFile(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8');
+  let source = await readFile(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8');
+  if (name === 'player-startup') {
+    const mediaSource = await readFile(new URL('../lib/media-formats.ts', import.meta.url), 'utf8');
+    const mediaCode = ts.transpileModule(mediaSource, {
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const mediaUrl = `data:text/javascript;base64,${Buffer.from(mediaCode).toString('base64')}`;
+    source = source.replace("from './media-formats'", `from '${mediaUrl}'`);
+  }
   const { outputText } = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
   });
@@ -26,6 +34,19 @@ test('parser bounds scale, opacity, position, interval and speed', () => {
   assert.equal(value.scale, 100); assert.equal(value.opacity, 0);
   assert.equal(value.x, 0); assert.equal(value.y, 100);
   assert.equal(value.seconds, 1); assert.equal(value.speed, 80);
+});
+test('each slideshow keeps its shuffle setting and chooses a different image randomly', () => {
+  const parsed = slide.parseSlideshow({ instances: [
+    { id: 'shuffled', shuffle: true }, { id: 'ordered', shuffle: false },
+  ] });
+  assert.equal(parsed.instances[0].shuffle, true);
+  assert.equal(parsed.instances[1].shuffle, false);
+  assert.equal(slide.nextSlideshowIndex(4, 2, false), 3);
+  assert.equal(slide.nextSlideshowIndex(4, 3, false), 0);
+  assert.equal(slide.nextSlideshowIndex(4, 2, true, () => 0), 0);
+  assert.equal(slide.nextSlideshowIndex(4, 2, true, () => 0.999), 3);
+  assert.notEqual(slide.nextSlideshowIndex(4, 2, true, () => 0.5), 2);
+  assert.equal(slide.nextSlideshowIndex(1, 0, true), 0);
 });
 test('pool deduplicates URI selections and validates local addresses', () => {
   const value = slide.parseSlideshow({ pool: [image('a.gif'), image('a.gif'), image('b.jpg'),
@@ -68,7 +89,7 @@ test('legacy single-overlay sessions preserve their settings and master visibili
     scale: 47, opacity: 0.31, x: 13, y: 91, seconds: 19, speed: 42, bounce: false });
   assert.equal(value.enabled, false);
   assert.deepEqual(value.instances, [{ id: 'slideshow-1', enabled: true, index: 0,
-    scale: 47, opacity: 0.31, x: 13, y: 91, seconds: 19, speed: 42, bounce: false }]);
+    scale: 47, opacity: 0.31, x: 13, y: 91, seconds: 19, speed: 42, bounce: false, shuffle: false }]);
 });
 test('adding hundreds of independent bouncing overlays has no artificial count limit', () => {
   let value = slide.parseSlideshow({ pool: [image('a.gif'), image('b.jpg')] });

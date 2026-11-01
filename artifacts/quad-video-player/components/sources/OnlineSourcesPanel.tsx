@@ -7,6 +7,7 @@ import { useColors } from '@/hooks/useColors';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
 import { parseOnlineSource, type OnlineSource, type RemoteMedia } from '@/lib/online-sources';
 import RedditAccountSettings from './RedditAccountSettings';
+import Rule34AccountSettings from './Rule34AccountSettings';
 import SettingSwitch from '../SettingSwitch';
 
 function draft(): OnlineSource {
@@ -67,9 +68,10 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
       <FlatList data={editing ? [] : result?.items ?? []} keyExtractor={(item) => item.id}
         initialNumToRender={6} windowSize={3} style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: 24 }}
         ListHeaderComponent={<View style={{ gap: 12 }}>
-          {label('Create separate board/tag or subreddit searches, then select a source for each slideshow. Nothing is bulk-downloaded. Reddit videos play in the four native video quadrants.', true)}
+              {label('Create separate booru/tag or subreddit searches, then select a source for each slideshow. Nothing is bulk-downloaded. Online videos play in the four native video quadrants.', true)}
           {api.storageError ? <>{label(api.storageError)}{button('Retry saved searches', () => void api.retryStorage())}</> : null}
           <RedditAccountSettings />
+              <Rule34AccountSettings />
           {!editing && <>
             {button('Add search', () => setEditing(draft()), !api.loaded || !!api.storageError)}
             <FlatList horizontal data={api.sources} keyExtractor={(item) => item.id} initialNumToRender={8}
@@ -80,7 +82,8 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
               </Pressable>} />
             {source && <>
               {label(source.kind === 'booru' ? `${source.board}\nTags: ${source.tags || '(all)'}${source.safeOnly ? ' · safe-rated only' : ''}` :
-                `r/${source.subreddits} · ${source.sort}${source.safeOnly ? ' · safe posts only' : ''}`, true)}
+                source.kind === 'reddit' ? `r/${source.subreddits} · ${source.sort}${source.safeOnly ? ' · safe posts only' : ''}` :
+                  `${source.kind === 'rule34' ? 'Rule34.xxx' : 'e621.net'}\nTags: ${source.tags || '(all)'}${source.safeOnly ? ' · safe-rated only' : ''}`, true)}
               <View style={styles.wrap}>
                 {button('Edit', () => setEditing({ ...source }))}
                 {button('Remove', remove)}
@@ -99,18 +102,25 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
             {input('Search name', 'name', 'A name for this independent search')}
             <View style={styles.wrap}>
               {button(`${editing.kind === 'booru' ? '✓ ' : ''}booru.org board`, () => setEditing({ ...editing, kind: 'booru' }))}
+              {button(`${editing.kind === 'rule34' ? '✓ ' : ''}Rule34.xxx`, () => setEditing({ ...editing, kind: 'rule34' }))}
+              {button(`${editing.kind === 'e621' ? '✓ ' : ''}e621.net`, () => setEditing({ ...editing, kind: 'e621' }))}
               {button(`${editing.kind === 'reddit' ? '✓ ' : ''}Reddit`, () => setEditing({ ...editing, kind: 'reddit' }))}
             </View>
             {editing.kind === 'booru' ? <>
               {input('Board address', 'board', 'https://your-board.booru.org')}
               {input('Tags', 'tags', 'landscape blue_sky -rain')}
               {label('Use the board’s tag syntax: spaces combine tags, underscores join words, and -tag excludes a tag. The board must expose its public DAPI feed; access restrictions are not bypassed.', true)}
-            </> : <>
+            </> : editing.kind === 'reddit' ? <>
               {input('Subreddits', 'subreddits', 'EarthPorn + aww')}
               <View style={styles.wrap}>{(['hot', 'new', 'top'] as const).map((sort) =>
                 <React.Fragment key={sort}>{button(`${editing.sort === sort ? '✓ ' : ''}${sort === 'top' ? 'Top this week' : sort}`,
                   () => setEditing({ ...editing, sort }))}</React.Fragment>)}</View>
               {label('Reddit sources require the linked account above and Reddit’s approval. GIF files go to slideshows; video-based animations and videos go to the video player.', true)}
+            </> : <>
+              {input('Tags', 'tags', 'fox landscape -animated')}
+              {label(editing.kind === 'e621'
+                ? 'Uses the e621 JSON API with paced requests. Safe-rated posts are selected by default; source ratings come from the site.'
+                : 'Uses the Rule34 JSON API. Connect with your Rule34 numeric user ID and API key above; credentials are stored only in Android secure storage.', true)}
             </>}
             <View style={styles.row}>{label('Only safe-rated posts')}
               <SettingSwitch label="Only safe-rated posts" value={editing.safeOnly} disabled={busy}

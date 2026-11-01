@@ -261,10 +261,10 @@ index 0000000000000000000000000000000000000000..6ce2840f5699b1b8e85909b553598365
 +}
 diff --git a/android/src/main/java/expo/modules/video/player/SoundEffectsAudioProcessor.kt b/android/src/main/java/expo/modules/video/player/SoundEffectsAudioProcessor.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..3bf9f39cad9cb5e0e1378545964d82cca1198443
+index 0000000000000000000000000000000000000000..9c66022df0557c565c4fb1240f7b97eace84e13e
 --- /dev/null
 +++ b/android/src/main/java/expo/modules/video/player/SoundEffectsAudioProcessor.kt
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,205 @@
 +package expo.modules.video.player
 +
 +import androidx.media3.common.C
@@ -283,11 +283,17 @@ index 0000000000000000000000000000000000000000..3bf9f39cad9cb5e0e1378545964d82cc
 +    val eq: Boolean = false,
 +    val bands: List<Double> = List(5) { 0.0 },
 +    val reverb: String = "off",
++    val reverbMix: Double = 0.22,
++    val reverbDecay: Double = 0.68,
++    val preDelayMs: Double = 0.0,
 +    val echo: Boolean = false,
 +    val gain: Double = 1.0
 +  ) {
 +    val linearGain get() = if (gain.isFinite()) gain.coerceIn(1.0, 2.0) else 1.0
-+    val active get() = eq || reverb != "off" || echo || linearGain > 1.0
++    val linearReverbMix get() = if (reverbMix.isFinite()) reverbMix.coerceIn(0.0, 1.0) else 0.22
++    val boundedReverbDecay get() = if (reverbDecay.isFinite()) reverbDecay.coerceIn(0.2, 0.95) else 0.68
++    val boundedPreDelayMs get() = if (preDelayMs.isFinite()) preDelayMs.coerceIn(0.0, 120.0) else 0.0
++    val active get() = eq || (reverb != "off" && linearReverbMix > 0.0) || echo || linearGain > 1.0
 +  }
 +
 +  @Volatile var settings = Settings()
@@ -304,7 +310,18 @@ index 0000000000000000000000000000000000000000..3bf9f39cad9cb5e0e1378545964d82cc
 +      bands = List(5) { i ->
 +        (bands?.optDouble(i, 0.0) ?: 0.0).let { if (it.isFinite()) it.coerceIn(-12.0, 12.0) else 0.0 }
 +      },
-+      reverb = json.optString("reverb", "off").takeIf { it in listOf("room", "hall", "plate") } ?: "off",
++      reverb = json.optString("reverb", "off").takeIf {
++        it in listOf("room", "chamber", "hall", "cathedral", "plate", "spring")
++      } ?: "off",
++      reverbMix = (json.optDouble("reverbMix", 22.0) / 100.0).let {
++        if (it.isFinite()) it.coerceIn(0.0, 1.0) else 0.22
++      },
++      reverbDecay = json.optDouble("reverbDecay", 0.68).let {
++        if (it.isFinite()) it.coerceIn(0.2, 0.95) else 0.68
++      },
++      preDelayMs = json.optDouble("preDelayMs", 0.0).let {
++        if (it.isFinite()) it.coerceIn(0.0, 120.0) else 0.0
++      },
 +      echo = json.optBoolean("echo"),
 +      gain = json.optDouble("gain", 1.0).let { if (it.isFinite()) it.coerceIn(1.0, 2.0) else 1.0 }
 +    )
@@ -354,19 +371,29 @@ index 0000000000000000000000000000000000000000..3bf9f39cad9cb5e0e1378545964d82cc
 +  override fun onReset() = onFlush()
 +
 +  private class Channel(rate: Int, config: Settings, index: Int) {
++    private val reverbMix = config.linearReverbMix
 +    private val filters = if (config.eq)
 +      listOf(60.0, 230.0, 910.0, 3600.0, 14000.0).mapIndexed { i, frequency ->
 +        PeakFilter(rate, min(frequency, rate * 0.45), config.bands[i])
 +      } else emptyList()
-+    private val combs = if (config.reverb != "off") {
++    private val combs = if (config.reverb != "off" && config.linearReverbMix > 0.0) {
 +      val times = when (config.reverb) {
 +        "room" -> listOf(0.019, 0.023, 0.029, 0.031)
++        "chamber" -> listOf(0.025, 0.033, 0.041, 0.047)
++        "hall" -> listOf(0.043, 0.059, 0.071, 0.089)
++        "cathedral" -> listOf(0.061, 0.079, 0.097, 0.113)
 +        "plate" -> listOf(0.029, 0.037, 0.041, 0.053)
-+        else -> listOf(0.043, 0.059, 0.071, 0.089)
++        else -> listOf(0.017, 0.029, 0.037, 0.043)
 +      }
-+      val feedback = when (config.reverb) { "room" -> 0.57; "plate" -> 0.77; else -> 0.84 }
++      val baseFeedback = when (config.reverb) {
++        "room" -> 0.57; "chamber" -> 0.68; "hall" -> 0.84
++        "cathedral" -> 0.88; "plate" -> 0.77; else -> 0.62
++      }
++      val feedback = (baseFeedback + (config.boundedReverbDecay - 0.68) * 0.5).coerceIn(0.3, 0.95)
 +      times.map { Comb((rate * it).toInt() + index * 23, feedback) }
 +    } else emptyList()
++    private val preDelay = if (combs.isNotEmpty() && config.boundedPreDelayMs > 0.0)
++      DelayLine((rate * config.boundedPreDelayMs / 1000.0).toInt()) else null
 +    private val diffusion = if (combs.isNotEmpty())
 +      listOf(AllPass((rate * 0.005).toInt()), AllPass((rate * 0.0017).toInt())) else emptyList()
 +    private val echo = if (config.echo) Comb((rate * 0.28).toInt(), 0.36) else null
@@ -376,13 +403,25 @@ index 0000000000000000000000000000000000000000..3bf9f39cad9cb5e0e1378545964d82cc
 +      for (filter in filters) dry = filter.process(dry)
 +      var result = dry
 +      if (combs.isNotEmpty()) {
++        val reflectionInput = preDelay?.process(dry) ?: dry
 +        var wet = 0.0
-+        for (comb in combs) wet += comb.process(dry) * 0.25
++        for (comb in combs) wet += comb.process(reflectionInput) * 0.25
 +        for (allPass in diffusion) wet = allPass.process(wet)
-+        result = 0.78 * dry + 0.22 * wet
++        result = (1.0 - reverbMix) * dry + reverbMix * wet
 +      }
 +      echo?.let { result = 0.8 * result + 0.2 * it.process(result) }
 +      return result
++    }
++  }
++
++  private class DelayLine(size: Int) {
++    private val buffer = DoubleArray(size.coerceAtLeast(1))
++    private var position = 0
++    fun process(input: Double): Double {
++      val delayed = buffer[position]
++      buffer[position] = input
++      position = (position + 1) % buffer.size
++      return delayed
 +    }
 +  }
 +
@@ -670,10 +709,10 @@ index 0000000000000000000000000000000000000000..c214037095efcad679321f6ce4133812
 +}
 diff --git a/android/src/test/java/expo/modules/video/player/SoundEffectsAudioProcessorTest.kt b/android/src/test/java/expo/modules/video/player/SoundEffectsAudioProcessorTest.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..c86864eec65e155a00fb7facd136dc01d4607a52
+index 0000000000000000000000000000000000000000..654e7da2b63e204665fab8cd1f3760347d8fe67f
 --- /dev/null
 +++ b/android/src/test/java/expo/modules/video/player/SoundEffectsAudioProcessorTest.kt
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,136 @@
 +package expo.modules.video.player
 +
 +import androidx.media3.common.C
@@ -701,6 +740,25 @@ index 0000000000000000000000000000000000000000..c86864eec65e155a00fb7facd136dc01
 +    return FloatArray(output.remaining() / 4) { output.float }
 +  }
 +
++  @Test fun reverbControlsStayWithinSafeNativeBounds() {
++    val settings = SoundEffectsAudioProcessor.Settings(
++      reverb = "cathedral", reverbMix = 0.64, reverbDecay = 0.9, preDelayMs = 45.0
++    )
++    assertEquals("cathedral", settings.reverb)
++    assertEquals(0.64, settings.linearReverbMix, 0.000001)
++    assertEquals(0.9, settings.boundedReverbDecay, 0.000001)
++    assertEquals(45.0, settings.boundedPreDelayMs, 0.000001)
++
++    val clamped = SoundEffectsAudioProcessor.Settings(reverbMix = 1.4, reverbDecay = 2.0, preDelayMs = 300.0)
++    assertEquals(1.0, clamped.linearReverbMix, 0.000001)
++    assertEquals(0.95, clamped.boundedReverbDecay, 0.000001)
++    assertEquals(120.0, clamped.boundedPreDelayMs, 0.000001)
++    val nonFinite = SoundEffectsAudioProcessor.Settings(reverbMix = Double.NaN, reverbDecay = Double.NaN, preDelayMs = Double.NaN)
++    assertEquals(0.22, nonFinite.linearReverbMix, 0.000001)
++    assertEquals(0.68, nonFinite.boundedReverbDecay, 0.000001)
++    assertEquals(0.0, nonFinite.boundedPreDelayMs, 0.000001)
++  }
++
 +  @Test fun bypassIsBitExactAndEmptyDoesNotDiscardOutput() {
 +    val p = processor(SoundEffectsAudioProcessor.Settings())
 +    val input = byteArrayOf(0, 0, 0, 63)
@@ -721,7 +779,7 @@ index 0000000000000000000000000000000000000000..c86864eec65e155a00fb7facd136dc01
 +    assertEquals(1.0, processor(SoundEffectsAudioProcessor.Settings(gain = 0.25)).settings.linearGain, 0.0)
 +  }
 +  @Test fun everyEffectHandlesEmptyInput() {
-+    for (mode in listOf("off", "room", "hall", "plate")) {
++    for (mode in listOf("off", "room", "chamber", "hall", "cathedral", "plate", "spring")) {
 +      val p = processor(SoundEffectsAudioProcessor.Settings(eq = true, reverb = mode, echo = true))
 +      p.queueInput(AudioProcessor.EMPTY_BUFFER)
 +      samples(p, FloatArray(1024) { 0.1f })
@@ -730,13 +788,28 @@ index 0000000000000000000000000000000000000000..c86864eec65e155a00fb7facd136dc01
 +    }
 +  }
 +  @Test fun reverbPresetsHaveDifferentTails() {
-+    val tails = listOf("room", "hall", "plate").map { mode ->
++    val tails = listOf("room", "chamber", "hall", "cathedral", "plate", "spring").map { mode ->
 +      val p = processor(SoundEffectsAudioProcessor.Settings(reverb = mode))
 +      samples(p, FloatArray(24000) { if (it == 0) 0.5f else 0f })
 +    }
 +    tails.forEach { tail -> assertTrue(tail.drop(1).any { abs(it) > 0.00001 }) }
-+    assertFalse(tails[0].contentEquals(tails[1]))
-+    assertFalse(tails[1].contentEquals(tails[2]))
++    for (first in tails.indices) {
++      for (second in first + 1 until tails.size) {
++        assertFalse(tails[first].contentEquals(tails[second]))
++      }
++    }
++  }
++  @Test fun reverbMixAndDecayControlsChangeTheEffect() {
++    val input = FloatArray(48000) { if (it == 0) 0.5f else 0f }
++    val dry = samples(processor(SoundEffectsAudioProcessor.Settings(reverb = "room", reverbMix = 0.0)), input)
++    assertArrayEquals(input, dry, 0f)
++    val fullyWet = samples(processor(SoundEffectsAudioProcessor.Settings(reverb = "room", reverbMix = 1.0)), input)
++    assertEquals(0f, fullyWet[0], 0f)
++
++    val shortDecay = samples(processor(SoundEffectsAudioProcessor.Settings(reverb = "hall", reverbDecay = 0.2)), input)
++    val longDecay = samples(processor(SoundEffectsAudioProcessor.Settings(reverb = "hall", reverbDecay = 0.95)), input)
++    fun lateEnergy(values: FloatArray) = values.drop(12000).sumOf { it.toDouble() * it }
++    assertTrue(lateEnergy(longDecay) > lateEnergy(shortDecay))
 +  }
 +  @Test fun echoProducesDelayedSignal() {
 +    val p = processor(SoundEffectsAudioProcessor.Settings(echo = true))

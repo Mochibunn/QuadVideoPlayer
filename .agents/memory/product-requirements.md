@@ -88,7 +88,9 @@ fallback. Treat previews as cached still images, not additional playing video
 instances that compete with the four simultaneous streams.
 
 Preserve whole-layout picture-in-picture and saved sound-playground settings
-(reverb variants, echo, and adjustable EQ) for videos and background audio.
+(room, chamber, hall, cathedral, plate, and spring reverb, echo, and adjustable
+EQ) for videos and background audio. Reverb includes wet/dry, decay, and
+pre-delay controls.
 
 **Why:** The user requested PiP and fun sound-processing controls. Whole-layout
 PiP preserves the app's four-stream purpose; processing each native PCM chain
@@ -119,7 +121,8 @@ They also want multiple bouncing slideshows from the same shared pool,
 audio, animate GIFs, preserve aspect ratio and screen bounds, and pass touches
 through the overlay. Include its pool and controls in saved sessions. Multiple
 instances must share the pool, not require separate copies, and keep independent
-controls and timing. Hardware resource limits still apply.
+controls and timing. Each instance can shuffle its image order. Hardware resource
+limits still apply.
 
 The user wants to link a Reddit account and pull posts from configurable
 subreddits, plus retrieve images from specific booru websites using tag filters.
@@ -132,6 +135,17 @@ supply **images, GIFs, and videos**, not a full text-post reader.
 **How to apply:** Keep searches configurable and independently assignable rather
 than merging every query into one undifferentiated image pool. Confirm the booru
 sites and desired Reddit media types before choosing provider-specific APIs.
+
+The user also wants independent tagged searches from rule34.xxx and e621.net.
+Rule34 API credentials are optional per-device credentials, never saved in
+sessions; e621 uses its public API.
+
+**Why:** The user explicitly requested both sites and approved secure on-device
+Rule34 API credential setup.
+
+**How to apply:** Keep site-specific rating syntax and request limits. Obtain API
+credentials through the site's official account settings, store them only in
+Android SecureStore, and never bypass a site's authentication or challenge.
 
 Timed loop sessions should count time only during video playback: pausing stops
 the clock but preserves the same session for resume. Explicitly ending playback
@@ -146,6 +160,15 @@ external account or remote service.
 **How to apply:** Do not record a pause as a finished score or count time while
 video playback is paused. Preserve completed scores and the lifetime play total
 on device across app restarts.
+
+The four video quadrants share local last-played history: prioritize unwatched
+clips, then clips played least recently, with random tie-breaking.
+
+**Why:** The user asked for each quadrant to favor unwatched or oldest-watched
+videos while maintaining a shared sense of recency.
+
+**How to apply:** Keep history across app restarts and session resumes, and apply
+the same global ordering to initial selection and subsequent per-quadrant picks.
 
 Each background audio track may be boosted up to 200%; above 100% can distort
 audio.

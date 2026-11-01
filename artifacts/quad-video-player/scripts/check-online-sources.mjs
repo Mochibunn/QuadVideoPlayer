@@ -21,6 +21,8 @@ const plain = (value) => JSON.parse(JSON.stringify(value));
 const board = core.parseOnlineSource({ id: 'board', name: 'Scenery', kind: 'booru',
   board: 'landscapes.booru.org', tags: 'blue_sky -rain', safeOnly: true });
 const reddit = core.parseOnlineSource({ id: 'reddit', name: 'Animals', kind: 'reddit', subreddits: 'aww, cats', safeOnly: true });
+const rule34 = core.parseOnlineSource({ id: 'rule34', name: 'Foxes', kind: 'rule34', tags: 'fox landscape', safeOnly: true });
+const e621 = core.parseOnlineSource({ id: 'e621', name: 'Wildlife', kind: 'e621', tags: 'fox landscape', safeOnly: true });
 test('board addresses are restricted to HTTPS booru.org-hosted boards', () => {
   assert.equal(core.normalizeBoard('landscapes.booru.org/index.php?page=post'), 'https://landscapes.booru.org');
   for (const value of ['http://landscapes.booru.org', 'https://booru.org.evil.test', 'https://x.booru.org@evil.test',
@@ -32,6 +34,19 @@ test('tags and pagination are encoded without changing their search syntax', () 
   assert.equal(url.searchParams.get('pid'), '40');
   assert.equal(url.searchParams.get('page'), 'post');
   assert.equal(url.searchParams.get('s'), 'list');
+});
+test('Rule34 and e621 use safe-rated site APIs with their own tag syntax', () => {
+  const rule34Url = new URL(core.rule34SearchUrl(rule34, 2, { userId: '12345', apiKey: 'test-key' }));
+  assert.equal(rule34Url.hostname, 'api.rule34.xxx');
+  assert.equal(rule34Url.searchParams.get('tags'), 'fox landscape rating:s');
+  assert.equal(rule34Url.searchParams.get('pid'), '2');
+  assert.equal(rule34Url.searchParams.get('user_id'), '12345');
+  assert.equal(rule34Url.searchParams.get('api_key'), 'test-key');
+  const e621Url = new URL(core.e621SearchUrl(e621, 1));
+  assert.equal(e621Url.hostname, 'e621.net');
+  assert.equal(e621Url.pathname, '/posts.json');
+  assert.equal(e621Url.searchParams.get('tags'), 'fox landscape rating:safe');
+  assert.equal(e621Url.searchParams.get('limit'), '40');
 });
 const thumb = (id, rating = 'Safe', path = '') => `<span class="thumb"><a href="${path || `index.php?page=post&amp;s=view&amp;id=${id}`}"><img src="https://img.booru.org/board/thumbnails/1/thumbnail_hash.jpg" title="blue_sky score:0 rating:${rating}"/></a></span>`;
 const fastPacing = { setTimeout: (callback, ms, ...args) => setTimeout(callback, ms === 1500 ? 0 : ms, ...args) };
@@ -110,11 +125,57 @@ test('classic booru XML yields HTTPS image/GIF URLs with post attribution', () =
   assert.equal(page.items[0].uri, 'https://img.booru.org/a.gif?x=1&y=2');
   assert.match(page.items[0].postUrl, /id=1$/);
 });
-test('client safe filtering also excludes unknown ratings and non-image booru files', () => {
+test('Rule34 and e621 API results map originals, previews, ratings, and video formats', () => {
+  const rule34Posts = [
+    { id: 41, rating: 's', file_url: 'https://img.rule34.xxx/images/safe.jpg',
+      preview_url: 'https://img.rule34.xxx/previews/safe.jpg', tags: 'fox landscape' },
+    { id: 42, rating: 's', file_url: 'https://img.rule34.xxx/images/loop.webm',
+      preview_url: 'https://img.rule34.xxx/previews/loop.jpg', tags: 'fox animation' },
+    { id: 43, rating: 'e', file_url: 'https://img.rule34.xxx/images/unsafe.jpg', tags: 'fox' },
+  ];
+  const parsedRule34 = core.parseRemoteBooruPage(rule34Posts, rule34, 0);
+  assert.equal(parsedRule34.items.length, 2);
+  assert.equal(parsedRule34.items[1].kind, 'video');
+  assert.equal(parsedRule34.items[1].preview, rule34Posts[1].preview_url);
+  assert.equal(parsedRule34.items[0].postUrl, 'https://rule34.xxx/index.php?page=post&s=view&id=41');
+  assert.throws(() => core.parseRemoteBooruPage('Missing authentication. Go to api.rule34.xxx for more information.',
+    rule34, 0), /requires an API user ID and key/);
+
+  const parsedE621 = core.parseRemoteBooruPage({ posts: [
+    { id: 51, rating: 's', file: { url: 'https://static1.e621.net/data/file.mp4' },
+      preview: { url: 'https://static1.e621.net/data/preview.jpg' }, tags: { general: ['fox', 'landscape'] } },
+    { id: 52, rating: 'q', file: { url: 'https://static1.e621.net/data/unsafe.jpg' }, tags: { general: ['fox'] } },
+  ] }, e621, 0);
+  assert.equal(parsedE621.items.length, 1);
+  assert.equal(parsedE621.items[0].kind, 'video');
+  assert.equal(parsedE621.items[0].preview, 'https://static1.e621.net/data/preview.jpg');
+  assert.equal(parsedE621.items[0].postUrl, 'https://e621.net/posts/51');
+});
+test('Rule34 authenticated fetch sends credentials only to its official HTTPS API', async () => {
+  let requested;
+  const fastApi = { ...fastPacing,
+    setTimeout: (callback, ms, ...args) => setTimeout(callback, ms === 1000 || ms === 1500 ? 0 : ms, ...args),
+  };
+  const client = await load('lib/online-sources.ts',
+    { 'fast-xml-parser': require('fast-xml-parser'), htmlparser2: require('htmlparser2') },
+    { ...fastApi, fetch: async (url) => {
+      requested = new URL(url);
+      return { ok: true, status: 200, text: async () => JSON.stringify([{ id: 61, rating: 's',
+        file_url: 'https://img.rule34.xxx/images/result.gif', tags: 'fox' }]) };
+    } });
+  const page = await client.fetchSourcePage(rule34, 0, () => assert.fail('Unexpected Reddit request'),
+    undefined, undefined, { userId: '12345', apiKey: 'private-test-value' });
+  assert.equal(page.items.length, 1);
+  assert.equal(requested.protocol, 'https:');
+  assert.equal(requested.hostname, 'api.rule34.xxx');
+  assert.equal(requested.searchParams.get('api_key'), 'private-test-value');
+});
+test('client safe filtering excludes unknown ratings while allowing safe video files', () => {
   const data = [{ id: 1, rating: 'e', file_url: 'https://img.booru.org/a.jpg' },
     { id: 2, file_url: 'https://img.booru.org/b.gif' }, { id: 3, rating: 's', file_url: 'https://img.booru.org/c.webm' }];
-  assert.equal(core.parseBooruPage(JSON.stringify(data), board, 0).items.length, 0);
-  assert.equal(core.parseBooruPage(JSON.stringify(data), { ...board, safeOnly: false }, 0).items.length, 2);
+  assert.equal(core.parseBooruPage(JSON.stringify(data), board, 0).items.length, 1);
+  assert.equal(core.parseBooruPage(JSON.stringify(data), { ...board, safeOnly: false }, 0).items.length, 3);
+  assert.equal(core.parseBooruPage(JSON.stringify(data), board, 0).items[0].uri, 'https://img.booru.org/c.webm');
 });
 test('empty feeds are valid, but HTML challenges and malformed API responses are errors', () => {
   assert.equal(core.parseBooruPage('<posts/>', board, 0).items.length, 0);
@@ -292,6 +353,7 @@ test('real source provider keeps searches independent and ignores late deleted r
       async getItem() { return saved; }, async setItem(_key, value) { if (failWrite) throw new Error('Storage full'); saved = value; },
     },
     '@/lib/reddit-account': { redditGet() { assert.fail('Unexpected request'); } },
+    '@/lib/rule34-account': { async readRule34Credentials() { return null; } },
     '@/lib/online-sources': { ...core, fetchSourcePage: (source, next) =>
       new Promise((resolve) => pending.push({ id: source.id, next, resolve })) },
   });

@@ -4,7 +4,7 @@ import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { useSlideshow, type SlideshowRuntime } from '@/hooks/useSlideshow';
 import { useColors } from '@/hooks/useColors';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
-import { bounceKeyframes, slideshowBounds, type SlideshowImage, type SlideshowInstance } from '@/lib/slideshow';
+import { bounceKeyframes, nextSlideshowIndex, slideshowBounds, type SlideshowImage, type SlideshowInstance } from '@/lib/slideshow';
 
 export default function SlideshowOverlay({ active }: { active: boolean }) {
   const { slideshow: s, runtime, revision } = useSlideshow();
@@ -50,12 +50,12 @@ const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, 
   const indexRef = useRef(index);
   const previousInput = useRef({ pool, index: s.index });
   const advance = useCallback(() => {
-    const next = (indexRef.current + 1) % Math.max(1, pool.length);
+    const next = nextSlideshowIndex(pool.length, indexRef.current, s.shuffle);
     indexRef.current = next;
     const entry = runtime.current.get(s.id);
     if (entry) entry.index = next;
     setIndex(next);
-  }, [pool.length, runtime, s.id]);
+  }, [pool.length, runtime, s.id, s.shuffle]);
   useEffect(() => {
     if (previousInput.current.pool === pool && previousInput.current.index === s.index) return;
     const previousImage = previousInput.current.pool[indexRef.current]?.uri;

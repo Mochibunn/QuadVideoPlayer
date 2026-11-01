@@ -34,7 +34,7 @@ export default function SoundEffectsSettings() {
           ['room', 'Cozy room'], ['chamber', 'Warm chamber'], ['hall', 'Concert hall'],
           ['cathedral', 'Cathedral'], ['plate', 'Studio plate'], ['spring', 'Vintage spring'],
         ] as [Exclude<Reverb, 'off'>, string][]).map(([reverb, name]) =>
-          chip(name, sound.reverb === reverb, () => setSound((s) => ({ ...s, reverb })))}
+          <View key={reverb}>{chip(name, sound.reverb === reverb, () => setSound((s) => ({ ...s, reverb })))}</View>)}
       </View>}
       {sound.reverb !== 'off' && <>
         {([

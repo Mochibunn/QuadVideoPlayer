@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchSourcePage, parseOnlineSources, parseOnlineSource, type OnlineSource, type RemoteMedia } from '@/lib/online-sources';
 import { redditGet } from '@/lib/reddit-account';
+import { readRule34Credentials } from '@/lib/rule34-account';
 
 const KEY = 'quad.online-sources.v1';
 export type SourceResult = {
@@ -52,11 +53,12 @@ export function OnlineSourcesProvider({ children }: { children: React.ReactNode 
     controllers.current.set(id, controller);
     update(id, { loading: true, error: '', notice: '' });
     try {
+      const rule34Credentials = source.kind === 'rule34' ? await readRule34Credentials() : undefined;
       const page = await fetchSourcePage(source, more ? previous.cursor : null, redditGet, controller.signal, (partial) => {
         if (!previous.items.length && controllers.current.get(id) === controller && !controller.signal.aborted) {
           update(id, { items: partial });
         }
-      });
+      }, rule34Credentials ?? undefined);
       if (controllers.current.get(id) !== controller) return;
       const combined = more ? [...previous.items, ...page.items] : page.items;
       const seen = new Set<string>();

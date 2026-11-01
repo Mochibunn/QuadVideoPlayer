@@ -36,7 +36,8 @@ function fixture() {
     audio: [{ ...media('rain.wav'), position: 71.2, volume: 0.3, muted: true, paused: true }],
     globalPlaying: true, sourceLabel: 'Downloads',
     settings: { themeId: 'amethyst', normalize: true, sync: false, fill: true,
-      controlsDelay: 0, sharedVolume: 0.4, sound: { eq: true, bands: [-4, 0, 3, 0, 5], echo: true, reverb: 'hall' } },
+      controlsDelay: 0, sharedVolume: 0.4, sound: { eq: true, bands: [-4, 0, 3, 0, 5],
+        echo: true, reverb: 'hall', reverbMix: 22, reverbDecay: 0.68, preDelayMs: 0 } },
   };
 }
 test('complete session round-trips all independent states and sound settings', () => {

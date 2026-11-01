@@ -14,16 +14,24 @@ test('first launch uses bit-exact original audio with all effects off', () => {
   assert.deepEqual(parseSoundSettings(null), DEFAULT_SOUND);
   assert.equal(DEFAULT_SOUND.eq, false);
   assert.equal(DEFAULT_SOUND.reverb, 'off');
+  assert.equal(DEFAULT_SOUND.reverbMix, 22);
+  assert.equal(DEFAULT_SOUND.reverbDecay, 0.68);
+  assert.equal(DEFAULT_SOUND.preDelayMs, 0);
   assert.equal(DEFAULT_SOUND.echo, false);
 });
 test('all reverb presets and EQ gains round-trip through storage', () => {
-  for (const reverb of ['off', 'room', 'hall', 'plate']) {
-    const value = { eq: true, bands: [-12, -6, 0, 6, 12], reverb, echo: true };
+  for (const reverb of ['off', 'room', 'chamber', 'hall', 'cathedral', 'plate', 'spring']) {
+    const value = { eq: true, bands: [-12, -6, 0, 6, 12], reverb, reverbMix: 64,
+      reverbDecay: 0.72, preDelayMs: 35, echo: true };
     assert.deepEqual(parseSoundSettings(JSON.stringify(value)), value);
   }
 });
 test('stored band values are bounded, rounded, and sanitized', () => {
   assert.deepEqual(parseSoundSettings('{"bands":[-100,100,1.8,"bad",null]}').bands, [-12, 12, 2, 0, 0]);
+  const settings = parseSoundSettings('{"reverbMix":101,"reverbDecay":2,"preDelayMs":240}');
+  assert.equal(settings.reverbMix, 100);
+  assert.equal(settings.reverbDecay, 0.95);
+  assert.equal(settings.preDelayMs, 120);
 });
 test('unknown reverb and incorrect toggle types cannot enable effects', () => {
   assert.deepEqual(parseSoundSettings('{"reverb":"unknown","eq":"true","echo":1}'), DEFAULT_SOUND);

@@ -6,7 +6,7 @@ import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react
 import { useColors } from '@/hooks/useColors';
 import { useSlideshow } from '@/hooks/useSlideshow';
 import { pickMediaFiles } from '@/lib/media-picker';
-import { addSlideshow, filterSlideshowPool, isSlideshowImage, type SlideshowInstance } from '@/lib/slideshow';
+import { addSlideshow, filterSlideshowPool, isSlideshowImage, nextSlideshowIndex, type SlideshowInstance } from '@/lib/slideshow';
 import SettingSwitch from '../SettingSwitch';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
 
@@ -129,7 +129,7 @@ export default function SlideshowPanel({ visible, onClose, onManageSources }: {
                     if (entry?.next) entry.next();
                     else {
                       const length = s.sourceId ? online.results[s.sourceId]?.images.length ?? 0 : group.pool.length;
-                      const index = ((entry?.index ?? s.index) + 1) % Math.max(1, length);
+                      const index = nextSlideshowIndex(length, entry?.index ?? s.index, s.shuffle);
                       runtime.current.set(s.id, { index });
                       update({ index });
                     }
@@ -150,6 +150,11 @@ export default function SlideshowPanel({ visible, onClose, onManageSources }: {
               {slider('Vertical position', 'y', 0, 100, 1, s.y, '%')}
               {text('Position: 0% is left/top; 100% is right/bottom. The image always stays inside the screen.', true)}
               {slider('Time per image', 'seconds', 1, 60, 1, s.seconds, ' seconds')}
+              <View style={styles.row}>
+                {text('Shuffle image order')}
+                <SettingSwitch label="Shuffle image order" value={s.shuffle} disabled={picking}
+                  onValueChange={(shuffle) => update({ shuffle })} />
+              </View>
               <View style={styles.row}>
                 {text('DVD-style bounce')}
                 <SettingSwitch label="DVD-style bounce" value={s.bounce} disabled={picking}

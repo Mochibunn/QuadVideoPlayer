@@ -1,5 +1,6 @@
 - [Product requirements](product-requirements.md) — Native Android tablet player, OLED-black theme, and the user's chosen purple primary.
 - [Android SDK compatibility](android-sdk.md) — Inspect Google's package metadata before treating a required SDK version as unavailable.
+- [APK release verification](android-build-metadata.md) — Verify package, version, and signature from the generated APK, not only Expo configuration.
 - [Expo native patches](expo-native-patches.md) — Patched Android modules must build from source; precompiled publications otherwise omit local Kotlin changes.
 - [Media compatibility](media-compatibility.md) — Background audio accepts videos without using video decoders; container recognition does not guarantee codec support.
 - [Native audio buffers](native-audio-buffers.md) — Empty Media3 input must be a no-op before output allocation, even with effects disabled.

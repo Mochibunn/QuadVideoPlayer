@@ -5,7 +5,7 @@ export type SoundSettings = {
 };
 export const DEFAULT_SOUND: SoundSettings = {
   eq: false, bands: [0, 0, 0, 0, 0], reverb: 'off',
-  reverbMix: 22, reverbDecay: 0.68, preDelayMs: 18, echo: false,
+  reverbMix: 22, reverbDecay: 0.68, preDelayMs: 0, echo: false,
 };
 export const EQ_PRESETS = {
   Flat: [0, 0, 0, 0, 0],

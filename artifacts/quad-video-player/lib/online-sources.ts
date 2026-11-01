@@ -1,5 +1,6 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { DomUtils, parseDocument } from 'htmlparser2';
+import type { Rule34Credentials } from './rule34-account';
 
 export type OnlineSource = {
   id: string; name: string; kind: 'booru' | 'rule34' | 'e621' | 'reddit'; board: string; tags: string;
@@ -68,13 +69,15 @@ export function booruSearchUrl(source: OnlineSource, page: number): string {
   return url.href;
 }
 function apiTags(source: OnlineSource) {
-  return [source.tags, source.safeOnly ? 'rating:safe' : ''].filter(Boolean).join(' ');
+  const safeTag = source.kind === 'e621' ? 'rating:safe' : 'rating:s';
+  return [source.tags, source.safeOnly ? safeTag : ''].filter(Boolean).join(' ');
 }
-export function rule34SearchUrl(source: OnlineSource, page: number): string {
+export function rule34SearchUrl(source: OnlineSource, page: number, credentials: Rule34Credentials): string {
   const url = new URL('/index.php', 'https://api.rule34.xxx');
   url.search = new URLSearchParams({
     page: 'dapi', s: 'post', q: 'index', json: '1', limit: '40',
     pid: String(Math.max(0, Math.floor(page))), tags: apiTags(source),
+    user_id: credentials.userId, api_key: credentials.apiKey,
   }).toString();
   return url.href;
 }
@@ -181,7 +184,18 @@ function recordsFromApi(value: unknown): Record<string, any>[] {
   return Object.values(object).filter((post) => post && typeof post === 'object' &&
     (typeof post.id === 'number' || typeof post.id === 'string'));
 }
-function parseRemoteBooruPage(value: unknown, source: OnlineSource, page: number): SourcePage {
+export function parseRemoteBooruPage(value: unknown, source: OnlineSource, page: number): SourcePage {
+  if (typeof value === 'string') {
+    if (source.kind === 'rule34' && /missing authentication/i.test(value)) {
+      throw new Error('Rule34 requires an API user ID and key. Connect them in Online media sources.');
+    }
+    throw new Error(`${source.kind} returned an error instead of a media listing.`);
+  }
+  const response = value as Record<string, unknown> | null;
+  if (response && typeof response === 'object' &&
+    (response.success === false || response.success === 'false')) {
+    throw new Error(String(response.message ?? `${source.kind} refused this search.`).slice(0, 240));
+  }
   const posts = recordsFromApi(value);
   const items: RemoteMedia[] = [];
   for (const post of posts) {
@@ -284,11 +298,16 @@ function apiRequest<T>(host: string, signal: AbortSignal, work: () => Promise<T>
   void tail.then(() => { if (apiQueues.get(host) === tail) apiQueues.delete(host); });
   return next;
 }
-async function fetchBooruApiPage(source: OnlineSource, page: number, signal?: AbortSignal): Promise<SourcePage> {
+async function fetchBooruApiPage(
+  source: OnlineSource, page: number, signal?: AbortSignal, credentials?: Rule34Credentials,
+): Promise<SourcePage> {
   const requestSignal = signal ?? new AbortController().signal;
   const e621 = source.kind === 'e621';
   const host = e621 ? 'e621.net' : 'api.rule34.xxx';
-  const url = e621 ? e621SearchUrl(source, page) : rule34SearchUrl(source, page);
+  if (!e621 && !credentials) {
+    throw new Error('Rule34 API credentials are required. Connect your account in Online media sources.');
+  }
+  const url = e621 ? e621SearchUrl(source, page) : rule34SearchUrl(source, page, credentials!);
   return apiRequest(host, requestSignal, async () => {
     const response = await fetch(url, { signal: requestSignal,
       headers: { Accept: 'application/json', 'User-Agent': 'QuadVideoPlayer/1.12.0 (Android; read-only)' } });
@@ -306,11 +325,11 @@ async function fetchBooruApiPage(source: OnlineSource, page: number, signal?: Ab
 }
 export async function fetchSourcePage(source: OnlineSource, cursor: string | number | null,
   redditGet: (path: string) => Promise<unknown>, signal?: AbortSignal,
-  onProgress?: (items: RemoteMedia[]) => void): Promise<SourcePage> {
+  onProgress?: (items: RemoteMedia[]) => void, rule34Credentials?: Rule34Credentials): Promise<SourcePage> {
   if (source.kind === 'reddit') return parseRedditPage(await redditGet(redditListingPath(source, cursor)), source);
   if (source.kind === 'rule34' || source.kind === 'e621') {
     const page = typeof cursor === 'number' ? cursor : 0;
-    return fetchBooruApiPage(source, page, signal);
+    return fetchBooruApiPage(source, page, signal, rule34Credentials);
   }
   if (signal?.aborted) throw new Error('The search was canceled.');
   const controller = new AbortController();

@@ -37,6 +37,16 @@ test('provider MIME types work without an extension', () => {
   }
 });
 
+test('video source routing explicitly selects progressive playback for local media', () => {
+  for (const uri of ['file:///Movies/clip.mp4', 'content://provider/clip.webm', 'file:///clip.mov', 'file:///clip.mkv']) {
+    assert.equal(media.videoSourceForUri(uri).uri, uri);
+    assert.equal(media.videoSourceForUri(uri).contentType, 'progressive');
+  }
+  assert.equal(media.videoSourceForUri('https://media.test/live.m3u8').contentType, 'hls');
+  assert.equal(media.videoSourceForUri('https://media.test/movie.mpd').contentType, 'dash');
+  assert.equal(media.videoSourceForUri('https://media.test/movie.ism/manifest').contentType, 'smoothStreaming');
+});
+
 test('unrelated files, misleading extension fragments and extensionless names are rejected', () => {
   for (const name of ['image.jpg', 'notes.pdf', 'clip.mp4.exe', 'mp4', 'notes', 'music.mp3.zip']) {
     assert.equal(media.isVideoFile({ name }), false);

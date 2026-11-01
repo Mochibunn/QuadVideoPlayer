@@ -25,6 +25,20 @@ and does not bypass sign-in requirements or browser challenges.
 The safe-rated filter is enabled initially and checked client-side. Ratings
 are supplied by the board and cannot guarantee the nature of its content.
 
+## Rule34 and e621
+
+Choose **Rule34.xxx** or **e621.net** when adding an online search, then enter
+space-separated tags using that site's syntax. Safe-rated posts are requested by
+default and checked again on-device. The app uses each site's JSON API, paginates
+in small batches, and spaces requests to avoid rapid polling. HTTP denial and
+rate-limit responses stop the search; the app does not scrape CAPTCHA pages.
+
+Rule34 requires a numeric user ID and API key from the site's account settings.
+The optional account panel opens the official settings page. Its key is stored in
+Android SecureStore and sent directly to the Rule34 API; it is not stored in
+AsyncStorage or saved-session exports. Disconnecting removes the key from the
+device. e621 searches use the public API and do not require an account.
+
 ## Reddit account setup
 
 Devvit CLI authentication belongs to a Reddit-hosted Devvit app. The native
@@ -72,7 +86,7 @@ an active video pool requires confirmation and never deletes local files or
 the saved session.
 
 Search definitions persist locally. **Save session** includes search definitions,
-source assignments and live slideshow indices, but no Reddit credentials.
+source assignments and live slideshow indices, but no Reddit or Rule34 credentials.
 Online streams need internet and may expire. Refresh a source and play its
 current videos again if old links are no longer available.
 
