@@ -15,11 +15,11 @@ The user requested accent themes #dddddd, #109b61, #f6392c, #ffd248, plus other 
 
 **How to apply:** Treat accent themes as alternatives to the default purple, not as light-background themes.
 
-The user specified: “Implement a volume normalization toggle that reveals a ‘Sync’ toggle. The on position is true loudness normalization, off is shared slider levels.”
+The user wants Normalize volume to reveal a Sync toggle. Their later correction explicitly reverses the earlier Sync mapping: Sync ON shares slider levels; Sync OFF performs true loudness normalization.
 
 **Why:** Shared slider values alone do not normalize different source loudness, and the user explicitly distinguished the modes.
 
-**How to apply:** Normalize off leaves independent controls. Normalize on reveals Sync; Sync on must process actual audio loudness, and Sync off links slider levels. Describe live adaptive leveling honestly rather than claiming a whole-file loudness scan.
+**How to apply:** Normalize off leaves independent controls. Normalize on reveals Sync; Sync on links slider levels, and Sync off processes actual audio loudness. Describe live adaptive leveling honestly rather than claiming a whole-file loudness scan.
 
 Pool deletion means removing selected videos from the playback pool, not destroying their original files.
 
@@ -32,3 +32,9 @@ The user wants to add multiple background audio tracks that loop and have indivi
 **Why:** The user explicitly requested simultaneous background audio layers in addition to the four video streams.
 
 **How to apply:** Keep each track's loop and volume independent. Closing its controls or scrolling the list must not stop its audio.
+
+The default purple theme is called “GameCubed,” not Amethyst. The user also wants a Fit/Fill video setting, more OLED accent themes, a fun splash screen, and settings that scroll when taller than the screen.
+
+**Why:** The user explicitly requested these appearance and display behaviors.
+
+**How to apply:** Preserve the default purple color while using its requested display name. Fit must show the whole video; Fill may crop but must not stretch or spill outside the video's quarter.

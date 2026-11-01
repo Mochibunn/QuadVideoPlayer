@@ -16,7 +16,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Switch,
   StyleSheet,
   Text,
   View,
@@ -24,6 +23,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ColorContext, useColors } from '@/hooks/useColors';
 import BackgroundAudioMixer from '@/components/audio/BackgroundAudioMixer';
+import SettingSwitch from '@/components/SettingSwitch';
+import { getVideoAudioMode } from '@/lib/audio-mode';
+import { hasVideoExtension, isVideoFile, mediaPlaybackError } from '@/lib/media-formats';
 import {
   getThemeColors,
   themePresets,
@@ -41,31 +43,18 @@ type ActivePanel = 'settings' | 'pool' | 'audio' | null;
 const THEME_STORAGE_KEY = 'quad-video-player.theme';
 const NORMALIZE_STORAGE_KEY = 'quad-video-player.normalize';
 const SYNC_STORAGE_KEY = 'quad-video-player.sync';
+const VIDEO_FILL_STORAGE_KEY = 'quad-video-player.video-fill';
 
 function isThemeId(value: string | null): value is ThemeId {
   return themePresets.some((theme) => theme.id === value);
 }
-
-const VIDEO_EXTENSIONS = new Set([
-  '3gp',
-  'avi',
-  'm4v',
-  'mkv',
-  'mov',
-  'mp4',
-  'mpeg',
-  'mpg',
-  'ts',
-  'webm',
-]);
 
 const STREAM_COUNT = 4;
 const START_VOLUME = 0.25;
 const NORMALIZATION_APK_ERROR = 'Loudness normalization requires the standalone Android APK, not Expo Go.';
 
 function isSupportedVideo(name: string) {
-  const extension = name.split('.').pop()?.toLowerCase() ?? '';
-  return VIDEO_EXTENSIONS.has(extension);
+  return hasVideoExtension(name);
 }
 
 async function scanFolderForVideos(rootUri: string) {
@@ -188,6 +177,7 @@ function VideoTile({
   linkedVolume,
   sharedVolume,
   onSharedVolumeChange,
+  fillVideos,
 }: {
   asset: VideoAsset;
   pool: VideoAsset[];
@@ -197,6 +187,7 @@ function VideoTile({
   linkedVolume: boolean;
   sharedVolume: number;
   onSharedVolumeChange: (volume: number) => void;
+  fillVideos: boolean;
 }) {
   const colors = useColors();
   const [currentAsset, setCurrentAsset] = useState(asset);
@@ -253,7 +244,7 @@ function VideoTile({
   useEventListener(player, 'statusChange', ({ status, error }) => {
     setIsLoading(status === 'loading' || status === 'idle');
     if (status === 'error') {
-      setErrorMessage(error?.message ?? 'This video could not be played.');
+      setErrorMessage(mediaPlaybackError(error?.message));
     } else if (status === 'readyToPlay') {
       setErrorMessage('');
     }
@@ -369,9 +360,9 @@ function VideoTile({
         <VideoView
           player={player}
           style={StyleSheet.absoluteFill}
-          contentFit="contain"
+          contentFit={fillVideos ? 'cover' : 'contain'}
           nativeControls={false}
-          surfaceType="surfaceView"
+          surfaceType="textureView"
         />
         {isLoading && !errorMessage && (
           <View style={styles.videoStatus}>
@@ -490,7 +481,9 @@ export default function QuadVideoPlayerScreen() {
   const colors = getThemeColors(themeId);
   const [themeLoaded, setThemeLoaded] = useState(false);
   const [normalizeEnabled, setNormalizeEnabled] = useState(false);
-  const [syncEnabled, setSyncEnabled] = useState(true);
+  const [syncEnabled, setSyncEnabled] = useState(false);
+  const [fillVideos, setFillVideos] = useState(false);
+  const audioMode = getVideoAudioMode(normalizeEnabled, syncEnabled);
   const [playbackSettingsLoaded, setPlaybackSettingsLoaded] = useState(false);
   const [sharedVolume, setSharedVolume] = useState(START_VOLUME);
   const [backgroundTrackCount, setBackgroundTrackCount] = useState(0);
@@ -534,14 +527,17 @@ export default function QuadVideoPlayerScreen() {
 
   useEffect(() => {
     let mounted = true;
-    AsyncStorage.multiGet([NORMALIZE_STORAGE_KEY, SYNC_STORAGE_KEY])
-      .then(([normalizeEntry, syncEntry]) => {
+    AsyncStorage.multiGet([NORMALIZE_STORAGE_KEY, SYNC_STORAGE_KEY, VIDEO_FILL_STORAGE_KEY])
+      .then(([normalizeEntry, syncEntry, fillEntry]) => {
         if (!mounted) return;
         if (normalizeEntry[1] !== null) {
           setNormalizeEnabled(normalizeEntry[1] === 'true');
         }
         if (syncEntry[1] !== null) {
           setSyncEnabled(syncEntry[1] === 'true');
+        }
+        if (fillEntry[1] !== null) {
+          setFillVideos(fillEntry[1] === 'true');
         }
       })
       .catch(() => {
@@ -563,13 +559,14 @@ export default function QuadVideoPlayerScreen() {
     AsyncStorage.multiSet([
       [NORMALIZE_STORAGE_KEY, String(normalizeEnabled)],
       [SYNC_STORAGE_KEY, String(syncEnabled)],
+      [VIDEO_FILL_STORAGE_KEY, String(fillVideos)],
     ]).catch(() => {
       Alert.alert(
         'Could not save audio settings',
         'These settings will reset when the app is restarted.',
       );
     });
-  }, [normalizeEnabled, playbackSettingsLoaded, syncEnabled]);
+  }, [normalizeEnabled, playbackSettingsLoaded, syncEnabled, fillVideos]);
 
   const startStreams = useCallback((videos: VideoAsset[]) => {
     if (videos.length === 0) {
@@ -586,16 +583,15 @@ export default function QuadVideoPlayerScreen() {
     setIsPicking(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'video/*',
+        // Some Android providers report MOV/MKV/etc. as generic binary files.
+        // Do not hide those files based on unreliable MIME metadata.
+        type: '*/*',
         multiple: true,
         copyToCacheDirectory: false,
       });
       if (!result.canceled) {
         const videos = result.assets
-          .filter(
-            (item) =>
-              item.mimeType?.startsWith('video/') || isSupportedVideo(item.name),
-          )
+          .filter(isVideoFile)
           .map((item) => ({
             id: item.uri,
             name: item.name,
@@ -609,6 +605,10 @@ export default function QuadVideoPlayerScreen() {
         } else {
           setSourceLabel('Selected videos');
           startStreams(videos);
+          const ignored = result.assets.length - videos.length;
+          if (ignored > 0) {
+            Alert.alert('Some files were not added', `${ignored} selected file(s) were not recognized as video files.`);
+          }
         }
       }
     } catch (error) {
@@ -795,18 +795,23 @@ export default function QuadVideoPlayerScreen() {
 
         {activeVideos.length > 0 ? (
           <View style={styles.grid}>
-            {activeVideos.map((asset, index) => (
+            {[0, 1].map((row) => (
+              <View key={row} style={styles.gridRow}>
+            {activeVideos.slice(row * 2, row * 2 + 2).map((asset, column) => (
               <VideoTile
-                key={`${session}-${index}`}
+                key={`${session}-${row * 2 + column}`}
                 asset={asset}
                 pool={pool}
-                index={index}
+                index={row * 2 + column}
                 globalPlaying={globalPlaying}
-                normalizeLoudness={normalizeEnabled && syncEnabled}
-                linkedVolume={normalizeEnabled && !syncEnabled}
+                normalizeLoudness={audioMode === 'normalized'}
+                linkedVolume={audioMode === 'shared'}
                 sharedVolume={sharedVolume}
                 onSharedVolumeChange={setSharedVolume}
+                fillVideos={fillVideos}
               />
+            ))}
+              </View>
             ))}
           </View>
         ) : (
@@ -833,6 +838,8 @@ export default function QuadVideoPlayerScreen() {
             <Text style={[styles.emptyDescription, { color: colors.mutedForeground }]}>
               Pick a video folder or select multiple files. Four clips start at
               random, then each stream independently chooses its next video.
+              {'\n'}MP4, WebM, MOV, MKV and other common containers.
+              {'\n'}Codec support depends on your Android device.
             </Text>
             <View style={styles.emptyActions}>
               <ActionButton
@@ -877,7 +884,7 @@ export default function QuadVideoPlayerScreen() {
             ]}
           >
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.settingCopy}>
                 <Text style={[styles.modalTitle, { color: colors.foreground }]}>
                   Settings
                 </Text>
@@ -894,6 +901,11 @@ export default function QuadVideoPlayerScreen() {
                 <Feather name="x" size={20} color={colors.foreground} />
               </Pressable>
             </View>
+            <ScrollView
+              style={styles.settingsScroll}
+              contentContainerStyle={styles.settingsContent}
+              showsVerticalScrollIndicator
+            >
             <View
               style={[
                 styles.settingRow,
@@ -905,16 +917,16 @@ export default function QuadVideoPlayerScreen() {
                   Normalize volume
                 </Text>
                 <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
-                  Make audio levels more consistent.
+                  {normalizeEnabled
+                    ? (syncEnabled ? 'ON · Shared volume sliders are active.' : 'ON · Live loudness processing is active.')
+                    : 'OFF · Original audio with independent volume sliders.'}
                 </Text>
               </View>
-              <Switch
-                accessibilityLabel="Normalize volume"
+              <SettingSwitch
+                label="Normalize volume"
                 value={normalizeEnabled}
                 onValueChange={setNormalizeEnabled}
                 disabled={Platform.OS !== 'android'}
-                trackColor={{ false: colors.muted, true: colors.accent }}
-                thumbColor={normalizeEnabled ? colors.primary : colors.mutedForeground}
               />
             </View>
             {normalizeEnabled && (
@@ -931,27 +943,32 @@ export default function QuadVideoPlayerScreen() {
                   </Text>
                   <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
                     {syncEnabled
-                      ? 'Live per-video loudness normalization'
-                      : 'One shared slider level for all players'}
+                      ? 'ON · One shared slider level for all videos.'
+                      : 'OFF · True per-video loudness normalization.'}
                   </Text>
                 </View>
-                <Switch
-                  accessibilityLabel="Sync true loudness normalization"
+                <SettingSwitch
+                  label="Sync video volume sliders"
                   value={syncEnabled}
                   onValueChange={setSyncEnabled}
-                  trackColor={{ false: colors.muted, true: colors.accent }}
-                  thumbColor={syncEnabled ? colors.primary : colors.mutedForeground}
                 />
               </View>
             )}
+            <View style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+              <View style={styles.settingCopy}>
+                <Text style={[styles.settingTitle, { color: colors.foreground }]}>Fill video quarters</Text>
+                <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
+                  {fillVideos
+                    ? 'Fill · Covers each quarter, cropping edges as needed.'
+                    : 'Fit · Shows the whole video with black bars as needed.'}
+                </Text>
+              </View>
+              <SettingSwitch label="Fill video quarters" value={fillVideos} onValueChange={setFillVideos} />
+            </View>
             <Text style={[styles.themeSectionTitle, { color: colors.mutedForeground }]}>
               Accent themes
             </Text>
-            <ScrollView
-              style={styles.modalScroll}
-              contentContainerStyle={styles.themeGrid}
-              showsVerticalScrollIndicator={false}
-            >
+            <View style={styles.themeGrid}>
               {themePresets.map((theme) => {
                 const isSelected = theme.id === themeId;
                 return (
@@ -982,6 +999,7 @@ export default function QuadVideoPlayerScreen() {
                   </Pressable>
                 );
               })}
+            </View>
             </ScrollView>
           </View>
         </View>
@@ -1118,14 +1136,18 @@ const styles = StyleSheet.create({
   pressedButton: { opacity: 0.72, transform: [{ scale: 0.97 }] },
   grid: {
     flex: 1,
+    gap: 8,
+  },
+  gridRow: {
+    flex: 1,
+    minHeight: 0,
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
   },
   tile: {
-    width: '49.3%',
-    flexGrow: 1,
-    height: '49.3%',
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,
@@ -1239,6 +1261,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalHeader: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1253,7 +1276,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalScroll: { flexGrow: 0 },
+  settingsScroll: { flexShrink: 1, minHeight: 0 },
+  settingsContent: { paddingBottom: 12 },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',

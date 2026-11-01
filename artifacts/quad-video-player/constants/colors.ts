@@ -13,7 +13,7 @@
  */
 
 export const themePresets = [
-  { id: 'amethyst', name: 'Amethyst', primary: '#6b5cb1', accent: '#211b36', accentForeground: '#e4ddff' },
+  { id: 'amethyst', name: 'GameCubed', primary: '#6b5cb1', accent: '#211b36', accentForeground: '#e4ddff' },
   { id: 'silver', name: 'Silver', primary: '#dddddd', accent: '#292929', accentForeground: '#f2f2f2' },
   { id: 'emerald', name: 'Emerald', primary: '#109b61', accent: '#0d2a1d', accentForeground: '#c6f3db' },
   { id: 'coral', name: 'Coral', primary: '#f6392c', accent: '#351a19', accentForeground: '#ffd8d5' },
@@ -22,6 +22,14 @@ export const themePresets = [
   { id: 'dusty-rose', name: 'Dusty Rose', primary: '#c5849c', accent: '#32202a', accentForeground: '#ffe0eb' },
   { id: 'sage', name: 'Sage', primary: '#80aa91', accent: '#1e2b23', accentForeground: '#d7f1e0' },
   { id: 'soft-lilac', name: 'Soft Lilac', primary: '#ad98cf', accent: '#292338', accentForeground: '#eee3ff' },
+  { id: 'peach-fuzz', name: 'Peach Fuzz', primary: '#dba38e', accent: '#35251f', accentForeground: '#ffe5da' },
+  { id: 'sea-glass', name: 'Sea Glass', primary: '#76b8b2', accent: '#182e2c', accentForeground: '#d4f6f1' },
+  { id: 'periwinkle', name: 'Periwinkle', primary: '#9198d8', accent: '#22243b', accentForeground: '#e4e6ff' },
+  { id: 'mocha', name: 'Mocha', primary: '#b99c88', accent: '#2e251f', accentForeground: '#f5e2d3' },
+  { id: 'cherry-blossom', name: 'Cherry Blossom', primary: '#d695b3', accent: '#35212c', accentForeground: '#ffe0ee' },
+  { id: 'arctic', name: 'Arctic', primary: '#8ebbd6', accent: '#1d2b35', accentForeground: '#dff3ff' },
+  { id: 'apricot', name: 'Apricot', primary: '#dcb776', accent: '#332a1b', accentForeground: '#fff0d0' },
+  { id: 'olive-mist', name: 'Olive Mist', primary: '#a6b780', accent: '#282f1d', accentForeground: '#edf5d7' },
 ] as const;
 
 export type ThemeId = (typeof themePresets)[number]['id'];

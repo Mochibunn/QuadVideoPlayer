@@ -1,8 +1,8 @@
 diff --git a/android/src/main/java/expo/modules/video/VideoModule.kt b/android/src/main/java/expo/modules/video/VideoModule.kt
-index c2711344c58758e0ce5b71572d59c930330f0103..14ce19acfc7f0fa0278addeee152b9a140a30a1b 100644
+index c2711344c58758e0ce5b71572d59c930330f0103..7e8936cf88b3d6a348d724b47f13ef537a914906 100644
 --- a/android/src/main/java/expo/modules/video/VideoModule.kt
 +++ b/android/src/main/java/expo/modules/video/VideoModule.kt
-@@ -104,6 +104,14 @@ class VideoModule : Module() {
+@@ -104,6 +104,22 @@ class VideoModule : Module() {
            ref.volume = volume
          }
  
@@ -14,15 +14,23 @@ index c2711344c58758e0ce5b71572d59c930330f0103..14ce19acfc7f0fa0278addeee152b9a1
 +          ref.normalizeLoudness = enabled
 +        }
 +
++      Property("audioOnly")
++        .get { ref: VideoPlayer ->
++          ref.audioOnly
++        }
++        .set { ref: VideoPlayer, enabled: Boolean ->
++          ref.audioOnly = enabled
++        }
++
        Property("currentTime")
          .get { ref: VideoPlayer ->
            // TODO: we shouldn't block the thread, but there are no events for the player position change,
 diff --git a/android/src/main/java/expo/modules/video/player/LoudnessNormalizerAudioProcessor.kt b/android/src/main/java/expo/modules/video/player/LoudnessNormalizerAudioProcessor.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..11bdecc8a40e1f1fc36c6c49c6624e5e0adce39e
+index 0000000000000000000000000000000000000000..6ce2840f5699b1b8e85909b553598365076a673e
 --- /dev/null
 +++ b/android/src/main/java/expo/modules/video/player/LoudnessNormalizerAudioProcessor.kt
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,191 @@
 +package expo.modules.video.player
 +
 +import androidx.media3.common.C
@@ -71,6 +79,12 @@ index 0000000000000000000000000000000000000000..11bdecc8a40e1f1fc36c6c49c6624e5e
 +  }
 +
 +  override fun queueInput(inputBuffer: ByteBuffer) {
++    // Media3 legitimately queues EMPTY_BUFFER while draining the pipeline.
++    // BaseAudioProcessor can reuse that same shared buffer as its output.
++    // Empty input must be a no-op BEFORE replaceOutputBuffer clears/reuses it;
++    // otherwise put(input) attempts a self-copy or discards pending output.
++    if (!inputBuffer.hasRemaining()) return
++
 +    val outputBuffer = replaceOutputBuffer(inputBuffer.remaining()).order(ByteOrder.LITTLE_ENDIAN)
 +    val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
 +    if (!enabled) {
@@ -209,7 +223,7 @@ index 0000000000000000000000000000000000000000..11bdecc8a40e1f1fc36c6c49c6624e5e
 +  }
 +}
 diff --git a/android/src/main/java/expo/modules/video/player/VideoPlayer.kt b/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
-index 7ccce9681477328701755792fdc3bab09b428e30..ccbbfdbdb9624043dfedad1594f955fe1f75707b 100644
+index 7ccce9681477328701755792fdc3bab09b428e30..14d3d0b7c3363a4e90afc17d775ec2975fea0346 100644
 --- a/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
 +++ b/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
 @@ -20,6 +20,9 @@ import androidx.media3.exoplayer.DecoderReuseEvaluation
@@ -245,10 +259,23 @@ index 7ccce9681477328701755792fdc3bab09b428e30..ccbbfdbdb9624043dfedad1594f955fe
      .forceEnableMediaCodecAsynchronousQueueing()
      .setEnableDecoderFallback(true)
    private val listeners: MutableList<WeakReference<VideoPlayerListener>> = mutableListOf()
-@@ -108,6 +125,11 @@ class VideoPlayer(val context: Context, appContext: AppContext, source: VideoSou
+@@ -108,6 +125,24 @@ class VideoPlayer(val context: Context, appContext: AppContext, source: VideoSou
  
    // Volume of the player if there was no mute applied.
    var userVolume = 1f
++  // Headless background-audio players must not consume video decoder slots,
++  // or fail because the file's video codec is unsupported.
++  @Volatile
++  var audioOnly: Boolean = false
++    set(value) {
++      field = value
++      appContext?.mainQueue?.launch {
++        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
++          .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, value)
++          .build()
++      }
++    }
++
 +  var normalizeLoudness: Boolean
 +    get() = loudnessNormalizer.enabled
 +    set(value) {
@@ -259,10 +286,10 @@ index 7ccce9681477328701755792fdc3bab09b428e30..ccbbfdbdb9624043dfedad1594f955fe
    var staysActiveInBackground = false
 diff --git a/android/src/test/java/expo/modules/video/player/LoudnessNormalizerAudioProcessorTest.kt b/android/src/test/java/expo/modules/video/player/LoudnessNormalizerAudioProcessorTest.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..bcded0e74ef67d366a11fea4786906b63ec8128a
+index 0000000000000000000000000000000000000000..c214037095efcad679321f6ce413381225f7f3c7
 --- /dev/null
 +++ b/android/src/test/java/expo/modules/video/player/LoudnessNormalizerAudioProcessorTest.kt
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,163 @@
 +package expo.modules.video.player
 +
 +import androidx.media3.common.C
@@ -285,6 +312,85 @@ index 0000000000000000000000000000000000000000..bcded0e74ef67d366a11fea4786906b6
 +      configure(AudioProcessor.AudioFormat(48000, 1, C.ENCODING_PCM_16BIT))
 +      flush()
 +      this.enabled = enabled
++    }
++  }
++
++  @Test
++  fun emptyDrainBufferIsANoOpWhenDisabled() {
++    val processor = processor(false)
++    processor.queueInput(AudioProcessor.EMPTY_BUFFER)
++    assertTrue(!processor.output.hasRemaining())
++  }
++
++  @Test
++  fun emptyBuffersAcrossFlushAndEndOfStreamAreSafeInBothModes() {
++    for (enabled in listOf(false, true)) {
++      val processor = processor(enabled)
++      repeat(3) {
++        processor.flush()
++        processor.queueInput(AudioProcessor.EMPTY_BUFFER)
++        assertTrue(!processor.output.hasRemaining())
++        processor.queueInput(tone(0.1, 0))
++        val output = processor.output
++        assertTrue(output.hasRemaining())
++        output.position(output.limit())
++        processor.queueInput(AudioProcessor.EMPTY_BUFFER)
++        assertTrue(!processor.output.hasRemaining())
++        processor.queueEndOfStream()
++        assertTrue(processor.isEnded)
++      }
++    }
++  }
++
++  @Test
++  fun emptyInputPreservesPendingOutputInBothModes() {
++    for (enabled in listOf(false, true)) {
++      val reference = processor(enabled)
++      reference.queueInput(tone(0.1, 0))
++      val expectedBuffer = reference.output
++      val expected = ByteArray(expectedBuffer.remaining())
++      expectedBuffer.get(expected)
++
++      val processor = processor(enabled)
++      processor.queueInput(tone(0.1, 0))
++      processor.queueInput(AudioProcessor.EMPTY_BUFFER)
++      val output = processor.output
++      val actual = ByteArray(output.remaining())
++      output.get(actual)
++      assertArrayEquals(expected, actual)
++    }
++  }
++
++  @Test
++  fun consumedOutputCanBeQueuedAsAnEmptyDrainBuffer() {
++    for (enabled in listOf(false, true)) {
++      val processor = processor(enabled)
++      processor.queueInput(tone(0.1, 0))
++      val output = processor.output
++      output.position(output.limit())
++      processor.queueInput(output)
++      assertTrue(!processor.output.hasRemaining())
++    }
++  }
++
++  @Test
++  fun floatStereoPcmSurvivesEmptyDrainsInBothModes() {
++    val input = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
++      .putFloat(0.125f).putFloat(-0.125f).putFloat(0.25f).putFloat(-0.25f).array()
++    for (enabled in listOf(false, true)) {
++      val processor = LoudnessNormalizerAudioProcessor().apply {
++        configure(AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_FLOAT))
++        flush()
++        this.enabled = enabled
++      }
++      processor.queueInput(AudioProcessor.EMPTY_BUFFER)
++      processor.queueInput(ByteBuffer.wrap(input).order(ByteOrder.LITTLE_ENDIAN))
++      val actual = ByteArray(input.size)
++      processor.output.get(actual)
++      assertArrayEquals(input, actual)
++      processor.queueInput(AudioProcessor.EMPTY_BUFFER)
++      processor.queueEndOfStream()
++      assertTrue(processor.isEnded)
 +    }
 +  }
 +

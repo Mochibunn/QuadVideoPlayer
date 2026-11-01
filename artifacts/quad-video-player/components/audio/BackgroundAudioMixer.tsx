@@ -14,14 +14,13 @@ import {
 import { useColors } from '@/hooks/useColors';
 import AudioTrackEngine, { type AudioTrack, type AudioTrackStatus } from './AudioTrackEngine';
 import TrackVolumeControl from './TrackVolumeControl';
+import { hasVideoExtension, isBackgroundMediaFile } from '@/lib/media-formats';
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   onCountChange: (count: number) => void;
 };
-
-const AUDIO_EXTENSIONS = new Set(['mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'opus', 'amr']);
 
 export default function BackgroundAudioMixer({ visible, onClose, onCountChange }: Props) {
   const colors = useColors();
@@ -50,17 +49,15 @@ export default function BackgroundAudioMixer({ visible, onClose, onCountChange }
     setIsPicking(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['audio/*', 'application/ogg'],
+        // Include video containers and files with generic provider MIME types.
+        type: '*/*',
         multiple: true,
         copyToCacheDirectory: false,
       });
       if (result.canceled) return;
-      const selected = result.assets.filter((asset) =>
-        asset.mimeType?.startsWith('audio/') ||
-        AUDIO_EXTENSIONS.has(asset.name.split('.').pop()?.toLowerCase() ?? ''),
-      );
+      const selected = result.assets.filter(isBackgroundMediaFile);
       if (selected.length === 0) {
-        Alert.alert('No audio selected', 'Choose one or more audio files.');
+        Alert.alert('No media selected', 'Choose audio files or videos containing an audio track.');
         return;
       }
       setTracks((current) => {
@@ -83,6 +80,10 @@ export default function BackgroundAudioMixer({ visible, onClose, onCountChange }
         }
         return additions.length ? [...current, ...additions] : current;
       });
+      const ignored = result.assets.length - selected.length;
+      if (ignored > 0) {
+        Alert.alert('Some files were not added', `${ignored} selected file(s) were not recognized as audio or video.`);
+      }
     } catch (error) {
       Alert.alert(
         'Could not add audio',
@@ -109,7 +110,7 @@ export default function BackgroundAudioMixer({ visible, onClose, onCountChange }
               <View style={styles.heading}>
                 <Text style={[styles.title, { color: colors.foreground }]}>Background audio</Text>
                 <Text style={[styles.description, { color: colors.mutedForeground }]}>
-                  Layer multiple tracks behind your videos. Each loops independently.
+                  Add audio files or use just the sound from videos. Each loops independently.
                 </Text>
               </View>
               <Pressable accessibilityRole="button" accessibilityLabel="Close background audio" onPress={onClose} style={styles.iconButton}>
@@ -153,18 +154,18 @@ export default function BackgroundAudioMixer({ visible, onClose, onCountChange }
                 <View style={styles.empty}>
                   <Feather name="music" size={30} color={colors.primary} />
                   <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                    Choose music, ambience, or other audio files to mix with your videos.
+                    Choose MP3, M4A, WAV, FLAC, Ogg and other audio files—or MP4, WebM, MOV and other videos. Only the audio plays here.
                   </Text>
                 </View>
               }
               renderItem={({ item: track }) => (
                 <View style={[styles.trackCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
                   <View style={styles.trackHeader}>
-                    <Feather name="music" size={17} color={colors.primary} />
+                    <Feather name={hasVideoExtension(track.name) ? 'film' : 'music'} size={17} color={colors.primary} />
                     <View style={styles.trackName}>
                       <Text numberOfLines={1} ellipsizeMode="middle" style={[styles.name, { color: colors.foreground }]}>{track.name}</Text>
                       <Text style={[styles.status, { color: colors.mutedForeground }]}>
-                        {track.status === 'error' ? 'Unable to play' : track.status === 'loading' ? 'Loading audio…' : track.paused ? 'Paused · Loop on' : 'Playing · Loop on'}
+                        {track.status === 'error' ? 'Unable to play' : track.status === 'loading' ? 'Loading audio…' : track.paused ? 'Paused · Audio only · Loop on' : 'Playing · Audio only · Loop on'}
                       </Text>
                     </View>
                     {track.status === 'loading' && <ActivityIndicator size="small" color={colors.primary} />}

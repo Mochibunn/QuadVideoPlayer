@@ -1,9 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import LaunchSplash from '@/components/LaunchSplash';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -28,6 +29,8 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const [showWelcome, setShowWelcome] = useState(true);
+  const finishWelcome = useCallback(() => setShowWelcome(false), []);
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -47,10 +50,11 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
-          <GestureHandlerRootView>
+          <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
               <RootLayoutNav />
             </KeyboardProvider>
+            {showWelcome && <LaunchSplash onFinish={finishWelcome} />}
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>
