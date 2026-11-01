@@ -6,14 +6,23 @@ import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react
 import { useColors } from '@/hooks/useColors';
 import { useSlideshow } from '@/hooks/useSlideshow';
 import { pickMediaFiles } from '@/lib/media-picker';
-import { isSlideshowImage, type Slideshow } from '@/lib/slideshow';
+import { addSlideshow, filterSlideshowPool, isSlideshowImage, type SlideshowInstance } from '@/lib/slideshow';
 import SettingSwitch from '../SettingSwitch';
 
 export default function SlideshowPanel({ visible, onClose }: { visible: boolean; onClose(): void }) {
   const colors = useColors();
-  const { slideshow: s, setSlideshow } = useSlideshow();
+  const { slideshow: group, setSlideshow, captureSlideshow, runtime } = useSlideshow();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const s = group.instances.find((item) => item.id === selectedId) ?? group.instances[0];
   const [picking, setPicking] = useState(false);
-  const update = (changes: Partial<Slideshow>) => setSlideshow((old) => ({ ...old, ...changes }));
+  const update = (changes: Partial<SlideshowInstance>) => {
+    if (s) setSlideshow((old) => ({ ...old, instances: old.instances.map((item) => item.id === s.id ? { ...item, ...changes } : item) }));
+  };
+  function addInstance() {
+    const next = addSlideshow(captureSlideshow());
+    setSelectedId(next.instances[next.instances.length - 1].id);
+    setSlideshow(next);
+  }
   const text = (value: string, small = false) => <Text style={{
     color: small ? colors.mutedForeground : colors.foreground, fontSize: small ? 12 : 14,
   }}>{value}</Text>;
@@ -28,7 +37,9 @@ export default function SlideshowPanel({ visible, onClose }: { visible: boolean;
         Alert.alert('No images selected', 'Choose images or animated GIFs. The video and background-audio pools stay separate.');
         return;
       }
-      setSlideshow((old) => {
+      const snapshot = captureSlideshow();
+      setSlideshow(() => {
+        const old = snapshot;
         const known = new Set(old.pool.map((item) => item.uri));
         const additions = selected.filter((item) => {
           if (known.has(item.uri)) return false;
@@ -61,19 +72,58 @@ export default function SlideshowPanel({ visible, onClose }: { visible: boolean;
               <Feather name="x" size={22} color={colors.foreground} />
             </Pressable>
           </View>
-          <FlatList data={s.pool} keyExtractor={(item) => item.id} initialNumToRender={6} windowSize={3}
+          <FlatList data={group.pool} keyExtractor={(item) => item.id} initialNumToRender={6} windowSize={3}
             style={styles.list} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator
             ListHeaderComponent={<View style={styles.header}>
-              {text('A click-through overlay on the four videos. GIFs animate. Include this pool and its controls with Save session.', true)}
+              {text('All slideshows share this image/GIF pool. Each has independent controls and timing; touches pass through to the videos. Save session includes them all.', true)}
               <View style={styles.row}>
-                {text('Show slideshow')}
-                <SettingSwitch label="Show image slideshow" value={s.enabled} disabled={picking}
+                {text('Show slideshows')}
+                <SettingSwitch label="Show all image slideshows" value={group.enabled} disabled={picking}
+                  onValueChange={(enabled) => setSlideshow((old) => ({ ...old, enabled }))} />
+              </View>
+              <Pressable accessibilityRole="button" disabled={picking} onPress={addInstance}
+                style={[styles.button, { backgroundColor: colors.primary }]}>
+                <Text style={{ color: colors.primaryForeground }}>Add bouncing slideshow</Text>
+              </Pressable>
+              {text(`${group.instances.length} slideshows · no fixed count limit. Many large images or GIFs can slow playback or use substantial memory.`, true)}
+              <FlatList horizontal data={group.instances} keyExtractor={(item) => item.id}
+                showsHorizontalScrollIndicator initialNumToRender={8}
+                renderItem={({ item, index }) => (
+                  <Pressable accessibilityRole="button" accessibilityState={{ selected: item.id === s?.id }}
+                    disabled={picking} onPress={() => setSelectedId(item.id)}
+                    style={[styles.chip, { borderColor: item.id === s?.id ? colors.primary : colors.border }]}>
+                    <Text style={{ color: item.id === s?.id ? colors.primary : colors.foreground }}>
+                      {`Slideshow ${index + 1}${item.enabled ? '' : ' · off'}`}
+                    </Text>
+                  </Pressable>
+                )} />
+              {s && <View style={styles.header}>
+              <View style={styles.row}>
+                {text(`Slideshow ${group.instances.findIndex((item) => item.id === s.id) + 1} enabled`)}
+                <SettingSwitch label="Enable selected slideshow" value={s.enabled} disabled={picking}
                   onValueChange={(enabled) => update({ enabled })} />
               </View>
-              <Pressable accessibilityRole="button" disabled={picking} onPress={() => void add()}
-                style={[styles.button, { backgroundColor: colors.primary }]}>
-                <Text style={{ color: colors.primaryForeground }}>{picking ? 'Opening files…' : 'Add images / GIFs'}</Text>
-              </Pressable>
+              <View style={styles.row}>
+                <Pressable accessibilityRole="button" disabled={picking} style={styles.icon}
+                  accessibilityLabel="Next image in selected slideshow" onPress={() => {
+                    const entry = runtime.current.get(s.id);
+                    if (entry?.next) entry.next();
+                    else {
+                      const index = ((entry?.index ?? s.index) + 1) % Math.max(1, group.pool.length);
+                      runtime.current.set(s.id, { index });
+                      update({ index });
+                    }
+                  }}>
+                  <Feather name="skip-forward" size={20} color={colors.primary} />
+                </Pressable>
+                <Pressable accessibilityRole="button" disabled={picking} style={styles.icon}
+                  accessibilityLabel="Remove selected slideshow" onPress={() => {
+                    setSlideshow((old) => ({ ...old, instances: old.instances.filter((item) => item.id !== s.id) }));
+                    setSelectedId(null);
+                  }}>
+                  <Feather name="trash-2" size={20} color={colors.destructive} />
+                </Pressable>
+              </View>
               {slider('Scale', 'scale', 10, 100, 1, s.scale, '%')}
               {slider('Opacity', 'opacity', 0, 100, 1, s.opacity * 100, '%')}
               {slider('Horizontal position', 'x', 0, 100, 1, s.x, '%')}
@@ -86,12 +136,13 @@ export default function SlideshowPanel({ visible, onClose }: { visible: boolean;
                   onValueChange={(bounce) => update({ bounce })} />
               </View>
               {s.bounce && slider('Bounce speed', 'speed', 5, 80, 1, s.speed, ' dp/s')}
+              </View>}
+              <Pressable accessibilityRole="button" disabled={picking} onPress={() => void add()}
+                style={[styles.button, { backgroundColor: colors.primary }]}>
+                <Text style={{ color: colors.primaryForeground }}>{picking ? 'Opening files…' : 'Add images / GIFs'}</Text>
+              </Pressable>
               <View style={styles.row}>
-                {text(`${s.pool.length} images / GIFs`)}
-                <Pressable accessibilityRole="button" disabled={picking || !s.pool.length} onPress={() =>
-                  update({ index: (s.index + 1) % Math.max(1, s.pool.length) })} style={styles.icon}>
-                  <Feather name="skip-forward" size={20} color={colors.primary} />
-                </Pressable>
+                {text(`${group.pool.length} shared images / GIFs`)}
               </View>
               {text('Removing an item only removes it from this pool, never from your device.', true)}
             </View>}
@@ -102,11 +153,8 @@ export default function SlideshowPanel({ visible, onClose }: { visible: boolean;
                   autoplay={false} allowDownscaling cachePolicy="none" recyclingKey={item.uri} />
                 <Text numberOfLines={2} style={{ flex: 1, color: colors.foreground, fontSize: 13 }}>{item.name}</Text>
                 <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${item.name} from image pool`}
-                  disabled={picking} style={styles.icon} onPress={() => setSlideshow((old) => {
-                    const current = old.pool[old.index]?.uri;
-                    const pool = old.pool.filter((asset) => asset.uri !== item.uri);
-                    return { ...old, pool, index: Math.max(0, pool.findIndex((asset) => asset.uri === current)) };
-                  })}>
+                  disabled={picking} style={styles.icon} onPress={() =>
+                    setSlideshow(filterSlideshowPool(captureSlideshow(), (asset) => asset.uri !== item.uri))}>
                   <Feather name="trash-2" size={18} color={colors.destructive} />
                 </Pressable>
               </View>
@@ -128,4 +176,5 @@ const styles = StyleSheet.create({
   icon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   fileRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   thumb: { width: 70, height: 52 },
+  chip: { borderWidth: 1, borderRadius: 10, padding: 12, marginRight: 8, minHeight: 44 },
 });

@@ -110,9 +110,13 @@ and honestly report temporary or revoked Android file access.
 
 The user wants a separate image/GIF slideshow overlay with adjustable scale,
 position, opacity, and a slow DVD-logo-style bouncing option.
+They also want multiple bouncing slideshows from the same shared pool,
+"as many as we want"—do not impose a fixed instance-count limit.
 
 **Why:** The user explicitly requested these controls alongside video playback.
 
 **How to apply:** Keep the image/GIF pool separate from videos and background
 audio, animate GIFs, preserve aspect ratio and screen bounds, and pass touches
-through the overlay. Include its pool and controls in saved sessions.
+through the overlay. Include its pool and controls in saved sessions. Multiple
+instances must share the pool, not require separate copies, and keep independent
+controls and timing. Hardware resource limits still apply.

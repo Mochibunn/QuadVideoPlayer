@@ -65,16 +65,27 @@ have no stack trace. No physical tablet is attached here, so startup hardening
 is not proof that a reported hardware crash has been resolved.
 
 **Settings → Image / GIF slideshow** manages a separate, additive image pool.
-Enable **Show slideshow** to overlay it on active video playback. Controls
+Enable **Show slideshows** to overlay it on active video playback. Use
+**Add bouncing slideshow** to create more independent overlays from that same
+pool. Select an overlay in the horizontal slideshow list to adjust or remove
+it. Each has its own enable toggle, next-image button, scale, opacity, placement,
+interval, bounce toggle, and speed. There is no fixed app-imposed count limit,
+but actual capacity depends on image sizes, animated GIFs, and available tablet
+memory/GPU resources. Removing an overlay does not remove shared images.
+
+Controls
 include scale, opacity, horizontal/vertical placement, time per image, and
 DVD-style bounce with speed adjustment. Images fit without distortion; the
 overlay passes touches through to the existing player controls. GIFs animate
 natively, pool previews are static, and bounce runs as native-driver timing
 loops rather than per-frame JavaScript work.
 
-Save session includes this pool, its current image, placement, and motion
-settings. Older saved sessions still load with the overlay disabled. Removing
-an image from the pool never deletes its source file.
+Save session includes the shared pool and every overlay's current image,
+placement, and motion settings. Each overlay advances locally; saving samples
+their live indices without sending every image change through the whole app.
+Older single-overlay checkpoints migrate without changing their settings.
+Sessions predating the image overlay still load with overlays disabled.
+Removing an image from the pool never deletes its source file.
 
 ## Saved session
 

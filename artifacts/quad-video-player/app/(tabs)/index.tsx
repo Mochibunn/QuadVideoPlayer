@@ -582,7 +582,7 @@ function VideoTile({
 }
 
 export default function QuadVideoPlayerScreen() {
-  const { slideshow, setSlideshow } = useSlideshow();
+  const { slideshow, captureSlideshow, restoreSlideshow } = useSlideshow();
   const { inPip, enterPip, pipClosed, sound, setSound, loaded: soundLoaded } = useSoundSettings();
   const registry = useSessionRegistry();
   const [sessionBusy, setSessionBusy] = useState(false);
@@ -893,7 +893,7 @@ export default function QuadVideoPlayerScreen() {
     });
     return {
       version: 1, savedAt: new Date().toISOString(), pool, streams,
-      audio: registry.captureAudio(), sourceLabel, globalPlaying, slideshow,
+      audio: registry.captureAudio(), sourceLabel, globalPlaying, slideshow: captureSlideshow(),
       settings: { themeId, normalize: normalizeEnabled, sync: syncEnabled, fill: fillVideos,
         controlsDelay: controlsHideSeconds, sharedVolume, sound },
     };
@@ -908,7 +908,7 @@ export default function QuadVideoPlayerScreen() {
     setControlsHideSeconds(s.controlsDelay);
     setSharedVolume(s.sharedVolume);
     setSound(s.sound);
-    setSlideshow(saved.slideshow ?? { ...DEFAULT_SLIDESHOW, pool: [] });
+    restoreSlideshow(saved.slideshow ?? { ...DEFAULT_SLIDESHOW, pool: [] });
     setSourceLabel(saved.sourceLabel);
     setPool(saved.pool);
     setRestoredStreams(saved.streams);

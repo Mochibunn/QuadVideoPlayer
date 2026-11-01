@@ -1,30 +1,71 @@
 import { Image } from 'expo-image';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import { useSlideshow } from '@/hooks/useSlideshow';
+import { useSlideshow, type SlideshowRuntime } from '@/hooks/useSlideshow';
 import { useColors } from '@/hooks/useColors';
-import { bounceKeyframes, slideshowBounds } from '@/lib/slideshow';
+import { bounceKeyframes, slideshowBounds, type SlideshowImage, type SlideshowInstance } from '@/lib/slideshow';
 
 export default function SlideshowOverlay({ active }: { active: boolean }) {
-  const { slideshow: s, setSlideshow } = useSlideshow();
-  const colors = useColors();
+  const { slideshow: s, runtime, revision } = useSlideshow();
   const [size, setSize] = useState({ width: 0, height: 0 });
+  return (
+    <View pointerEvents="none" style={styles.overlay}
+      onLayout={(event) => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}>
+      {active && s.enabled && size.width > 0 && s.instances.filter((item) => item.enabled).map((instance) => (
+        <SlideshowLayer key={`${revision}:${instance.id}`} instance={instance} pool={s.pool}
+          width={size.width} height={size.height} runtime={runtime} />
+      ))}
+    </View>
+  );
+}
+
+const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, height, runtime }: {
+  instance: SlideshowInstance; pool: SlideshowImage[]; width: number; height: number;
+  runtime: React.RefObject<Map<string, SlideshowRuntime>>;
+}) {
+  const colors = useColors();
+  const [index, setIndex] = useState(() => (runtime.current.get(s.id)?.index ?? s.index) % Math.max(1, pool.length));
+  const indexRef = useRef(index);
+  const previousInput = useRef({ pool, index: s.index });
+  const advance = useCallback(() => {
+    const next = (indexRef.current + 1) % Math.max(1, pool.length);
+    indexRef.current = next;
+    const entry = runtime.current.get(s.id);
+    if (entry) entry.index = next;
+    setIndex(next);
+  }, [pool.length, runtime, s.id]);
+  useEffect(() => {
+    if (previousInput.current.pool === pool && previousInput.current.index === s.index) return;
+    previousInput.current = { pool, index: s.index };
+    const next = s.index % Math.max(1, pool.length);
+    indexRef.current = next;
+    setIndex(next);
+    const entry = runtime.current.get(s.id);
+    if (entry) entry.index = next;
+  }, [pool, s.index, runtime, s.id]);
+  useEffect(() => {
+    const entry: SlideshowRuntime = { index: indexRef.current, next: advance };
+    runtime.current.set(s.id, entry);
+    return () => {
+      if (runtime.current.get(s.id) === entry) {
+        entry.next = undefined;
+      }
+    };
+  }, [advance, runtime, s.id]);
   const [failedUri, setFailedUri] = useState<string | null>(null);
   const position = useRef(new Animated.ValueXY()).current;
-  const bounds = slideshowBounds(size.width, size.height, s);
-  const image = s.pool[s.index % Math.max(1, s.pool.length)];
+  const bounds = slideshowBounds(width, height, s);
+  const image = pool[index % Math.max(1, pool.length)];
   useEffect(() => { setFailedUri(null); }, [image?.uri, s.enabled]);
   useEffect(() => {
-    if (!active || !s.enabled || s.pool.length < 2) return;
-    const timer = setInterval(() => {
-      setSlideshow((current) => ({ ...current, index: (current.index + 1) % Math.max(1, current.pool.length) }));
-    }, s.seconds * 1000);
+    if (pool.length < 2) return;
+    const timer = setInterval(advance, s.seconds * 1000);
     return () => clearInterval(timer);
-  }, [active, s.enabled, s.pool.length, s.seconds, setSlideshow]);
+  }, [pool.length, s.seconds, advance]);
   useEffect(() => {
     position.stopAnimation();
     position.setValue({ x: 0, y: 0 });
-    if (!active || !s.enabled || !s.bounce || !image) return;
+    if (!s.bounce || !image) return;
     const animateAxis = (value: Animated.Value, start: number, max: number, speed: number) => {
       if (max <= 0) return null;
       return Animated.loop(Animated.timing(value, {
@@ -38,14 +79,13 @@ export default function SlideshowOverlay({ active }: { active: boolean }) {
     ].filter((animation): animation is Animated.CompositeAnimation => animation !== null);
     animations.forEach((animation) => animation.start());
     return () => { animations.forEach((animation) => animation.stop()); position.stopAnimation(); };
-  }, [active, s.enabled, s.bounce, s.speed, s.x, s.y, s.scale, size.width, size.height, !!image, position]);
+  }, [s.bounce, s.speed, s.x, s.y, s.scale, width, height, !!image, position]);
 
   return (
-    <View pointerEvents="none" style={styles.overlay}
-      onLayout={(event) => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}>
-      {active && s.enabled && image && size.width > 0 && (
+    <>
+      {image && (
         <Animated.View style={{
-          width: bounds.width, height: bounds.height, opacity: s.opacity,
+          position: 'absolute', width: bounds.width, height: bounds.height, opacity: s.opacity,
           transform: [
             { translateX: s.bounce ? position.x.interpolate(bounceKeyframes(bounds.x, bounds.maxX)) : bounds.x },
             { translateY: s.bounce ? position.y.interpolate(bounceKeyframes(bounds.y, bounds.maxY)) : bounds.y },
@@ -62,7 +102,7 @@ export default function SlideshowOverlay({ active }: { active: boolean }) {
           )}
         </Animated.View>
       )}
-    </View>
+    </>
   );
-}
+});
 const styles = StyleSheet.create({ overlay: { ...StyleSheet.absoluteFill, zIndex: 5 } });

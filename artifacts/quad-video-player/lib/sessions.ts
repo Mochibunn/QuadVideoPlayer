@@ -1,5 +1,5 @@
 import { parseSoundSettings, type SoundSettings } from './sound-settings';
-import { parseSlideshow, type Slideshow } from './slideshow';
+import { filterSlideshowPool, parseSlideshow, type Slideshow } from './slideshow';
 
 export const SESSION_KEY = 'quad-video-player.saved-session.v1';
 export type SessionMedia = { id: string; uri: string; name: string };
@@ -83,14 +83,7 @@ export function sessionUris(session: SessionSnapshot): string[] {
 export function prepareSession(session: SessionSnapshot, readable: Set<string>) {
   const pool = session.pool.filter((item) => readable.has(item.uri));
   const audio = session.audio.filter((item) => readable.has(item.uri));
-  const slideshow = session.slideshow ? {
-    ...session.slideshow,
-    pool: session.slideshow.pool.filter((item) => readable.has(item.uri)),
-  } : undefined;
-  if (slideshow) {
-    const current = session.slideshow?.pool[session.slideshow.index]?.uri;
-    slideshow.index = Math.max(0, slideshow.pool.findIndex((item) => item.uri === current));
-  }
+  const slideshow = session.slideshow ? filterSlideshowPool(session.slideshow, (item) => readable.has(item.uri)) : undefined;
   let replacements = 0;
   const streams = pool.length ? session.streams.map((stream, index) => {
     if (readable.has(stream.asset.uri)) return stream;
