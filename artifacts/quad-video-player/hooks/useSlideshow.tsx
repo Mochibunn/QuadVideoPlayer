@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useRef, useState, useEffect } from 'react';
 import { DEFAULT_SLIDESHOW, snapshotSlideshow, type Slideshow } from '@/lib/slideshow';
 
-export type SlideshowRuntime = { index: number; next?: () => void };
+export type SlideshowRuntime = { index: number; steps?: number; next?: () => void };
 type ContextValue = {
   slideshow: Slideshow; setSlideshow: React.Dispatch<React.SetStateAction<Slideshow>>;
   runtime: React.RefObject<Map<string, SlideshowRuntime>>; revision: number;

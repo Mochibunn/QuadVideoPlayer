@@ -35,6 +35,15 @@ test('tags and pagination are encoded without changing their search syntax', () 
   assert.equal(url.searchParams.get('page'), 'post');
   assert.equal(url.searchParams.get('s'), 'list');
 });
+test('refreshing a source merges unseen media and keeps the cache bounded', () => {
+  const media = (id) => ({ id, uri: `https://img.example/${id}.jpg`, name: id, kind: 'image', postUrl: 'https://example.test/post' });
+  const existing = Array.from({ length: 5 }, (_, index) => media(`old-${index}`));
+  const refreshed = core.mergeRemoteMedia(existing, [media('new'), media('old-0')], 'newer', 5);
+  assert.deepEqual(plain(refreshed.map((item) => item.id)), ['new', 'old-0', 'old-1', 'old-2', 'old-3']);
+  const paged = core.mergeRemoteMedia(existing, [media('older-1'), media('older-2')], 'older', 5);
+  assert.deepEqual(plain(paged.map((item) => item.id)), ['old-0', 'old-1', 'old-2', 'older-1', 'older-2']);
+  assert.deepEqual(plain(core.mergeRemoteMedia(existing, [media('fresh')], 'replace').map((item) => item.id)), ['fresh']);
+});
 test('Rule34 and e621 use safe-rated site APIs with their own tag syntax', () => {
   const rule34Url = new URL(core.rule34SearchUrl(rule34, 2, { userId: '12345', apiKey: 'test-key' }));
   assert.equal(rule34Url.hostname, 'api.rule34.xxx');

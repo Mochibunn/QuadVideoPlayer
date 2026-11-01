@@ -130,7 +130,7 @@ export default function SlideshowPanel({ visible, onClose, onManageSources }: {
                     else {
                       const length = s.sourceId ? online.results[s.sourceId]?.images.length ?? 0 : group.pool.length;
                       const index = nextSlideshowIndex(length, entry?.index ?? s.index, s.shuffle);
-                      runtime.current.set(s.id, { index });
+                      runtime.current.set(s.id, { ...entry, index });
                       update({ index });
                     }
                   }}>

@@ -65,6 +65,16 @@ export function nextSlideshowIndex(length: number, current: number, shuffle: boo
   const normalized = Number.isFinite(sample) ? Math.max(0, Math.min(0.999999999, sample)) : 0;
   return choices[Math.floor(normalized * choices.length)];
 }
+export function shouldPrefetchSlideshowPage(
+  index: number, steps: number, poolLength: number, hasMore: boolean,
+  loading: boolean, lastRequestStep: number | null,
+): boolean {
+  const length = Math.max(0, Math.floor(poolLength));
+  const current = Math.max(0, Math.floor(index));
+  const step = Math.max(0, Math.floor(steps));
+  if (!length || !hasMore || loading || current < Math.max(0, length - 4)) return false;
+  return lastRequestStep === null || step - lastRequestStep >= 4;
+}
 export function filterSlideshowPool(s: Slideshow, keep: (image: SlideshowImage) => boolean): Slideshow {
   const pool = s.pool.filter(keep);
   return { ...s, pool, instances: s.instances.map((item) => item.sourceId ? item : ({

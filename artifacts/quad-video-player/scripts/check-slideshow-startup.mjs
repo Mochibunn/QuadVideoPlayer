@@ -48,6 +48,14 @@ test('each slideshow keeps its shuffle setting and chooses a different image ran
   assert.notEqual(slide.nextSlideshowIndex(4, 2, true, () => 0.5), 2);
   assert.equal(slide.nextSlideshowIndex(1, 0, true), 0);
 });
+test('online slideshow pages prefetch near the end and space repeated requests', () => {
+  assert.equal(slide.shouldPrefetchSlideshowPage(5, 5, 20, true, false, null), false);
+  assert.equal(slide.shouldPrefetchSlideshowPage(16, 16, 20, true, false, null), true);
+  assert.equal(slide.shouldPrefetchSlideshowPage(16, 16, 20, true, true, null), false);
+  assert.equal(slide.shouldPrefetchSlideshowPage(18, 18, 20, true, false, 16), false);
+  assert.equal(slide.shouldPrefetchSlideshowPage(0, 20, 1, true, false, 16), true);
+  assert.equal(slide.shouldPrefetchSlideshowPage(0, 20, 1, false, false, null), false);
+});
 test('pool deduplicates URI selections and validates local addresses', () => {
   const value = slide.parseSlideshow({ pool: [image('a.gif'), image('a.gif'), image('b.jpg'),
     { name: 'bad', uri: 'https://external.test/image.jpg' }] });

@@ -10,6 +10,27 @@ export type RemoteMedia = {
   id: string; uri: string; name: string; kind: 'image' | 'video'; postUrl: string; preview?: string;
 };
 export type SourcePage = { items: RemoteMedia[]; cursor: string | number | null; hasMore: boolean; notice?: string };
+export type RemoteMediaMergeMode = 'replace' | 'newer' | 'older';
+export function mergeRemoteMedia(existing: RemoteMedia[], incoming: RemoteMedia[],
+  mode: RemoteMediaMergeMode = 'replace', limit = 160): RemoteMedia[] {
+  const candidates = mode === 'newer' ? [...incoming, ...existing] :
+    mode === 'older' ? [...existing, ...incoming] : incoming;
+  const seen = new Set<string>();
+  const unique = candidates.filter((item) => {
+    if (seen.has(item.uri)) return false;
+    seen.add(item.uri);
+    return true;
+  });
+  const capacity = Math.max(0, Math.floor(limit));
+  if (!capacity) return [];
+  if (mode === 'older' && unique.length > capacity) {
+    const incomingUris = new Set(incoming.map((item) => item.uri));
+    const olderItems = unique.filter((item) => incomingUris.has(item.uri));
+    const previousItems = unique.filter((item) => !incomingUris.has(item.uri));
+    return [...previousItems.slice(0, Math.max(0, capacity - olderItems.length)), ...olderItems.slice(-capacity)];
+  }
+  return unique.slice(0, capacity);
+}
 export function publicMediaUrl(value: unknown, base?: string): string | null {
   if (typeof value !== 'string' || !value || value.length > 16000) return null;
   try {

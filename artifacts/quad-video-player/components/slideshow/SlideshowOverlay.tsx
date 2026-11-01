@@ -4,17 +4,27 @@ import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { useSlideshow, type SlideshowRuntime } from '@/hooks/useSlideshow';
 import { useColors } from '@/hooks/useColors';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
-import { bounceKeyframes, nextSlideshowIndex, slideshowBounds, type SlideshowImage, type SlideshowInstance } from '@/lib/slideshow';
+import { bounceKeyframes, nextSlideshowIndex, shouldPrefetchSlideshowPage, slideshowBounds, type SlideshowImage, type SlideshowInstance } from '@/lib/slideshow';
+
+const ONLINE_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export default function SlideshowOverlay({ active }: { active: boolean }) {
   const { slideshow: s, runtime, revision } = useSlideshow();
   const online = useOnlineSources();
   const colors = useColors();
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const activeSourceKey = active && s.enabled
+    ? [...new Set(s.instances.filter((item) => item.enabled && item.sourceId).map((item) => item.sourceId!))].join('\u0000')
+    : '';
   useEffect(() => {
-    if (active && s.enabled) s.instances.filter((item) => item.enabled && item.sourceId)
-      .forEach((item) => online.ensureLoaded(item.sourceId!));
-  }, [active, s.enabled, s.instances, online.sources, online.ensureLoaded]);
+    if (!activeSourceKey) return;
+    const sourceIds = activeSourceKey.split('\u0000');
+    sourceIds.forEach(online.ensureLoaded);
+    const timer = setInterval(() => {
+      sourceIds.forEach((id) => void online.refresh(id, false, true));
+    }, ONLINE_REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [activeSourceKey, online.ensureLoaded, online.refresh]);
   return (
     <View pointerEvents="none" style={styles.overlay}
       onLayout={(event) => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}>
@@ -45,15 +55,17 @@ const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, 
   instance: SlideshowInstance; pool: SlideshowImage[]; width: number; height: number;
   runtime: React.RefObject<Map<string, SlideshowRuntime>>;
 }) {
-  const colors = useColors();
+  const online = useOnlineSources();
+  const sourceResult = s.sourceId ? online.results[s.sourceId] : undefined;
   const [index, setIndex] = useState(() => (runtime.current.get(s.id)?.index ?? s.index) % Math.max(1, pool.length));
   const indexRef = useRef(index);
+  const lastPrefetchStep = useRef<number | null>(null);
   const previousInput = useRef({ pool, index: s.index });
   const advance = useCallback(() => {
     const next = nextSlideshowIndex(pool.length, indexRef.current, s.shuffle);
     indexRef.current = next;
     const entry = runtime.current.get(s.id);
-    if (entry) entry.index = next;
+    if (entry) { entry.index = next; entry.steps = (entry.steps ?? 0) + 1; }
     setIndex(next);
   }, [pool.length, runtime, s.id, s.shuffle]);
   useEffect(() => {
@@ -70,7 +82,9 @@ const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, 
     if (entry) entry.index = next;
   }, [pool, s.index, runtime, s.id]);
   useEffect(() => {
-    const entry: SlideshowRuntime = { index: indexRef.current, next: advance };
+    const entry: SlideshowRuntime = {
+      index: indexRef.current, steps: runtime.current.get(s.id)?.steps ?? 0, next: advance,
+    };
     runtime.current.set(s.id, entry);
     return () => {
       if (runtime.current.get(s.id) === entry) {
@@ -78,16 +92,25 @@ const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, 
       }
     };
   }, [advance, runtime, s.id]);
+  const steps = runtime.current.get(s.id)?.steps ?? 0;
+  useEffect(() => {
+    if (!s.sourceId || !shouldPrefetchSlideshowPage(
+      index, steps, pool.length, sourceResult?.hasMore === true,
+      sourceResult?.loading === true, lastPrefetchStep.current,
+    )) return;
+    lastPrefetchStep.current = steps;
+    void online.refresh(s.sourceId, true);
+  }, [index, steps, pool.length, s.sourceId, sourceResult?.hasMore, sourceResult?.loading, online.refresh]);
   const [failedUri, setFailedUri] = useState<string | null>(null);
   const position = useRef(new Animated.ValueXY()).current;
   const bounds = slideshowBounds(width, height, s);
   const image = pool[index % Math.max(1, pool.length)];
   useEffect(() => { setFailedUri(null); }, [image?.uri, s.enabled]);
   useEffect(() => {
-    if (pool.length < 2) return;
+    if (pool.length < 2 && !(s.sourceId && sourceResult?.hasMore)) return;
     const timer = setInterval(advance, s.seconds * 1000);
     return () => clearInterval(timer);
-  }, [pool.length, s.seconds, advance]);
+  }, [pool.length, s.seconds, s.sourceId, sourceResult?.hasMore, advance]);
   useEffect(() => {
     position.stopAnimation();
     position.setValue({ x: 0, y: 0 });
@@ -117,9 +140,7 @@ const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, 
             { translateY: s.bounce ? position.y.interpolate(bounceKeyframes(bounds.y, bounds.maxY)) : bounds.y },
           ],
         }}>
-          {failedUri === image.uri ? (
-            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Image unavailable · {image.name}</Text>
-          ) : (
+          {failedUri !== image.uri && (
             <Image source={{ uri: image.uri }} style={StyleSheet.absoluteFill}
               contentFit="contain" autoplay allowDownscaling cachePolicy="none"
               recyclingKey={image.uri} transition={0}
