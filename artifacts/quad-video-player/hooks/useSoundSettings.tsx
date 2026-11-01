@@ -74,7 +74,7 @@ export function useSoundSettings() {
   return value;
 }
 
-export function usePlayerSoundEffects(player: object) {
+export function usePlayerSoundEffects(player: object, audioGain = 1) {
   const { sound, inPip, pipClosed } = useSoundSettings();
   useEffect(() => {
     // Android can deliver onPause before its PiP-mode callback. Arm every
@@ -83,7 +83,8 @@ export function usePlayerSoundEffects(player: object) {
     native.staysActiveInBackground = inPip;
     if (pipClosed) native.pause();
   }, [player, inPip, pipClosed]);
-  const config = JSON.stringify(sound);
+  const boundedGain = Number.isFinite(audioGain) ? Math.min(2, Math.max(1, audioGain)) : 1;
+  const config = JSON.stringify({ ...sound, gain: boundedGain });
   useEffect(() => {
     const native = player as { soundEffects?: string };
     if (typeof native.soundEffects === 'string') native.soundEffects = config;

@@ -236,7 +236,7 @@ export default function BackgroundAudioMixer({ visible, onClose, onCountChange }
               )}
             />
             <Text style={[styles.note, { color: colors.mutedForeground }]}>
-              Tracks keep playing when this panel closes. Their levels are independent of video volume and Sync. Removing a track does not delete its file.
+              Tracks keep playing when this panel closes. Each track has an independent 0–200% level. Above 100% can add distortion. Removing a track does not delete its file.
             </Text>
           </View>
         </View>

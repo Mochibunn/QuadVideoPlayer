@@ -42,13 +42,13 @@ function AudioTrackEngine({ track, onStatus }: Props) {
     if (typeof native.audioOnly === 'boolean') native.audioOnly = true;
     instance.loop = true;
     instance.audioMixingMode = 'mixWithOthers';
-    instance.volume = track.volume;
+    instance.volume = Math.min(1, track.volume);
     instance.muted = track.muted;
     instance.staysActiveInBackground = false;
   });
 
   const audioOnlySupported = typeof (player as typeof player & { audioOnly?: boolean }).audioOnly === 'boolean';
-  usePlayerSoundEffects(player);
+  usePlayerSoundEffects(player, track.volume);
   useEffect(() => {
     const capture = () => pendingPosition.current ?? Math.max(0, player.currentTime || 0);
     registry.audio.set(track.id, capture);
@@ -113,7 +113,7 @@ function AudioTrackEngine({ track, onStatus }: Props) {
   }, [audioOnlySupported, onStatus, player, track.id, track.uri]);
 
   useEffect(() => {
-    player.volume = track.volume;
+    player.volume = Math.min(1, track.volume);
   }, [player, track.volume]);
 
   useEffect(() => {

@@ -132,3 +132,26 @@ supply **images, GIFs, and videos**, not a full text-post reader.
 **How to apply:** Keep searches configurable and independently assignable rather
 than merging every query into one undifferentiated image pool. Confirm the booru
 sites and desired Reddit media types before choosing provider-specific APIs.
+
+Timed loop sessions should count time only during video playback: pausing stops
+the clock but preserves the same session for resume. Explicitly ending playback
+saves the duration and date to a device-local leaderboard; sessions of at least
+one hour receive a visible achievement. Keep this history separate from the
+playback-resume snapshot.
+
+**Why:** The user chose pause-and-resume timing and requested a dated leaderboard
+and an hour-long achievement. A personal leaderboard does not require an
+external account or remote service.
+
+**How to apply:** Do not record a pause as a finished score or count time while
+video playback is paused. Preserve completed scores and the lifetime play total
+on device across app restarts.
+
+Each background audio track may be boosted up to 200%; above 100% can distort
+audio.
+
+**Why:** The user explicitly asked to raise background-track volume above 100%;
+a bounded native gain avoids an unbounded volume control.
+
+**How to apply:** Keep track gain independent and persistent, preserve the
+ordinary 0–100% range, and make the clipping tradeoff clear.

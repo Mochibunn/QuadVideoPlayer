@@ -1,0 +1,99 @@
+export const VIEWING_SESSIONS_KEY = 'quad.player.viewing-sessions.v1';
+export const VIEWING_ACHIEVEMENT_MS = 60 * 60 * 1000;
+export const VIEWING_RECOVERY_WINDOW_MS = 15_000;
+export const VIEWING_SESSION_LIMIT = 100;
+export type ActiveViewingSession = {
+  id: string; startedAtMs: number; elapsedMs: number; resumedAtMs: number | null; lastCheckpointMs: number;
+};
+export type FinishedViewingSession = { id: string; startedAtMs: number; finishedAtMs: number; durationMs: number };
+export type ViewingSessionStore = {
+  version: 1; totalPlaybackMs: number; leaderboard: FinishedViewingSession[]; active: ActiveViewingSession | null;
+};
+export const emptyViewingSessions = (): ViewingSessionStore =>
+  ({ version: 1, totalPlaybackMs: 0, leaderboard: [], active: null });
+
+function object(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('The playback history is damaged.');
+  return value as Record<string, unknown>;
+}
+function timestamp(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > Date.now() + 24 * 60 * 60 * 1000) {
+    throw new Error('The playback history contains an invalid date.');
+  }
+  return value;
+}
+function duration(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error('The playback history contains an invalid time.');
+  }
+  return value;
+}
+function identifier(value: unknown): string {
+  if (typeof value !== 'string' || !/^[\w-]{1,100}$/.test(value)) {
+    throw new Error('The playback history contains an invalid session.');
+  }
+  return value;
+}
+function sortLeaderboard(entries: FinishedViewingSession[]): FinishedViewingSession[] {
+  return [...entries].sort((a, b) => b.durationMs - a.durationMs || b.finishedAtMs - a.finishedAtMs || a.id.localeCompare(b.id))
+    .slice(0, VIEWING_SESSION_LIMIT);
+}
+export function parseViewingSessions(raw: string | null): ViewingSessionStore {
+  if (!raw) return emptyViewingSessions();
+  const data = object(JSON.parse(raw));
+  if (data.version !== 1 || !Array.isArray(data.leaderboard) || data.leaderboard.length > VIEWING_SESSION_LIMIT) {
+    throw new Error('The playback history has an unsupported format.');
+  }
+  const leaderboard = data.leaderboard.map((item): FinishedViewingSession => {
+    const row = object(item);
+    const startedAtMs = timestamp(row.startedAtMs);
+    const finishedAtMs = timestamp(row.finishedAtMs);
+    if (finishedAtMs < startedAtMs) throw new Error('The completed session date is invalid.');
+    return { id: identifier(row.id), startedAtMs, finishedAtMs, durationMs: duration(row.durationMs) };
+  });
+  if (new Set(leaderboard.map((item) => item.id)).size !== leaderboard.length) {
+    throw new Error('The playback history contains duplicate sessions.');
+  }
+  let active: ActiveViewingSession | null = null;
+  if (data.active !== null) {
+    const row = object(data.active);
+    const resumedAtMs = row.resumedAtMs === null ? null : timestamp(row.resumedAtMs);
+    const lastCheckpointMs = timestamp(row.lastCheckpointMs);
+    active = { id: identifier(row.id), startedAtMs: timestamp(row.startedAtMs),
+      elapsedMs: duration(row.elapsedMs), resumedAtMs, lastCheckpointMs };
+    if (resumedAtMs !== null && resumedAtMs < active.startedAtMs) throw new Error('The active session date is invalid.');
+  }
+  return { version: 1, totalPlaybackMs: duration(data.totalPlaybackMs), leaderboard: sortLeaderboard(leaderboard), active };
+}
+export function recoverViewingSessions(store: ViewingSessionStore, now: number): ViewingSessionStore {
+  const active = store.active;
+  if (!active || active.resumedAtMs === null) return store;
+  const savedPlayback = Math.min(VIEWING_RECOVERY_WINDOW_MS, Math.max(0, now - active.lastCheckpointMs));
+  return { ...store, active: { ...active, elapsedMs: active.elapsedMs + savedPlayback, resumedAtMs: null, lastCheckpointMs: now } };
+}
+export function elapsedViewingTime(active: ActiveViewingSession, now: number): number {
+  return active.elapsedMs + (active.resumedAtMs === null ? 0 : Math.max(0, now - active.resumedAtMs));
+}
+export function formatViewingTime(milliseconds: number): string {
+  if (milliseconds > 0 && milliseconds < 1000) return '< 1s';
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const clock = `${pad(minutes)}:${pad(remainder)}`;
+  return hours > 0 ? `${hours}:${clock}` : clock;
+}
+export function finishViewingSession(store: ViewingSessionStore, now: number) {
+  if (!store.active) return { store, completed: null as FinishedViewingSession | null };
+  const completed = { id: store.active.id, startedAtMs: store.active.startedAtMs, finishedAtMs: now,
+    durationMs: elapsedViewingTime(store.active, now) };
+  return { store: { version: 1 as const,
+    totalPlaybackMs: store.totalPlaybackMs + completed.durationMs,
+    leaderboard: completed.durationMs > 0 ? sortLeaderboard([...store.leaderboard, completed]) : store.leaderboard,
+    active: null },
+    completed };
+}
+export function localSessionDate(timestampMs: number): string {
+  return new Date(timestampMs).toLocaleString();
+}

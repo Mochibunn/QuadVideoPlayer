@@ -11,9 +11,10 @@ type Props = {
 export default function TrackVolumeControl({ name, value, onChange }: Props) {
   const colors = useColors();
   const [width, setWidth] = useState(0);
-  const percentage = Math.round(value * 100);
+  const percentage = Math.round(Math.max(0, Math.min(2, value)) * 100);
+  const fillPercentage = Math.min(100, percentage / 2);
   const update = (x: number) => {
-    if (width > 0) onChange(Math.max(0, Math.min(1, x / width)));
+    if (width > 0) onChange(Math.max(0, Math.min(2, (x / width) * 2)));
   };
   return (
     <View style={styles.row}>
@@ -23,11 +24,11 @@ export default function TrackVolumeControl({ name, value, onChange }: Props) {
         accessible
         accessibilityRole="adjustable"
         accessibilityLabel={`Volume for ${name}`}
-        accessibilityValue={{ min: 0, max: 100, now: percentage, text: `${percentage}%` }}
+        accessibilityValue={{ min: 0, max: 200, now: percentage, text: `${percentage}%` }}
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
         onAccessibilityAction={({ nativeEvent }) => {
-          if (nativeEvent.actionName === 'increment') onChange(Math.min(1, value + 0.05));
-          if (nativeEvent.actionName === 'decrement') onChange(Math.max(0, value - 0.05));
+          if (nativeEvent.actionName === 'increment') onChange(Math.min(2, value + 0.1));
+          if (nativeEvent.actionName === 'decrement') onChange(Math.max(0, value - 0.1));
         }}
         onLayout={({ nativeEvent }) => setWidth(nativeEvent.layout.width)}
         onStartShouldSetResponder={() => true}
@@ -37,11 +38,11 @@ export default function TrackVolumeControl({ name, value, onChange }: Props) {
         onResponderTerminationRequest={() => false}
       >
         <View pointerEvents="none" style={[styles.track, { backgroundColor: colors.muted }]}>
-          <View style={[styles.fill, { width: `${percentage}%`, backgroundColor: colors.primary }]} />
+          <View style={[styles.fill, { width: `${fillPercentage}%`, backgroundColor: colors.primary }]} />
         </View>
         <View
           pointerEvents="none"
-          style={[styles.knob, { left: `${percentage}%`, backgroundColor: colors.primary }]}
+          style={[styles.knob, { left: `${fillPercentage}%`, backgroundColor: colors.primary }]}
         />
       </View>
       <Text style={[styles.percentage, { color: colors.foreground }]}>{percentage}%</Text>

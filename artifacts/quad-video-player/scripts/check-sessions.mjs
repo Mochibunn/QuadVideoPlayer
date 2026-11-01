@@ -42,6 +42,13 @@ function fixture() {
 test('complete session round-trips all independent states and sound settings', () => {
   assert.deepEqual(plain(codec.parseSession(JSON.stringify(fixture()))), fixture());
 });
+test('audio track volumes retain boosted 200 percent levels across save and resume', () => {
+  const value = fixture();
+  value.audio[0].volume = 2;
+  assert.equal(codec.parseSession(JSON.stringify(value)).audio[0].volume, 2);
+  value.audio[0].volume = 3;
+  assert.equal(codec.parseSession(JSON.stringify(value)).audio[0].volume, 2);
+});
 test('pool includes unused selections and preserves four quadrant order', () => {
   const value = codec.parseSession(JSON.stringify(fixture()));
   assert.equal(value.pool.length, 5);

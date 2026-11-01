@@ -62,7 +62,7 @@ export function parseSession(raw: string): SessionSnapshot {
   if (streams.length !== 0 && streams.length !== 4) throw new Error('The saved session must contain four video quadrants.');
   const audio = list(v.audio).map((item): AudioSnapshot => {
     const s = record(item);
-    return { ...media(s), position: number(s.position, 0, 1e9), volume: number(s.volume, 0, 1), muted: bool(s.muted), paused: bool(s.paused) };
+    return { ...media(s), position: number(s.position, 0, 1e9), volume: number(s.volume, 0, 2), muted: bool(s.muted), paused: bool(s.paused) };
   });
   if (new Set(audio.map((item) => item.uri)).size !== audio.length) throw new Error('The saved audio mix has duplicate tracks.');
   const s = record(v.settings);

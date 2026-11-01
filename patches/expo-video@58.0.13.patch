@@ -261,10 +261,10 @@ index 0000000000000000000000000000000000000000..6ce2840f5699b1b8e85909b553598365
 +}
 diff --git a/android/src/main/java/expo/modules/video/player/SoundEffectsAudioProcessor.kt b/android/src/main/java/expo/modules/video/player/SoundEffectsAudioProcessor.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..795e439f9c40cac9366a62cac2e5194884da9333
+index 0000000000000000000000000000000000000000..3bf9f39cad9cb5e0e1378545964d82cca1198443
 --- /dev/null
 +++ b/android/src/main/java/expo/modules/video/player/SoundEffectsAudioProcessor.kt
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,166 @@
 +package expo.modules.video.player
 +
 +import androidx.media3.common.C
@@ -283,9 +283,11 @@ index 0000000000000000000000000000000000000000..795e439f9c40cac9366a62cac2e51948
 +    val eq: Boolean = false,
 +    val bands: List<Double> = List(5) { 0.0 },
 +    val reverb: String = "off",
-+    val echo: Boolean = false
++    val echo: Boolean = false,
++    val gain: Double = 1.0
 +  ) {
-+    val active get() = eq || reverb != "off" || echo
++    val linearGain get() = if (gain.isFinite()) gain.coerceIn(1.0, 2.0) else 1.0
++    val active get() = eq || reverb != "off" || echo || linearGain > 1.0
 +  }
 +
 +  @Volatile var settings = Settings()
@@ -303,7 +305,8 @@ index 0000000000000000000000000000000000000000..795e439f9c40cac9366a62cac2e51948
 +        (bands?.optDouble(i, 0.0) ?: 0.0).let { if (it.isFinite()) it.coerceIn(-12.0, 12.0) else 0.0 }
 +      },
 +      reverb = json.optString("reverb", "off").takeIf { it in listOf("room", "hall", "plate") } ?: "off",
-+      echo = json.optBoolean("echo")
++      echo = json.optBoolean("echo"),
++      gain = json.optDouble("gain", 1.0).let { if (it.isFinite()) it.coerceIn(1.0, 2.0) else 1.0 }
 +    )
 +  }
 +
@@ -339,7 +342,8 @@ index 0000000000000000000000000000000000000000..795e439f9c40cac9366a62cac2e51948
 +      val sample = if (raw.isFinite()) raw.coerceIn(-1.0, 1.0) else 0.0
 +      val processed = channels[channelIndex].process(sample * headroom)
 +      channelIndex = (channelIndex + 1) % channels.size
-+      val safe = if (processed.isFinite()) processed.coerceIn(-0.98, 0.98) else 0.0
++      val amplified = processed * config.linearGain
++      val safe = if (amplified.isFinite()) amplified.coerceIn(-0.98, 0.98) else 0.0
 +      if (floats) output.putFloat(safe.toFloat())
 +      else output.putShort((safe * 32767).roundToInt().toShort())
 +    }
@@ -666,10 +670,10 @@ index 0000000000000000000000000000000000000000..c214037095efcad679321f6ce4133812
 +}
 diff --git a/android/src/test/java/expo/modules/video/player/SoundEffectsAudioProcessorTest.kt b/android/src/test/java/expo/modules/video/player/SoundEffectsAudioProcessorTest.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..dffe08357d0fff335c4e27602f66671b42a18f5c
+index 0000000000000000000000000000000000000000..c86864eec65e155a00fb7facd136dc01d4607a52
 --- /dev/null
 +++ b/android/src/test/java/expo/modules/video/player/SoundEffectsAudioProcessorTest.kt
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,102 @@
 +package expo.modules.video.player
 +
 +import androidx.media3.common.C
@@ -705,6 +709,16 @@ index 0000000000000000000000000000000000000000..dffe08357d0fff335c4e27602f66671b
 +    val output = p.output
 +    assertArrayEquals(input, ByteArray(output.remaining()).also { output.get(it) })
 +    p.queueInput(AudioProcessor.EMPTY_BUFFER)
++  }
++  @Test fun perTrackGainBoostsOnlyThatPlayerAndNeverOverflows() {
++    val boost = processor(SoundEffectsAudioProcessor.Settings(gain = 2.0))
++    boost.queueInput(AudioProcessor.EMPTY_BUFFER)
++    assertArrayEquals(floatArrayOf(0.5f, -0.25f), samples(boost, floatArrayOf(0.25f, -0.125f)), 0f)
++    assertArrayEquals(floatArrayOf(0.98f, -0.98f),
++      samples(processor(SoundEffectsAudioProcessor.Settings(gain = 8.0)), floatArrayOf(0.9f, -0.9f)), 0f)
++    assertArrayEquals(floatArrayOf(0.25f), samples(processor(SoundEffectsAudioProcessor.Settings()), floatArrayOf(0.25f)), 0f)
++    assertEquals(2.0, processor(SoundEffectsAudioProcessor.Settings(gain = 8.0)).settings.linearGain, 0.0)
++    assertEquals(1.0, processor(SoundEffectsAudioProcessor.Settings(gain = 0.25)).settings.linearGain, 0.0)
 +  }
 +  @Test fun everyEffectHandlesEmptyInput() {
 +    for (mode in listOf("off", "room", "hall", "plate")) {

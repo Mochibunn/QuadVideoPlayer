@@ -10,6 +10,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Alert,
   FlatList,
   Linking,
@@ -33,6 +34,8 @@ import SoundEffectsSettings from '@/components/SoundEffectsSettings';
 import { usePlayerSoundEffects, useSoundSettings } from '@/hooks/useSoundSettings';
 import { useSessionRegistry } from '@/hooks/useSessionRegistry';
 import SessionControls from '@/components/SessionControls';
+import ViewingSessionTimer from '@/components/ViewingSessionTimer';
+import { useViewingSessions } from '@/hooks/useViewingSessions';
 import { seekPosition, type SessionSnapshot, type VideoSnapshot } from '@/lib/sessions';
 import { prepareVideoSlot, QUAD_BUFFER_OPTIONS } from '@/lib/player-startup';
 import { showCrashReport } from '@/components/CrashReportNotice';
@@ -204,6 +207,8 @@ function VideoTile({
   controlsVisible,
   onToggleControls,
   initialSnapshot,
+  playbackId,
+  onPlaybackStateChange,
 }: {
   asset: VideoAsset;
   pool: VideoAsset[];
@@ -217,6 +222,8 @@ function VideoTile({
   controlsVisible: boolean;
   onToggleControls: () => void;
   initialSnapshot?: VideoSnapshot;
+  playbackId: string;
+  onPlaybackStateChange: (playbackId: string, playing: boolean) => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -315,7 +322,9 @@ function VideoTile({
 
   useEventListener(player, 'playingChange', ({ isPlaying: playing }) => {
     setIsPlaying(playing);
+    onPlaybackStateChange(playbackId, playing);
   });
+  useEffect(() => () => onPlaybackStateChange(playbackId, false), [onPlaybackStateChange, playbackId]);
 
   useEventListener(player, 'statusChange', ({ status, error }) => {
     setIsLoading(status === 'loading' || status === 'idle');
@@ -608,10 +617,28 @@ export default function QuadVideoPlayerScreen() {
   const [activeVideos, setActiveVideos] = useState<VideoAsset[]>([]);
   const [session, setSession] = useState(0);
   const [globalPlaying, setGlobalPlaying] = useState(true);
+  const [playingQuadrants, setPlayingQuadrants] = useState<Set<string>>(() => new Set());
   const [isPicking, setIsPicking] = useState(false);
   const [sourceLabel, setSourceLabel] = useState('');
   const insets = useSafeAreaInsets();
   const hasVideos = activeVideos.length > 0;
+  const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
+  const reportQuadrantPlayback = useCallback((playbackId: string, playing: boolean) => {
+    setPlayingQuadrants((current) => {
+      if (current.has(playbackId) === playing) return current;
+      const next = new Set(current);
+      if (playing) next.add(playbackId);
+      else next.delete(playbackId);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => setAppIsActive(state === 'active'));
+    return () => subscription.remove();
+  }, []);
+  const isPlaybackActive = hasVideos && globalPlaying && !pipClosed &&
+    (appIsActive || inPip) && [...playingQuadrants].some((id) => id.startsWith(`${session}-`));
+  const viewing = useViewingSessions(isPlaybackActive);
   const controls = useAutoHideControls(hasVideos, activePanel !== null || isPicking || sessionBusy, controlsHideSeconds);
   useEffect(() => {
     if (pipClosed) setGlobalPlaying(false);
@@ -874,6 +901,7 @@ export default function QuadVideoPlayerScreen() {
     if (remaining.length === 0) {
       setActiveVideos([]);
       setGlobalPlaying(false);
+      void viewing.finishSession();
       return;
     }
   };
@@ -883,6 +911,7 @@ export default function QuadVideoPlayerScreen() {
   const stopPlayback = () => {
     setActiveVideos([]);
     setGlobalPlaying(false);
+    void viewing.finishSession();
   };
 
   const captureSession = (): SessionSnapshot => {
@@ -1073,23 +1102,29 @@ export default function QuadVideoPlayerScreen() {
           <View style={styles.grid}>
             {[0, 1].map((row) => (
               <View key={row} style={styles.gridRow}>
-            {activeVideos.slice(row * 2, row * 2 + 2).map((asset, column) => (
-              <VideoTile
-                key={`${session}-${row * 2 + column}`}
-                asset={asset}
-                pool={pool}
-                index={row * 2 + column}
-                globalPlaying={globalPlaying}
-                normalizeLoudness={audioMode === 'normalized'}
-                linkedVolume={audioMode === 'shared'}
-                sharedVolume={sharedVolume}
-                onSharedVolumeChange={setSharedVolume}
-                fillVideos={fillVideos}
-                controlsVisible={!inPip && controls.visible}
-                onToggleControls={controls.toggle}
-                initialSnapshot={restoredStreams?.[row * 2 + column]}
-              />
-            ))}
+            {activeVideos.slice(row * 2, row * 2 + 2).map((asset, column) => {
+              const index = row * 2 + column;
+              const playbackId = `${session}-${index}`;
+              return (
+                <VideoTile
+                  key={playbackId}
+                  asset={asset}
+                  pool={pool}
+                  index={index}
+                  playbackId={playbackId}
+                  onPlaybackStateChange={reportQuadrantPlayback}
+                  globalPlaying={globalPlaying}
+                  normalizeLoudness={audioMode === 'normalized'}
+                  linkedVolume={audioMode === 'shared'}
+                  sharedVolume={sharedVolume}
+                  onSharedVolumeChange={setSharedVolume}
+                  fillVideos={fillVideos}
+                  controlsVisible={!inPip && controls.visible}
+                  onToggleControls={controls.toggle}
+                  initialSnapshot={restoredStreams?.[index]}
+                />
+              );
+            })}
               </View>
             ))}
           </View>
@@ -1149,6 +1184,19 @@ export default function QuadVideoPlayerScreen() {
           </View>
         )}
         <SlideshowOverlay active={hasVideos && !pipClosed} />
+        <ViewingSessionTimer
+          store={viewing.store}
+          visible={hasVideos || !!viewing.store.active || viewing.store.leaderboard.length > 0 || viewing.store.totalPlaybackMs > 0 || !!viewing.error}
+          ready={viewing.ready}
+          error={viewing.error}
+          isPlaying={isPlaybackActive}
+          celebration={viewing.celebration}
+          finishRecap={viewing.finishRecap}
+          onCelebrateDone={() => viewing.setCelebration(null)}
+          onRecapDismiss={() => viewing.setFinishRecap(null)}
+          onEndSession={viewing.finishSession}
+          onRetry={() => void viewing.retryStorage()}
+        />
       </View>
       <Modal
         visible={activePanel === 'settings'}
