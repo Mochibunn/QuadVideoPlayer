@@ -68,6 +68,26 @@ both processing and slider linking. Background-audio tracks remain independent.
 
 ## Display options and launch
 
+### Downloads and Android storage access
+
+Choose **Choose folder → Downloads** to build a pool from videos Android has
+indexed in Downloads and its subfolders. Android 11 and newer deliberately
+disable the Downloads root in the standard folder picker; storage permission
+cannot unlock that picker option. The shortcut uses native MediaStore instead.
+**Other folder** keeps the recursive folder picker for locations Android allows.
+
+The shortcut asks for video access only when selected. On Android 14+, **Allow
+all videos** includes the full Downloads video library; selected-only access
+includes only permitted videos and is labelled accordingly. If access is denied,
+the app offers Android Settings and individual file selection. **Choose videos**
+also handles files that Android has not indexed, without broad library access.
+No “manage all files” permission is requested. Android 12 and older use the
+legacy read permission, limited in the manifest to API 32 and below.
+
+The Android application ID is now `com.mochi.quadvideoplayer`. This is a separate
+application from the earlier `com.anonymous.quadvideoplayer` builds. It does not
+replace their installation or inherit their private settings.
+
 Playback uses the entire app window as a gapless 2×2 grid: no toolbar, filename
 row or volume-control row reserves space around the video. Android's navigation
 bar is hidden during playback; an edge swipe can reveal system navigation.

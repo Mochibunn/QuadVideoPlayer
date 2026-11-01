@@ -17,3 +17,16 @@ turns a small settings/configuration update into a much longer C++ rebuild.
 
 **How to apply:** Use incremental prebuild to sync versions and plugins. Reserve
 a clean regeneration for SDK upgrades or changes that genuinely require it.
+
+Changing the Android package ID can leave React Native's cached autolinking
+metadata referring to the old BuildConfig package even after prebuild has
+correctly updated the namespace, application ID and Kotlin source packages.
+
+**Why:** The autolinking configuration cache watches package metadata, not every
+native app configuration input. Incremental builds can therefore compile a
+generated Java entry point against the previous identity.
+
+**How to apply:** On a package-ID change, check and invalidate the cached
+android/build/generated/autolinking/autolinking.json if it still has the old
+project.android.packageName, then let Gradle regenerate it. Do not hand-edit
+generated Java or discard all native/C++ build intermediates.

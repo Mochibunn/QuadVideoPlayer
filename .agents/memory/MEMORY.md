@@ -3,3 +3,4 @@
 - [Expo native patches](expo-native-patches.md) — Patched Android modules must build from source; precompiled publications otherwise omit local Kotlin changes.
 - [Media compatibility](media-compatibility.md) — Background audio accepts videos without using video decoders; container recognition does not guarantee codec support.
 - [Native audio buffers](native-audio-buffers.md) — Empty Media3 input must be a no-op before output allocation, even with effects disabled.
+- [Android Downloads access](android-storage.md) — The Downloads root is intentionally blocked in SAF; use scoped video-library access, not all-files permission.

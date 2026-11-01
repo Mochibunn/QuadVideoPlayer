@@ -1,0 +1,16 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.mochi.quadvideoplayer'
+version = '1.0.0'
+
+android {
+  namespace 'com.mochi.quadvideoplayer.downloads'
+}
+
+dependencies {
+  implementation 'com.facebook.react:react-android'
+  testImplementation 'junit:junit:4.13.2'
+}

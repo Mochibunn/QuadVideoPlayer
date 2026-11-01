@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -29,6 +30,7 @@ import SettingSwitch from '@/components/SettingSwitch';
 import FadingControls from '@/components/FadingControls';
 import ControlsTimeoutSetting from '@/components/ControlsTimeoutSetting';
 import { DEFAULT_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
+import { readDownloadsVideos } from '@/lib/downloads-library';
 import { getVideoAudioMode } from '@/lib/audio-mode';
 import { hasVideoExtension, isVideoFile, mediaPlaybackError } from '@/lib/media-formats';
 import {
@@ -658,7 +660,7 @@ export default function QuadVideoPlayerScreen() {
     }
   };
 
-  const chooseVideoFolder = async () => {
+  const chooseDirectoryTree = async () => {
     if (Platform.OS !== 'android') {
       Alert.alert(
         'Folder access is Android-only',
@@ -701,6 +703,83 @@ export default function QuadVideoPlayerScreen() {
     } finally {
       setIsPicking(false);
     }
+  };
+
+  const openAppSettings = () => {
+    void Linking.openSettings().catch(() => {
+      Alert.alert('Could not open Settings', 'Open Android Settings → Apps → Quad Video Player → Permissions.');
+    });
+  };
+
+  const chooseDownloadsVideos = async () => {
+    setIsPicking(true);
+    try {
+      const result = await readDownloadsVideos();
+      if (result.access === 'denied') {
+        Alert.alert(
+          'Video access needed',
+          'Allow video access in Android Settings to load the Downloads pool. You can also select individual files without granting library access.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Select files', onPress: () => void chooseVideoFiles() },
+            { text: 'Open Settings', onPress: openAppSettings },
+          ],
+        );
+        return;
+      }
+      const videos = result.videos.filter(isVideoFile).map((video) => ({
+        id: video.uri, name: video.name, uri: video.uri,
+      }));
+      if (videos.length === 0) {
+        Alert.alert(
+          'No Downloads videos available',
+          result.access === 'limited'
+            ? 'Android is sharing only selected videos, and none are in Downloads. Allow all videos in Settings, or select individual files.'
+            : 'Android has not indexed any accessible videos in Downloads or its subfolders. Select individual files to open videos that are not in the library.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Select files', onPress: () => void chooseVideoFiles() },
+            ...(result.access === 'limited' ? [{ text: 'Open Settings', onPress: openAppSettings }] : []),
+          ],
+        );
+        return;
+      }
+      setSourceLabel(result.access === 'limited' ? 'Downloads · selected access' : 'Downloads');
+      startStreams(videos);
+      if (result.access === 'limited') {
+        Alert.alert(
+          'Selected video access',
+          'The Downloads pool includes only videos you allowed Android to share. To include all Downloads videos, allow all videos in the app’s Android permissions.',
+          [{ text: 'Continue' }, { text: 'Open Settings', onPress: openAppSettings }],
+        );
+      }
+    } catch (error) {
+      Alert.alert(
+        'Could not read Downloads',
+        error instanceof Error ? error.message : 'Please check video access in Android Settings.',
+        [{ text: 'Cancel', style: 'cancel' }, { text: 'Select files', onPress: () => void chooseVideoFiles() }],
+      );
+    } finally {
+      setIsPicking(false);
+    }
+  };
+
+  const chooseVideoFolder = () => {
+    if (Platform.OS !== 'android') {
+      void chooseDirectoryTree();
+      return;
+    }
+    setIsPicking(true);
+    Alert.alert(
+      'Choose video folder',
+      'Android blocks the Downloads root in its folder picker. Use Downloads to read its video library, or choose another folder normally.',
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => setIsPicking(false) },
+        { text: 'Other folder', onPress: () => void chooseDirectoryTree() },
+        { text: 'Downloads', onPress: () => void chooseDownloadsVideos() },
+      ],
+      { cancelable: true, onDismiss: () => setIsPicking(false) },
+    );
   };
 
   const removeFromPool = (asset: VideoAsset) => {

@@ -58,3 +58,11 @@ explicitly requested the timing slider.
 **How to apply:** A video tap must hide already-visible controls, not reveal
 them again on touch-down. Keep ordinary control interactions separate from
 video-surface taps, so adjusting playback does not accidentally hide controls.
+
+Keep the user's chosen Android application identity: `com.mochi.quadvideoplayer`.
+
+**Why:** The user explicitly requested this package name. Android treats a
+package-name change as a separate application, without the previous app's data.
+
+**How to apply:** Preserve this identity in future builds; do not replace it with
+an Expo-generated default or rename it for routine updates.

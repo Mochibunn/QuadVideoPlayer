@@ -18,7 +18,7 @@ if [[ ! -f android/gradlew ]]; then
 fi
 
 cd android
-./gradlew :expo-video:testDebugUnitTest :app:assembleRelease \
+./gradlew :expo-video:testDebugUnitTest :downloads-media:testDebugUnitTest :app:assembleRelease \
   -PreactNativeArchitectures=arm64-v8a \
   -Pandroid.enableMinifyInReleaseBuilds="${ANDROID_MINIFY:-false}" \
   -Pandroid.enableShrinkResourcesInReleaseBuilds="${ANDROID_MINIFY:-false}" \
