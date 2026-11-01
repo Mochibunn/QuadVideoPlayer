@@ -1,4 +1,10 @@
-type StartupPlayer = { replaceAsync(source: { uri: string }): Promise<void>; play(): void; pause(): void };
+import { videoSourceForUri } from './media-formats';
+
+type StartupPlayer = {
+  replaceAsync(source: ReturnType<typeof videoSourceForUri>): Promise<void>;
+  play(): void;
+  pause(): void;
+};
 // Local files do not need four independent, large streaming read-ahead caches.
 export const QUAD_BUFFER_OPTIONS = {
   preferredForwardBufferDuration: 4,
@@ -22,7 +28,7 @@ export function prepareVideoSlot(
     void (async () => {
       try {
         if (!active) return;
-        await player.replaceAsync({ uri });
+        await player.replaceAsync(videoSourceForUri(uri));
         if (!active) return;
         if (shouldPlay()) player.play();
         else player.pause();

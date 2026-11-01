@@ -50,18 +50,17 @@ import { pickMediaFiles } from '@/lib/media-picker';
 import { DEFAULT_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
 import { readDownloadsVideos } from '@/lib/downloads-library';
 import { getVideoAudioMode } from '@/lib/audio-mode';
-import { hasVideoExtension, isVideoFile, mediaPlaybackError } from '@/lib/media-formats';
+import { hasVideoExtension, isVideoFile, mediaPlaybackError, videoSourceForUri } from '@/lib/media-formats';
+import {
+  applyVideoWatchHistory, formatLastPlayed, pickInitialVideos, pickNextVideo,
+  parseVideoWatchHistory, VIDEO_WATCH_HISTORY_KEY,
+  type VideoAsset, type VideoWatchHistory,
+} from '@/lib/video-playback';
 import {
   getThemeColors,
   themePresets,
   type ThemeId,
 } from '@/constants/colors';
-
-type VideoAsset = {
-  id: string;
-  name: string;
-  uri: string;
-};
 
 type ActivePanel = 'settings' | 'pool' | 'audio' | 'slideshow' | 'sources' | null;
 
@@ -75,7 +74,6 @@ function isThemeId(value: string | null): value is ThemeId {
   return themePresets.some((theme) => theme.id === value);
 }
 
-const STREAM_COUNT = 4;
 const START_VOLUME = 0.25;
 const NORMALIZATION_APK_ERROR = 'Loudness normalization requires the standalone Android APK, not Expo Go.';
 
@@ -117,29 +115,6 @@ async function scanFolderForVideos(rootUri: string) {
   }
 
   return { videos, unreadableSubfolders };
-}
-
-function shuffled<T>(items: T[]) {
-  const result = [...items];
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
-  }
-  return result;
-}
-
-function pickInitialVideos(pool: VideoAsset[]) {
-  const selection = shuffled(pool).slice(0, STREAM_COUNT);
-  while (selection.length < STREAM_COUNT) {
-    selection.push(pool[Math.floor(Math.random() * pool.length)]);
-  }
-  return selection;
-}
-
-function pickNextVideo(pool: VideoAsset[], currentId: string) {
-  if (pool.length < 2) return pool[0];
-  const options = pool.filter((asset) => asset.id !== currentId);
-  return options[Math.floor(Math.random() * options.length)];
 }
 
 function ActionButton({
@@ -209,6 +184,8 @@ function VideoTile({
   initialSnapshot,
   playbackId,
   onPlaybackStateChange,
+  getNextVideo,
+  onAssetChange,
 }: {
   asset: VideoAsset;
   pool: VideoAsset[];
@@ -223,7 +200,9 @@ function VideoTile({
   onToggleControls: () => void;
   initialSnapshot?: VideoSnapshot;
   playbackId: string;
-  onPlaybackStateChange: (playbackId: string, playing: boolean) => void;
+  onPlaybackStateChange: (playbackId: string, playing: boolean, videoUri?: string) => void;
+  getNextVideo: (slot: number, currentId: string) => VideoAsset | undefined;
+  onAssetChange: (slot: number, next: VideoAsset) => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -292,7 +271,7 @@ function VideoTile({
 
   const advance = useCallback(
     async (forcePlayback = false) => {
-      const next = pickNextVideo(pool, currentAssetRef.current.id);
+      const next = getNextVideo(index, currentAssetRef.current.id);
       if (!next) return;
       const shouldResume =
         globalPlaying && (forcePlayback || player.playing);
@@ -300,11 +279,12 @@ function VideoTile({
       nextSourcePlaying.current = shouldResume;
       restorePlaying.current = shouldResume;
       currentAssetRef.current = next;
+      onAssetChange(index, next);
       setCurrentAsset(next);
       setErrorMessage('');
       setIsLoading(true);
       try {
-        await player.replaceAsync({ uri: next.uri });
+        await player.replaceAsync(videoSourceForUri(next.uri));
         if (shouldResume) player.play();
       } catch (error) {
         setErrorMessage(
@@ -313,7 +293,7 @@ function VideoTile({
         setIsLoading(false);
       }
     },
-    [globalPlaying, player, pool],
+    [getNextVideo, globalPlaying, index, onAssetChange, player],
   );
 
   useEventListener(player, 'playToEnd', () => {
@@ -322,7 +302,7 @@ function VideoTile({
 
   useEventListener(player, 'playingChange', ({ isPlaying: playing }) => {
     setIsPlaying(playing);
-    onPlaybackStateChange(playbackId, playing);
+    onPlaybackStateChange(playbackId, playing, playing ? currentAssetRef.current.uri : undefined);
   });
   useEffect(() => () => onPlaybackStateChange(playbackId, false), [onPlaybackStateChange, playbackId]);
 
@@ -421,7 +401,7 @@ function VideoTile({
     setErrorMessage('');
     setIsLoading(true);
     try {
-      await player.replaceAsync({ uri: currentAsset.uri });
+      await player.replaceAsync(videoSourceForUri(currentAsset.uri));
       if (globalPlaying) player.play();
     } catch (error) {
       setErrorMessage(
@@ -477,6 +457,14 @@ function VideoTile({
               style={[styles.retryButton, { borderColor: colors.border }]}
             >
               <Text style={[styles.retryText, { color: colors.accentForeground }]}>Retry</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Skip failed video in stream ${index + 1}`}
+              onPress={() => void advance(true)}
+              style={[styles.retryButton, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.retryText, { color: colors.accentForeground }]}>Skip</Text>
             </Pressable>
           </View>
         )}
@@ -615,6 +603,12 @@ export default function QuadVideoPlayerScreen() {
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [pool, setPool] = useState<VideoAsset[]>([]);
   const [activeVideos, setActiveVideos] = useState<VideoAsset[]>([]);
+  const [watchHistory, setWatchHistory] = useState<VideoWatchHistory>({});
+  const [watchHistoryLoaded, setWatchHistoryLoaded] = useState(false);
+  const watchHistoryRef = useRef<VideoWatchHistory>({});
+  const watchHistoryWritable = useRef(false);
+  const watchHistoryWriteQueue = useRef(Promise.resolve());
+  const activeAssetsRef = useRef(new Map<number, VideoAsset>());
   const [session, setSession] = useState(0);
   const [globalPlaying, setGlobalPlaying] = useState(true);
   const [playingQuadrants, setPlayingQuadrants] = useState<Set<string>>(() => new Set());
@@ -623,7 +617,14 @@ export default function QuadVideoPlayerScreen() {
   const insets = useSafeAreaInsets();
   const hasVideos = activeVideos.length > 0;
   const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
-  const reportQuadrantPlayback = useCallback((playbackId: string, playing: boolean) => {
+  const reportQuadrantPlayback = useCallback((playbackId: string, playing: boolean, videoUri?: string) => {
+    if (playing && videoUri) {
+      const lastPlayedAt = Date.now();
+      const nextHistory = { ...watchHistoryRef.current, [videoUri]: lastPlayedAt };
+      watchHistoryRef.current = nextHistory;
+      setWatchHistory(nextHistory);
+      setPool((current) => current.map((asset) => asset.uri === videoUri ? { ...asset, lastPlayedAt } : asset));
+    }
     setPlayingQuadrants((current) => {
       if (current.has(playbackId) === playing) return current;
       const next = new Set(current);
@@ -632,6 +633,42 @@ export default function QuadVideoPlayerScreen() {
       return next;
     });
   }, []);
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(VIDEO_WATCH_HISTORY_KEY)
+      .then((raw) => {
+        const history = parseVideoWatchHistory(raw);
+        if (!mounted) return;
+        watchHistoryRef.current = history;
+        watchHistoryWritable.current = true;
+        setWatchHistory(history);
+        setPool((current) => applyVideoWatchHistory(current, history));
+      })
+      .catch((error) => {
+        if (mounted) Alert.alert('Video history unavailable',
+          error instanceof Error ? error.message : 'Could not restore last-played times.');
+      })
+      .finally(() => { if (mounted) setWatchHistoryLoaded(true); });
+    return () => { mounted = false; };
+  }, []);
+  useEffect(() => {
+    if (!watchHistoryLoaded || !watchHistoryWritable.current) return;
+    const snapshot = JSON.stringify(watchHistory);
+    watchHistoryWriteQueue.current = watchHistoryWriteQueue.current.then(() => {
+      if (watchHistoryWritable.current) return AsyncStorage.setItem(VIDEO_WATCH_HISTORY_KEY, snapshot);
+    }).catch(() => {
+      watchHistoryWritable.current = false;
+      Alert.alert('Could not save video history', 'Last-played times will not persist until the app can write local storage.');
+    });
+  }, [watchHistory, watchHistoryLoaded]);
+  const onAssetChange = useCallback((slot: number, next: VideoAsset) => {
+    activeAssetsRef.current.set(slot, next);
+  }, []);
+  const getNextVideoForQuadrant = useCallback((slot: number, currentId: string) => {
+    const playingElsewhere = new Set([...activeAssetsRef.current.entries()]
+      .filter(([otherSlot]) => otherSlot !== slot).map(([, asset]) => asset.id));
+    return pickNextVideo(pool, currentId, playingElsewhere);
+  }, [pool]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => setAppIsActive(state === 'active'));
     return () => subscription.remove();
@@ -730,12 +767,19 @@ export default function QuadVideoPlayerScreen() {
       Alert.alert('No videos found', 'Choose a folder or select video files.');
       return;
     }
-    setPool(videos);
+    if (!watchHistoryLoaded) {
+      Alert.alert('Video history is loading', 'Wait a moment, then choose the videos again.');
+      return;
+    }
+    const library = applyVideoWatchHistory(videos, watchHistoryRef.current);
+    const selection = pickInitialVideos(library);
+    activeAssetsRef.current = new Map(selection.map((asset, index) => [index, asset]));
+    setPool(library);
     setRestoredStreams(null);
-    setActiveVideos(pickInitialVideos(videos));
+    setActiveVideos(selection);
     setSession((current) => current + 1);
     setGlobalPlaying(true);
-  }, []);
+  }, [watchHistoryLoaded]);
 
   const chooseVideoFiles = async () => {
     setIsPicking(true);
@@ -899,6 +943,7 @@ export default function QuadVideoPlayerScreen() {
     const remaining = pool.filter((item) => item.id !== asset.id);
     setPool(remaining);
     if (remaining.length === 0) {
+      activeAssetsRef.current.clear();
       setActiveVideos([]);
       setGlobalPlaying(false);
       void viewing.finishSession();
@@ -909,6 +954,7 @@ export default function QuadVideoPlayerScreen() {
   const toggleAll = () => setGlobalPlaying((playing) => !playing);
 
   const stopPlayback = () => {
+    activeAssetsRef.current.clear();
     setActiveVideos([]);
     setGlobalPlaying(false);
     void viewing.finishSession();
@@ -946,9 +992,14 @@ export default function QuadVideoPlayerScreen() {
     setSound(s.sound);
     restoreSlideshow(saved.slideshow ?? { ...DEFAULT_SLIDESHOW, pool: [] });
     setSourceLabel(saved.sourceLabel);
-    setPool(saved.pool);
-    setRestoredStreams(saved.streams);
-    setActiveVideos(saved.streams.map((stream) => stream.asset));
+    const restoredPool = applyVideoWatchHistory(saved.pool, watchHistoryRef.current);
+    const streams = saved.streams.map((stream) => ({
+      ...stream, asset: applyVideoWatchHistory([stream.asset], watchHistoryRef.current)[0],
+    }));
+    activeAssetsRef.current = new Map(streams.map((stream, index) => [index, stream.asset]));
+    setPool(restoredPool);
+    setRestoredStreams(streams);
+    setActiveVideos(streams.map((stream) => stream.asset));
     setGlobalPlaying(saved.globalPlaying);
     registry.restoreAudio(saved.audio);
     setSession((current) => current + 1);
@@ -1113,6 +1164,8 @@ export default function QuadVideoPlayerScreen() {
                   index={index}
                   playbackId={playbackId}
                   onPlaybackStateChange={reportQuadrantPlayback}
+                  getNextVideo={getNextVideoForQuadrant}
+                  onAssetChange={onAssetChange}
                   globalPlaying={globalPlaying}
                   normalizeLoudness={audioMode === 'normalized'}
                   linkedVolume={audioMode === 'shared'}
@@ -1395,13 +1448,18 @@ export default function QuadVideoPlayerScreen() {
                     ]}
                   >
                     <PoolVideoPreview uri={asset.uri} />
-                    <Text
-                      numberOfLines={1}
-                      ellipsizeMode="middle"
-                      style={[styles.poolFileName, { color: colors.foreground }]}
-                    >
-                      {asset.name}
-                    </Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text
+                        numberOfLines={1}
+                        ellipsizeMode="middle"
+                        style={[styles.poolFileName, { color: colors.foreground }]}
+                      >
+                        {asset.name}
+                      </Text>
+                      <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 10 }}>
+                        {formatLastPlayed(asset.lastPlayedAt)}
+                      </Text>
+                    </View>
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Remove ${asset.name} from the pool`}

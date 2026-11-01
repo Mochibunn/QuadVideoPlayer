@@ -2,7 +2,7 @@ import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { DomUtils, parseDocument } from 'htmlparser2';
 
 export type OnlineSource = {
-  id: string; name: string; kind: 'booru' | 'reddit'; board: string; tags: string;
+  id: string; name: string; kind: 'booru' | 'rule34' | 'e621' | 'reddit'; board: string; tags: string;
   subreddits: string; sort: 'hot' | 'new' | 'top'; safeOnly: boolean;
 };
 export type RemoteMedia = {
@@ -40,12 +40,15 @@ export function parseOnlineSource(value: unknown): OnlineSource {
   if (!value || typeof value !== 'object') throw new Error('Invalid online source.');
   const v = value as Record<string, unknown>;
   if (typeof v.id !== 'string' || !v.id || typeof v.name !== 'string' || !v.name.trim() ||
-    (v.kind !== 'booru' && v.kind !== 'reddit')) throw new Error('Give the source a name and choose its provider.');
+    !['booru', 'rule34', 'e621', 'reddit'].includes(String(v.kind))) {
+    throw new Error('Give the source a name and choose its provider.');
+  }
+  const kind = v.kind as OnlineSource['kind'];
   return {
-    id: v.id, name: v.name.trim().slice(0, 100), kind: v.kind,
-    board: v.kind === 'booru' ? normalizeBoard(String(v.board ?? '')) : '',
+    id: v.id, name: v.name.trim().slice(0, 100), kind,
+    board: kind === 'booru' ? normalizeBoard(String(v.board ?? '')) : '',
     tags: String(v.tags ?? '').trim().slice(0, 1000),
-    subreddits: v.kind === 'reddit' ? normalizeSubreddits(String(v.subreddits ?? '')) : '',
+    subreddits: kind === 'reddit' ? normalizeSubreddits(String(v.subreddits ?? '')) : '',
     sort: v.sort === 'new' || v.sort === 'top' ? v.sort : 'hot',
     safeOnly: v.safeOnly !== false,
   };
@@ -62,6 +65,24 @@ export function booruSearchUrl(source: OnlineSource, page: number): string {
   // Hosted booru.org boards run the older HTML-only engine. Its pid is an
   // offset in 20-post pages, not the DAPI page number used by newer engines.
   url.search = new URLSearchParams({ page: 'post', s: 'list', pid: String(Math.max(0, Math.floor(page)) * 20), tags: tags || 'all' }).toString();
+  return url.href;
+}
+function apiTags(source: OnlineSource) {
+  return [source.tags, source.safeOnly ? 'rating:safe' : ''].filter(Boolean).join(' ');
+}
+export function rule34SearchUrl(source: OnlineSource, page: number): string {
+  const url = new URL('/index.php', 'https://api.rule34.xxx');
+  url.search = new URLSearchParams({
+    page: 'dapi', s: 'post', q: 'index', json: '1', limit: '40',
+    pid: String(Math.max(0, Math.floor(page))), tags: apiTags(source),
+  }).toString();
+  return url.href;
+}
+export function e621SearchUrl(source: OnlineSource, page: number): string {
+  const url = new URL('/posts.json', 'https://e621.net');
+  url.search = new URLSearchParams({
+    limit: '40', page: String(Math.max(1, Math.floor(page) + 1)), tags: apiTags(source),
+  }).toString();
   return url.href;
 }
 function upgradeBooruUrl(value: unknown, board: string) {
@@ -133,11 +154,52 @@ export function parseBooruPage(text: string, source: OnlineSource, page: number)
   for (const post of posts) {
     if (source.safeOnly && !['s', 'safe', 'g', 'general'].includes(String(post.rating).toLowerCase())) continue;
     const uri = upgradeBooruUrl(post.file_url ?? post.sample_url, board);
-    if (!uri || !/\.(png|jpe?g|gif|webp|avif|bmp)(?:$|\?)/i.test(uri)) continue;
-    items.push({ id: `${source.id}:${post.id ?? uri}`, uri, kind: 'image',
+    const kind = uri ? remoteMediaKind(uri) : null;
+    if (!uri || !kind) continue;
+    items.push({ id: `${source.id}:${post.id ?? uri}`, uri, kind,
       name: String(post.tags || `Post ${post.id ?? ''}`).slice(0, 200),
       postUrl: `${board}/index.php?page=post&s=view&id=${encodeURIComponent(String(post.id ?? ''))}`,
       preview: upgradeBooruUrl(post.preview_url, board) ?? undefined });
+  }
+  return { items, cursor: page + 1, hasMore: posts.length >= 40 };
+}
+
+function remoteMediaKind(uri: string): RemoteMedia['kind'] | null {
+  let path = '';
+  try { path = new URL(uri).pathname.toLowerCase(); } catch { return null; }
+  if (/\.(mp4|webm|mov|m4v|m3u8|mpd)$/.test(path)) return 'video';
+  if (/\.(png|jpe?g|gif|webp|avif|bmp|apng)$/.test(path)) return 'image';
+  return null;
+}
+function recordsFromApi(value: unknown): Record<string, any>[] {
+  if (Array.isArray(value)) return value.filter((post) => post && typeof post === 'object');
+  if (!value || typeof value !== 'object') return [];
+  const object = value as Record<string, any>;
+  const posts = object.posts ?? object.post;
+  if (Array.isArray(posts)) return posts.filter((post) => post && typeof post === 'object');
+  if (posts && typeof posts === 'object') return [posts];
+  return Object.values(object).filter((post) => post && typeof post === 'object' &&
+    (typeof post.id === 'number' || typeof post.id === 'string'));
+}
+function parseRemoteBooruPage(value: unknown, source: OnlineSource, page: number): SourcePage {
+  const posts = recordsFromApi(value);
+  const items: RemoteMedia[] = [];
+  for (const post of posts) {
+    const rating = String(post.rating ?? '').toLowerCase();
+    if (source.safeOnly && rating !== 's' && rating !== 'safe') continue;
+    const uri = publicMediaUrl(post.file?.url ?? post.file_url ?? post.sample?.url ?? post.sample_url);
+    const kind = uri ? remoteMediaKind(uri) : null;
+    if (!uri || !kind) continue;
+    const preview = publicMediaUrl(post.preview?.url ?? post.preview_url ?? post.sample?.url ?? post.sample_url);
+    const tags = Array.isArray(post.tags) ? post.tags :
+      Object.values(post.tags ?? {}).flatMap((values) => Array.isArray(values) ? values : []);
+    const id = String(post.id ?? uri);
+    const postUrl = source.kind === 'e621'
+      ? `https://e621.net/posts/${encodeURIComponent(id)}`
+      : `https://rule34.xxx/index.php?page=post&s=view&id=${encodeURIComponent(id)}`;
+    items.push({ id: `${source.id}:${id}`, uri, kind,
+      name: (Array.isArray(tags) && tags.length ? tags.join(' ') : `Post ${id}`).slice(0, 200),
+      postUrl, ...(preview ? { preview } : {}) });
   }
   return { items, cursor: page + 1, hasMore: posts.length >= 40 };
 }
@@ -205,10 +267,51 @@ function boardRequest<T>(board: string, signal: AbortSignal, work: () => Promise
   void tail.then(() => { if (boardQueues.get(board) === tail) boardQueues.delete(board); });
   return next;
 }
+const apiQueues = new Map<string, Promise<void>>();
+function apiRequest<T>(host: string, signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+  const previous = apiQueues.get(host) ?? Promise.resolve();
+  const next = previous.then(async () => {
+    if (signal.aborted) throw new Error('The search was canceled.');
+    await new Promise<void>((resolve, reject) => {
+      const cancel = () => { clearTimeout(timer); reject(new Error('The search was canceled.')); };
+      const timer = setTimeout(() => { signal.removeEventListener('abort', cancel); resolve(); }, 1000);
+      signal.addEventListener('abort', cancel, { once: true });
+    });
+    return work();
+  });
+  const tail = next.then(() => undefined, () => undefined);
+  apiQueues.set(host, tail);
+  void tail.then(() => { if (apiQueues.get(host) === tail) apiQueues.delete(host); });
+  return next;
+}
+async function fetchBooruApiPage(source: OnlineSource, page: number, signal?: AbortSignal): Promise<SourcePage> {
+  const requestSignal = signal ?? new AbortController().signal;
+  const e621 = source.kind === 'e621';
+  const host = e621 ? 'e621.net' : 'api.rule34.xxx';
+  const url = e621 ? e621SearchUrl(source, page) : rule34SearchUrl(source, page);
+  return apiRequest(host, requestSignal, async () => {
+    const response = await fetch(url, { signal: requestSignal,
+      headers: { Accept: 'application/json', 'User-Agent': 'QuadVideoPlayer/1.12.0 (Android; read-only)' } });
+    if (response.status === 429) throw new Error(`${host} rate-limited this search. Wait before loading more.`);
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(`${host} denied this public search. Access challenges and sign-in requirements are not bypassed.`);
+    }
+    if (!response.ok) throw new Error(`${host} returned HTTP ${response.status}.`);
+    const text = await response.text();
+    if (text.length > 3_000_000) throw new Error(`${host} returned an unexpectedly large response.`);
+    let data: unknown;
+    try { data = JSON.parse(text); } catch { throw new Error(`${host} returned invalid JSON.`); }
+    return parseRemoteBooruPage(data, source, page);
+  });
+}
 export async function fetchSourcePage(source: OnlineSource, cursor: string | number | null,
   redditGet: (path: string) => Promise<unknown>, signal?: AbortSignal,
   onProgress?: (items: RemoteMedia[]) => void): Promise<SourcePage> {
   if (source.kind === 'reddit') return parseRedditPage(await redditGet(redditListingPath(source, cursor)), source);
+  if (source.kind === 'rule34' || source.kind === 'e621') {
+    const page = typeof cursor === 'number' ? cursor : 0;
+    return fetchBooruApiPage(source, page, signal);
+  }
   if (signal?.aborted) throw new Error('The search was canceled.');
   const controller = new AbortController();
   const abort = () => controller.abort();

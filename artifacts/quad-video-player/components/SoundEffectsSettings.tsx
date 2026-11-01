@@ -30,10 +30,28 @@ export default function SoundEffectsSettings() {
           onValueChange={(value) => setSound((s) => ({ ...s, reverb: value ? 'room' : 'off' }))} />
       </View>
       {sound.reverb !== 'off' && <View style={styles.chips}>
-        {(['room', 'hall', 'plate'] as Reverb[]).map((reverb) =>
-          chip(reverb === 'room' ? 'Cozy room' : reverb === 'hall' ? 'Concert hall' : 'Dreamy plate',
-            sound.reverb === reverb, () => setSound((s) => ({ ...s, reverb }))))}
+        {([
+          ['room', 'Cozy room'], ['chamber', 'Warm chamber'], ['hall', 'Concert hall'],
+          ['cathedral', 'Cathedral'], ['plate', 'Studio plate'], ['spring', 'Vintage spring'],
+        ] as [Exclude<Reverb, 'off'>, string][]).map(([reverb, name]) =>
+          chip(name, sound.reverb === reverb, () => setSound((s) => ({ ...s, reverb })))}
       </View>}
+      {sound.reverb !== 'off' && <>
+        {([
+          { key: 'reverbMix', label: 'Wet / dry mix', min: 0, max: 100, step: 1, value: sound.reverbMix, suffix: '%' },
+          { key: 'reverbDecay', label: 'Reverb decay', min: 20, max: 95, step: 1, value: sound.reverbDecay * 100, suffix: '%' },
+          { key: 'preDelayMs', label: 'Pre-delay', min: 0, max: 120, step: 2, value: sound.preDelayMs, suffix: ' ms' },
+        ] as const).map(({ key, label: title, min, max, step, value, suffix }) =>
+          <View key={key}>
+            <View style={styles.row}>{label(title)}{label(`${Math.round(value)}${suffix}`)}</View>
+            <Slider value={value} minimumValue={min} maximumValue={max} step={step} disabled={disabled}
+              accessibilityLabel={title} accessibilityValue={{ min, max, now: value }}
+              minimumTrackTintColor={colors.primary} maximumTrackTintColor={colors.muted} thumbTintColor={colors.primary}
+              onValueChange={(next) => setSound((s) => ({
+                ...s, [key]: key === 'reverbDecay' ? next / 100 : next,
+              }))} />
+          </View>)}
+      </>}
       <View style={styles.row}>
         {label('Echo')}
         <SettingSwitch label="Echo" disabled={disabled} value={sound.echo}

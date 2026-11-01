@@ -40,7 +40,15 @@ export function isBackgroundMediaFile(file: MediaFile): boolean {
     mime.startsWith('audio/') || mime === 'application/ogg';
 }
 
+export function videoSourceForUri(uri: string) {
+  const path = uri.split(/[?#]/, 1)[0].toLowerCase();
+  const contentType = path.endsWith('.m3u8') ? 'hls' as const :
+    path.endsWith('.mpd') ? 'dash' as const :
+      /\.ism\/manifest$/.test(path) ? 'smoothStreaming' as const : 'progressive' as const;
+  return { uri, contentType };
+}
+
 export function mediaPlaybackError(details?: string): string {
-  const explanation = 'Could not play this file. It may be inaccessible, damaged, or use a codec not supported by this Android device.';
+  const explanation = 'Could not play this file. It may be inaccessible, damaged, or use a codec not supported by Android. An .mp4 extension does not identify the codec inside.';
   return details ? `${explanation}\n${details}` : explanation;
 }
