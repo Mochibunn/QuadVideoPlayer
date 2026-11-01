@@ -3,16 +3,38 @@ import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { useSlideshow, type SlideshowRuntime } from '@/hooks/useSlideshow';
 import { useColors } from '@/hooks/useColors';
+import { useOnlineSources } from '@/hooks/useOnlineSources';
 import { bounceKeyframes, slideshowBounds, type SlideshowImage, type SlideshowInstance } from '@/lib/slideshow';
 
 export default function SlideshowOverlay({ active }: { active: boolean }) {
   const { slideshow: s, runtime, revision } = useSlideshow();
+  const online = useOnlineSources();
+  const colors = useColors();
   const [size, setSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    if (active && s.enabled) s.instances.filter((item) => item.enabled && item.sourceId)
+      .forEach((item) => online.ensureLoaded(item.sourceId!));
+  }, [active, s.enabled, s.instances, online.sources, online.ensureLoaded]);
   return (
     <View pointerEvents="none" style={styles.overlay}
       onLayout={(event) => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}>
       {active && s.enabled && size.width > 0 && s.instances.filter((item) => item.enabled).map((instance) => (
-        <SlideshowLayer key={`${revision}:${instance.id}`} instance={instance} pool={s.pool}
+        instance.sourceId ? (
+          <React.Fragment key={`${revision}:${instance.id}:${instance.sourceId}`}>
+            {online.results[instance.sourceId]?.images.length ? (
+              <SlideshowLayer instance={instance} pool={online.results[instance.sourceId].images}
+                width={size.width} height={size.height} runtime={runtime} />
+            ) : (
+              <View style={{ position: 'absolute', left: 12, top: 12 + s.instances.indexOf(instance) * 26 }}>
+                <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                  {online.sources.find((source) => source.id === instance.sourceId)?.name ?? 'Missing online source'}:
+                  {' '}{online.results[instance.sourceId]?.error || (online.results[instance.sourceId]?.loading ? 'Loading images…' :
+                    'No images loaded. Open Online media sources to load or change this search.')}
+                </Text>
+              </View>
+            )}
+          </React.Fragment>
+        ) : <SlideshowLayer key={`${revision}:${instance.id}:local`} instance={instance} pool={s.pool}
           width={size.width} height={size.height} runtime={runtime} />
       ))}
     </View>
@@ -36,8 +58,12 @@ const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, 
   }, [pool.length, runtime, s.id]);
   useEffect(() => {
     if (previousInput.current.pool === pool && previousInput.current.index === s.index) return;
+    const previousImage = previousInput.current.pool[indexRef.current]?.uri;
+    const explicitIndexChange = previousInput.current.index !== s.index;
+    const preserved = pool.findIndex((item) => item.uri === previousImage);
+    const next = explicitIndexChange ? s.index % Math.max(1, pool.length) :
+      preserved >= 0 ? preserved : indexRef.current % Math.max(1, pool.length);
     previousInput.current = { pool, index: s.index };
-    const next = s.index % Math.max(1, pool.length);
     indexRef.current = next;
     setIndex(next);
     const entry = runtime.current.get(s.id);

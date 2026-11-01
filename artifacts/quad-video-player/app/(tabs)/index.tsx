@@ -40,6 +40,9 @@ import { useSlideshow } from '@/hooks/useSlideshow';
 import { DEFAULT_SLIDESHOW } from '@/lib/slideshow';
 import SlideshowOverlay from '@/components/slideshow/SlideshowOverlay';
 import SlideshowPanel from '@/components/slideshow/SlideshowPanel';
+import OnlineSourcesPanel from '@/components/sources/OnlineSourcesPanel';
+import { useOnlineSources } from '@/hooks/useOnlineSources';
+import type { RemoteMedia } from '@/lib/online-sources';
 import { pickMediaFiles } from '@/lib/media-picker';
 import { DEFAULT_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
 import { readDownloadsVideos } from '@/lib/downloads-library';
@@ -57,7 +60,7 @@ type VideoAsset = {
   uri: string;
 };
 
-type ActivePanel = 'settings' | 'pool' | 'audio' | 'slideshow' | null;
+type ActivePanel = 'settings' | 'pool' | 'audio' | 'slideshow' | 'sources' | null;
 
 const THEME_STORAGE_KEY = 'quad-video-player.theme';
 const NORMALIZE_STORAGE_KEY = 'quad-video-player.normalize';
@@ -583,6 +586,8 @@ function VideoTile({
 
 export default function QuadVideoPlayerScreen() {
   const { slideshow, captureSlideshow, restoreSlideshow } = useSlideshow();
+  const online = useOnlineSources();
+  const [sourcesReturn, setSourcesReturn] = useState<'settings' | 'slideshow'>('settings');
   const { inPip, enterPip, pipClosed, sound, setSound, loaded: soundLoaded } = useSoundSettings();
   const registry = useSessionRegistry();
   const [sessionBusy, setSessionBusy] = useState(false);
@@ -894,12 +899,14 @@ export default function QuadVideoPlayerScreen() {
     return {
       version: 1, savedAt: new Date().toISOString(), pool, streams,
       audio: registry.captureAudio(), sourceLabel, globalPlaying, slideshow: captureSlideshow(),
+      ...(!online.storageError ? { sources: online.sources } : {}),
       settings: { themeId, normalize: normalizeEnabled, sync: syncEnabled, fill: fillVideos,
         controlsDelay: controlsHideSeconds, sharedVolume, sound },
     };
   };
-  const restoreSession = (saved: SessionSnapshot) => {
+  const restoreSession = async (saved: SessionSnapshot) => {
     if (!registry.restoreAudio) throw new Error('The audio mixer is still preparing. Please try resuming again.');
+    if (saved.sources) await online.restoreSources(saved.sources);
     const s = saved.settings;
     setThemeId(isThemeId(s.themeId) ? s.themeId : 'amethyst');
     setNormalizeEnabled(s.normalize);
@@ -975,7 +982,7 @@ export default function QuadVideoPlayerScreen() {
               capture={captureSession} restore={restoreSession}
               canSave={pool.length > 0 || backgroundTrackCount > 0 || slideshow.pool.length > 0}
               hasCurrent={pool.length > 0 || backgroundTrackCount > 0 || slideshow.pool.length > 0}
-              disabled={isPicking || inPip || !themeLoaded || !playbackSettingsLoaded || !soundLoaded}
+              disabled={isPicking || inPip || !themeLoaded || !playbackSettingsLoaded || !soundLoaded || !online.loaded}
               compact={hasVideos} onBusyChange={setSessionBusy}
             />
             {activeVideos.length > 0 ? (
@@ -1244,6 +1251,9 @@ export default function QuadVideoPlayerScreen() {
               disabled={!playbackSettingsLoaded}
             />
             <SoundEffectsSettings />
+            <ActionButton icon="globe" label="Online media sources" onPress={() => {
+              setSourcesReturn('settings'); setActivePanel('sources');
+            }} />
             <ActionButton icon="image" label={`Image / GIF slideshow (${slideshow.pool.length})`}
               onPress={() => setActivePanel('slideshow')} />
             <ActionButton icon="alert-circle" label="Last crash report" onPress={() => void showCrashReport()} />
@@ -1366,7 +1376,19 @@ export default function QuadVideoPlayerScreen() {
           </View>
         </View>
       </Modal>
-      <SlideshowPanel visible={activePanel === 'slideshow'} onClose={() => setActivePanel('settings')} />
+      <SlideshowPanel visible={activePanel === 'slideshow'} onClose={() => setActivePanel('settings')}
+        onManageSources={() => { setSourcesReturn('slideshow'); setActivePanel('sources'); }} />
+      <OnlineSourcesPanel visible={activePanel === 'sources'} onClose={() => setActivePanel(sourcesReturn)}
+        onPlayVideos={(items: RemoteMedia[], name: string) => {
+          const apply = () => {
+            startStreams(items.map((item) => ({ id: item.uri, uri: item.uri, name: item.name })));
+            setSourceLabel(name); setActivePanel(null);
+          };
+          if (pool.length) Alert.alert('Play online source videos?', 'This replaces the active video pool and restarts the four quadrants. Local files and saved sessions are not deleted.', [
+            { text: 'Cancel', style: 'cancel' }, { text: 'Play source videos', onPress: apply },
+          ]);
+          else apply();
+        }} />
       <BackgroundAudioMixer
         visible={activePanel === 'audio'}
         onClose={() => setActivePanel(null)}

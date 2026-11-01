@@ -1,5 +1,6 @@
 import { parseSoundSettings, type SoundSettings } from './sound-settings';
 import { filterSlideshowPool, parseSlideshow, type Slideshow } from './slideshow';
+import { parseOnlineSources, publicMediaUrl, type OnlineSource } from './online-sources';
 
 export const SESSION_KEY = 'quad-video-player.saved-session.v1';
 export type SessionMedia = { id: string; uri: string; name: string };
@@ -13,6 +14,7 @@ export type SessionSnapshot = {
   version: 1; savedAt: string; pool: SessionMedia[]; streams: VideoSnapshot[];
   audio: AudioSnapshot[]; sourceLabel: string; globalPlaying: boolean;
   slideshow?: Slideshow;
+  sources?: OnlineSource[];
   settings: {
     themeId: string; normalize: boolean; sync: boolean; fill: boolean;
     controlsDelay: number; sharedVolume: number; sound: SoundSettings;
@@ -41,7 +43,7 @@ function list(value: unknown): unknown[] {
 function media(value: unknown): SessionMedia {
   const v = record(value);
   const uri = text(v.uri);
-  if (!/^(content|file):\/\//.test(uri)) throw new Error('The saved session contains an unsupported media address.');
+  if (!/^(content|file):\/\//.test(uri) && !publicMediaUrl(uri)) throw new Error('The saved session contains an unsupported media address.');
   return { id: uri, uri, name: text(v.name) };
 }
 export function parseSession(raw: string): SessionSnapshot {
@@ -69,6 +71,7 @@ export function parseSession(raw: string): SessionSnapshot {
     sourceLabel: typeof v.sourceLabel === 'string' ? v.sourceLabel : 'Saved session',
     globalPlaying: bool(v.globalPlaying),
     ...(v.slideshow !== undefined ? { slideshow: parseSlideshow(v.slideshow) } : {}),
+    ...(v.sources !== undefined ? { sources: parseOnlineSources(v.sources) } : {}),
     settings: {
       themeId: text(s.themeId), normalize: bool(s.normalize), sync: bool(s.sync), fill: bool(s.fill),
       controlsDelay: Math.round(number(s.controlsDelay, 0, 30)), sharedVolume: number(s.sharedVolume, 0, 1),

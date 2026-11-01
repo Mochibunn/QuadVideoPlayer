@@ -124,6 +124,8 @@ controls and timing. Hardware resource limits still apply.
 The user wants to link a Reddit account and pull posts from configurable
 subreddits, plus retrieve images from specific booru websites using tag filters.
 They want multiple separate searches to supply independent kinds of images.
+The booru sites specifically mean boards hosted on **booru.org**. Reddit should
+supply **images, GIFs, and videos**, not a full text-post reader.
 
 **Why:** The user explicitly requested these online media sources.
 

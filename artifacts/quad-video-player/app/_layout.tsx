@@ -9,6 +9,7 @@ import { SoundSettingsProvider } from '@/hooks/useSoundSettings';
 import { SessionRegistryProvider } from '@/hooks/useSessionRegistry';
 import CrashReportNotice from '@/components/CrashReportNotice';
 import { SlideshowProvider } from '@/hooks/useSlideshow';
+import { OnlineSourcesProvider } from '@/hooks/useOnlineSources';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -57,12 +58,14 @@ export default function RootLayout() {
           <GestureHandlerRootView style={{ flex: 1 }}>
             <SessionRegistryProvider>
             <SoundSettingsProvider>
+            <OnlineSourcesProvider>
             <SlideshowProvider>
             <KeyboardProvider>
               <RootLayoutNav />
               <CrashReportNotice />
             </KeyboardProvider>
             </SlideshowProvider>
+            </OnlineSourcesProvider>
             </SoundSettingsProvider>
             </SessionRegistryProvider>
             {showWelcome && <LaunchSplash onFinish={finishWelcome} />}

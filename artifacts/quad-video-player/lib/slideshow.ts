@@ -1,6 +1,7 @@
 export type SlideshowImage = { id: string; name: string; uri: string };
 export type SlideshowInstance = {
   id: string; enabled: boolean; index: number; scale: number;
+  sourceId?: string;
   opacity: number; x: number; y: number; bounce: boolean; seconds: number; speed: number;
 };
 export type Slideshow = { enabled: boolean; pool: SlideshowImage[]; instances: SlideshowInstance[] };
@@ -32,7 +33,9 @@ export function parseSlideshow(value: unknown): Slideshow {
     ids.add(id);
     return {
       id, enabled: item.enabled !== false,
-      index: pool.length ? Math.floor(bounded(item.index, 0, 0, 1e9)) % pool.length : 0,
+      ...(typeof item.sourceId === 'string' && item.sourceId ? { sourceId: item.sourceId } : {}),
+      index: typeof item.sourceId === 'string' && item.sourceId ? Math.floor(bounded(item.index, 0, 0, 1e9)) :
+        pool.length ? Math.floor(bounded(item.index, 0, 0, 1e9)) % pool.length : 0,
       scale: bounded(item.scale, 30, 10, 100), opacity: bounded(item.opacity, 0.8, 0, 1),
       x: bounded(item.x, 50, 0, 100), y: bounded(item.y, 50, 0, 100),
       bounce: item.bounce === undefined ? true : item.bounce === true,
@@ -54,13 +57,14 @@ export function addSlideshow(s: Slideshow): Slideshow {
 }
 export function filterSlideshowPool(s: Slideshow, keep: (image: SlideshowImage) => boolean): Slideshow {
   const pool = s.pool.filter(keep);
-  return { ...s, pool, instances: s.instances.map((item) => ({
+  return { ...s, pool, instances: s.instances.map((item) => item.sourceId ? item : ({
     ...item, index: Math.max(0, pool.findIndex((image) => image.uri === s.pool[item.index]?.uri)),
   })) };
 }
 export function snapshotSlideshow(s: Slideshow, runtime: Map<string, { index: number }>): Slideshow {
   return { ...s, instances: s.instances.map((item) => ({
-    ...item, index: (runtime.get(item.id)?.index ?? item.index) % Math.max(1, s.pool.length),
+    ...item, index: item.sourceId ? runtime.get(item.id)?.index ?? item.index :
+      (runtime.get(item.id)?.index ?? item.index) % Math.max(1, s.pool.length),
   })) };
 }
 export function isSlideshowImage(file: { name: string; mimeType?: string | null }): boolean {

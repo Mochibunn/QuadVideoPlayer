@@ -2,14 +2,14 @@
   "expo": {
     "name": "Quad Video Player",
     "slug": "quad-video-player",
-    "version": "1.9.0",
+    "version": "1.10.0",
     "platforms": [
       "ios",
       "android"
     ],
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
-    "scheme": "quad-video-player",
+    "scheme": ["quad-video-player", "com.mochi.quadvideoplayer"],
     "userInterfaceStyle": "dark",
     "backgroundColor": "#000000",
     "splash": {
@@ -19,7 +19,7 @@
       "supportsTablet": false
     },
     "android": {
-      "versionCode": 13,
+      "versionCode": 14,
       "package": "com.mochi.quadvideoplayer",
       "permissions": [
         "android.permission.READ_MEDIA_VIDEO",
@@ -30,7 +30,9 @@
       "expo-router",
       [
         "expo-video",
-        { "supportsPictureInPicture": true }
+        {
+          "supportsPictureInPicture": true
+        }
       ],
       [
         "expo-navigation-bar",
@@ -47,7 +49,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#000000"
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -8,7 +8,7 @@ import { parseSession, prepareSession, SESSION_KEY, sessionUris, type SessionSna
 
 type Props = {
   capture(): SessionSnapshot;
-  restore(session: SessionSnapshot): void;
+  restore(session: SessionSnapshot): void | Promise<void>;
   canSave: boolean;
   hasCurrent: boolean;
   disabled: boolean;
@@ -56,6 +56,8 @@ export default function SessionControls({ capture, restore, canSave, hasCurrent,
           'Your video pool, current quadrants and positions, audio tracks, levels, and settings have been saved.',
           temporary ? `${temporary} file(s) have temporary access. Android may require you to select them again after a restart. Use the system picker or a granted folder for lasting access.` : '',
           missing ? `${missing} file(s) are already unavailable and will be reported when you resume.` : '',
+          (snapshot.sources?.length || sessionUris(snapshot).some((uri) => uri.startsWith('https://'))) ?
+            'Online sources require internet and provider access. Stream links can expire; refresh their source to load current links. Reddit account tokens are never included in a saved session.' : '',
         ].filter(Boolean).join('\n\n'));
       } else {
         if (hasCurrent && !await confirm('Resume saved session?', 'This replaces the current video and audio mix with the saved session. Unsaved changes to this mix will be lost.', 'Resume saved')) return;
@@ -75,7 +77,7 @@ export default function SessionControls({ capture, restore, canSave, hasCurrent,
             `${prepared.missing} file(s) were moved, deleted, or no longer have Android access:\n${[...new Set(missingNames)].slice(0, 8).join('\n')}${missingNames.length > 8 ? '\n…' : ''}\n\n${prepared.replacements ? `${prepared.replacements} quadrant(s) will use another available pool video from its beginning. ` : ''}Resume the available media? The saved session will stay unchanged.`,
             'Resume available')) return;
         }
-        restore(prepared.session);
+        await restore(prepared.session);
       }
     } catch (error) {
       Alert.alert(action === 'save' ? 'Could not save session' : 'Could not resume session',

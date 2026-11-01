@@ -8,10 +8,14 @@ import { useSlideshow } from '@/hooks/useSlideshow';
 import { pickMediaFiles } from '@/lib/media-picker';
 import { addSlideshow, filterSlideshowPool, isSlideshowImage, type SlideshowInstance } from '@/lib/slideshow';
 import SettingSwitch from '../SettingSwitch';
+import { useOnlineSources } from '@/hooks/useOnlineSources';
 
-export default function SlideshowPanel({ visible, onClose }: { visible: boolean; onClose(): void }) {
+export default function SlideshowPanel({ visible, onClose, onManageSources }: {
+  visible: boolean; onClose(): void; onManageSources(): void;
+}) {
   const colors = useColors();
   const { slideshow: group, setSlideshow, captureSlideshow, runtime } = useSlideshow();
+  const online = useOnlineSources();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const s = group.instances.find((item) => item.id === selectedId) ?? group.instances[0];
   const [picking, setPicking] = useState(false);
@@ -98,6 +102,21 @@ export default function SlideshowPanel({ visible, onClose }: { visible: boolean;
                   </Pressable>
                 )} />
               {s && <View style={styles.header}>
+              {text('Image source for this slideshow')}
+              <FlatList horizontal data={[{ id: '', name: 'Local image pool' }, ...online.sources]}
+                keyExtractor={(item) => item.id} initialNumToRender={8}
+                renderItem={({ item }) => <Pressable accessibilityRole="button" disabled={picking}
+                  accessibilityState={{ selected: (s.sourceId ?? '') === item.id }}
+                  style={[styles.chip, { borderColor: (s.sourceId ?? '') === item.id ? colors.primary : colors.border }]}
+                  onPress={() => {
+                    runtime.current.delete(s.id);
+                    update({ sourceId: item.id || undefined, index: 0 });
+                    if (item.id) online.ensureLoaded(item.id);
+                  }}>
+                  <Text style={{ color: colors.foreground }}>{item.name}</Text>
+                </Pressable>} />
+              {s.sourceId && !online.sources.some((source) => source.id === s.sourceId) &&
+                text('This slideshow’s source was removed. Choose another source above.', true)}
               <View style={styles.row}>
                 {text(`Slideshow ${group.instances.findIndex((item) => item.id === s.id) + 1} enabled`)}
                 <SettingSwitch label="Enable selected slideshow" value={s.enabled} disabled={picking}
@@ -109,7 +128,8 @@ export default function SlideshowPanel({ visible, onClose }: { visible: boolean;
                     const entry = runtime.current.get(s.id);
                     if (entry?.next) entry.next();
                     else {
-                      const index = ((entry?.index ?? s.index) + 1) % Math.max(1, group.pool.length);
+                      const length = s.sourceId ? online.results[s.sourceId]?.images.length ?? 0 : group.pool.length;
+                      const index = ((entry?.index ?? s.index) + 1) % Math.max(1, length);
                       runtime.current.set(s.id, { index });
                       update({ index });
                     }
@@ -137,6 +157,10 @@ export default function SlideshowPanel({ visible, onClose }: { visible: boolean;
               </View>
               {s.bounce && slider('Bounce speed', 'speed', 5, 80, 1, s.speed, ' dp/s')}
               </View>}
+              <Pressable accessibilityRole="button" disabled={picking} onPress={onManageSources}
+                style={[styles.button, { borderColor: colors.primary, borderWidth: 1 }]}>
+                <Text style={{ color: colors.primary }}>Manage online image sources</Text>
+              </Pressable>
               <Pressable accessibilityRole="button" disabled={picking} onPress={() => void add()}
                 style={[styles.button, { backgroundColor: colors.primary }]}>
                 <Text style={{ color: colors.primaryForeground }}>{picking ? 'Opening files…' : 'Add images / GIFs'}</Text>

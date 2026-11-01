@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { createRequire } from 'node:module';
+const nativeRequire = createRequire(new URL('../package.json', import.meta.url));
 
 async function load(path, modules) {
   const source = await readFile(new URL(path, import.meta.url), 'utf8');
@@ -11,7 +13,7 @@ async function load(path, modules) {
   });
   const exports = {};
   vm.runInNewContext(outputText, {
-    exports, require: (name) => {
+    exports, URL, URLSearchParams, require: (name) => {
       assert.ok(name in modules, `Unexpected import: ${name}`);
       return modules[name];
     },
@@ -20,7 +22,8 @@ async function load(path, modules) {
 }
 const sound = await load('../lib/sound-settings.ts', {});
 const slideshow = await load('../lib/slideshow.ts', {});
-const codec = await load('../lib/sessions.ts', { './sound-settings': sound, './slideshow': slideshow });
+const online = await load('../lib/online-sources.ts', { 'fast-xml-parser': nativeRequire('fast-xml-parser') });
+const codec = await load('../lib/sessions.ts', { './sound-settings': sound, './slideshow': slideshow, './online-sources': online });
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const media = (name) => ({ id: `content://files/${name}`, uri: `content://files/${name}`, name });
 function fixture() {
@@ -73,7 +76,7 @@ for (const [label, edit] of [
   ['duplicate audio URI', (s) => { s.audio.push(s.audio[0]); }],
   ['invalid position', (s) => { s.streams[0].position = null; }],
   ['invalid paused flag', (s) => { s.audio[0].paused = 'false'; }],
-  ['remote media URL', (s) => { s.audio[0].uri = 'https://example.com/audio.mp3'; }],
+  ['insecure remote media URL', (s) => { s.audio[0].uri = 'http://example.com/audio.mp3'; }],
   ['invalid date', (s) => { s.savedAt = 'invalid'; }],
 ]) {
   test(`corrupt ${label} is rejected before any restore`, () => {
@@ -141,6 +144,24 @@ test('partial restore validates images without discarding the stored image pool'
   assert.equal(result.session.slideshow.pool.length, 1);
   assert.equal(result.session.slideshow.instances[0].index, 0);
   assert.equal(value.slideshow.pool.length, 2);
+});
+test('online search definitions and per-slideshow source assignments round-trip without account tokens', () => {
+  const value = fixture();
+  value.sources = [online.parseOnlineSource({ id: 'query', name: 'Sky', kind: 'booru',
+    board: 'sky.booru.org', tags: 'blue_sky -rain', safeOnly: true })];
+  value.slideshow = { ...plain(slideshow.DEFAULT_SLIDESHOW), enabled: true, pool: [], instances: [
+    { ...plain(slideshow.DEFAULT_INSTANCE), sourceId: 'query', index: 17 },
+  ] };
+  const result = codec.parseSession(JSON.stringify(value));
+  assert.deepEqual(plain(result), plain(value));
+  assert.equal(result.slideshow.instances[0].index, 17);
+  assert.equal(result.accessToken, undefined);
+});
+test('valid HTTPS online streams remain playable session media', () => {
+  const value = fixture();
+  const remote = { id: 'https://v.redd.it/example/HLSPlaylist.m3u8', uri: 'https://v.redd.it/example/HLSPlaylist.m3u8', name: 'Online video' };
+  value.pool[0] = remote; value.streams[0].asset = remote;
+  assert.equal(codec.parseSession(JSON.stringify(value)).streams[0].asset.uri, remote.uri);
 });
 
 // Exercise the real controls with lightweight hooks/storage/native mocks.
