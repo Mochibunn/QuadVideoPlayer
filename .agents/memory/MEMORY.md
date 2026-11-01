@@ -5,3 +5,4 @@
 - [Native audio buffers](native-audio-buffers.md) — Empty Media3 input must be a no-op before output allocation, even with effects disabled.
 - [Android Downloads access](android-storage.md) — The Downloads root is intentionally blocked in SAF; use scoped video-library access, not all-files permission.
 - [Playback resource budgets](playback-resource-budgets.md) — Four local players multiply read-ahead and decoder memory; native crash causes still require device reports.
+- [Booru.org compatibility](booru-compatibility.md) — Hosted boards need public HTML listings, exact original-file links, and paced detail requests—not newer DAPI assumptions.

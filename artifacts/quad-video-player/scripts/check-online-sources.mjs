@@ -15,7 +15,7 @@ async function load(name, modules = {}, globals = {}) {
     require(name) { assert.ok(name in modules, `Unexpected import ${name}`); return modules[name]; }, ...globals });
   return exports;
 }
-const core = await load('lib/online-sources.ts', { 'fast-xml-parser': require('fast-xml-parser') });
+const core = await load('lib/online-sources.ts', { 'fast-xml-parser': require('fast-xml-parser'), htmlparser2: require('htmlparser2') });
 const oauth = await load('lib/reddit-oauth.ts');
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const board = core.parseOnlineSource({ id: 'board', name: 'Scenery', kind: 'booru',
@@ -29,8 +29,80 @@ test('board addresses are restricted to HTTPS booru.org-hosted boards', () => {
 test('tags and pagination are encoded without changing their search syntax', () => {
   const url = new URL(core.booruSearchUrl(board, 2));
   assert.equal(url.searchParams.get('tags'), 'blue_sky -rain rating:safe');
-  assert.equal(url.searchParams.get('pid'), '2');
-  assert.equal(url.searchParams.get('limit'), '40');
+  assert.equal(url.searchParams.get('pid'), '40');
+  assert.equal(url.searchParams.get('page'), 'post');
+  assert.equal(url.searchParams.get('s'), 'list');
+});
+const thumb = (id, rating = 'Safe', path = '') => `<span class="thumb"><a href="${path || `index.php?page=post&amp;s=view&amp;id=${id}`}"><img src="https://img.booru.org/board/thumbnails/1/thumbnail_hash.jpg" title="blue_sky score:0 rating:${rating}"/></a></span>`;
+const fastPacing = { setTimeout: (callback, ms, ...args) => setTimeout(callback, ms === 1500 ? 0 : ms, ...args) };
+test('hosted-board HTML listings decode links and enforce board-local post IDs and ratings', () => {
+  const listing = core.parseBooruListing(`${thumb(1)}${thumb(2, 'Explicit')}${thumb(3, 'Safe', 'https://evil.test/?page=post&s=view&id=3')}`, board);
+  assert.equal(listing.length, 1);
+  assert.equal(listing[0].postUrl, 'https://landscapes.booru.org/index.php?page=post&s=view&id=1');
+  assert.equal(listing[0].name, 'blue_sky');
+});
+test('original GIF/PNG URL is read from the post, never inferred from a JPEG thumbnail', () => {
+  const post = core.parseBooruListing(thumb(1), board)[0];
+  for (const extension of ['gif', 'png']) {
+    const media = core.parseBooruOriginal(`<img id="image" src="http://img.booru.org/board/images/1/hash.${extension}?x=1&amp;y=2">`, board, post);
+    assert.equal(media.uri, `https://img.booru.org/board/images/1/hash.${extension}?x=1&y=2`);
+    assert.equal(media.kind, 'image');
+    assert.match(media.preview, /thumbnail_hash.jpg$/);
+  }
+});
+test('public empty listings are accepted without mistaking login/challenge pages for empty results', () => {
+  assert.equal(core.parseBooruListing('<h1>Nobody here but us chickens!</h1><footer>Running Gelbooru 0.1</footer>', board).length, 0);
+  for (const text of ['<html>Sign in to continue</html>', '<title>Just a moment...</title>', '<html>Welcome</html>']) {
+    assert.throws(() => core.parseBooruListing(text, board));
+  }
+});
+test('original-image parser never substitutes an advertisement or unsafe address', () => {
+  const post = core.parseBooruListing(thumb(1), board)[0];
+  for (const text of ['<img id="advertisement" src="https://example.com/ad.jpg">',
+    '<img id="image" src="https://127.0.0.1/private.jpg">']) assert.throws(() => core.parseBooruOriginal(text, board, post));
+});
+test('HTML source fetching resolves originals with bounded concurrency and stable order', async () => {
+  let active = 0, maximum = 0;
+  const client = await load('lib/online-sources.ts', { 'fast-xml-parser': require('fast-xml-parser'), htmlparser2: require('htmlparser2') }, {
+    ...fastPacing,
+    fetch: async (url) => {
+      if (url.includes('s=list')) return { ok: true, text: async () => Array.from({ length: 8 }, (_, i) => thumb(i + 1)).join('') };
+      active++; maximum = Math.max(maximum, active);
+      await new Promise(setImmediate);
+      active--;
+      return { ok: true, text: async () => `<img id="image" src="https://img.booru.org/${new URL(url).searchParams.get('id')}.gif">` };
+    },
+  });
+  const progress = [];
+  const page = await client.fetchSourcePage(board, 0, () => assert.fail('Unexpected Reddit request'), undefined, (items) => progress.push(items.length));
+  assert.equal(page.items.length, 8); assert.equal(maximum, 1);
+  assert.deepEqual(progress, [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(plain(page.items.map((item) => item.id)), Array.from({ length: 8 }, (_, i) => `board:${i + 1}`));
+});
+test('rate limiting stops detail lookups rather than retrying all remaining posts', async () => {
+  let calls = 0;
+  const client = await load('lib/online-sources.ts', { 'fast-xml-parser': require('fast-xml-parser'), htmlparser2: require('htmlparser2') }, {
+    ...fastPacing,
+    fetch: async (url) => {
+      calls++;
+      return url.includes('s=list') ? { ok: true, text: async () => Array.from({ length: 20 }, (_, i) => thumb(i + 1)).join('') } :
+        { ok: false, status: 429 };
+    },
+  });
+  await assert.rejects(client.fetchSourcePage(board, 0, () => assert.fail('Unexpected Reddit request')), /rate-limited/);
+  assert.ok(calls <= 4);
+});
+const liveBoard = process.argv.find((arg) => arg.startsWith('--live-board='))?.slice('--live-board='.length);
+if (liveBoard) test('live public board returns original media URLs, not DAPI or guessed thumbnail URLs', { timeout: 120000 }, async () => {
+  const client = await load('lib/online-sources.ts', { 'fast-xml-parser': require('fast-xml-parser'), htmlparser2: require('htmlparser2') }, { fetch });
+  const source = client.parseOnlineSource({ id: 'live-test', name: 'Live check', kind: 'booru', board: liveBoard, safeOnly: true });
+  const page = await client.fetchSourcePage(source, 0, () => assert.fail('Unexpected Reddit request'));
+  assert.ok(page.items.length > 0, 'Expected publicly available safe-rated posts');
+  assert.ok(page.items.every((item) => item.uri.startsWith('https://') && !item.uri.includes('/thumbnails/')));
+  const head = await fetch(page.items[0].uri, { method: 'HEAD', signal: AbortSignal.timeout(12000) });
+  assert.ok(head.ok, `Original media HEAD returned ${head.status}`);
+  assert.match(head.headers.get('content-type') ?? '', /image|video/);
+  console.log(`Live check: ${page.items.length} originals resolved; first original HTTP ${head.status}. No media bodies downloaded.`);
 });
 test('classic booru XML yields HTTPS image/GIF URLs with post attribution', () => {
   const page = core.parseBooruPage('<posts><post id="1" rating="s" tags="sky" file_url="http://img.booru.org/a.gif?x=1&amp;y=2" /></posts>', board, 0);

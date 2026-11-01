@@ -6,9 +6,9 @@ import { redditGet } from '@/lib/reddit-account';
 const KEY = 'quad.online-sources.v1';
 export type SourceResult = {
   items: RemoteMedia[]; images: RemoteMedia[]; cursor: number | string | null;
-  loading: boolean; loaded: boolean; hasMore: boolean; error: string;
+  loading: boolean; loaded: boolean; hasMore: boolean; error: string; notice: string;
 };
-const empty = (): SourceResult => ({ items: [], images: [], cursor: null, loading: false, loaded: false, hasMore: false, error: '' });
+const empty = (): SourceResult => ({ items: [], images: [], cursor: null, loading: false, loaded: false, hasMore: false, error: '', notice: '' });
 type ContextValue = {
   sources: OnlineSource[]; results: Record<string, SourceResult>; loaded: boolean; storageError: string;
   refresh(id: string, more?: boolean): Promise<void>; ensureLoaded(id: string): void;
@@ -50,14 +50,18 @@ export function OnlineSourcesProvider({ children }: { children: React.ReactNode 
     if (more && (!previous.loaded || !previous.hasMore)) return;
     const controller = new AbortController();
     controllers.current.set(id, controller);
-    update(id, { loading: true, error: '' });
+    update(id, { loading: true, error: '', notice: '' });
     try {
-      const page = await fetchSourcePage(source, more ? previous.cursor : null, redditGet, controller.signal);
+      const page = await fetchSourcePage(source, more ? previous.cursor : null, redditGet, controller.signal, (partial) => {
+        if (!previous.items.length && controllers.current.get(id) === controller && !controller.signal.aborted) {
+          update(id, { items: partial });
+        }
+      });
       if (controllers.current.get(id) !== controller) return;
       const combined = more ? [...previous.items, ...page.items] : page.items;
       const seen = new Set<string>();
       const items = combined.filter((item) => { if (seen.has(item.uri)) return false; seen.add(item.uri); return true; });
-      update(id, { items, cursor: page.cursor, hasMore: page.hasMore, loaded: true });
+      update(id, { items, cursor: page.cursor, hasMore: page.hasMore, loaded: true, notice: page.notice ?? '' });
     } catch (error) {
       if (controllers.current.get(id) === controller && !controller.signal.aborted) {
         update(id, { error: error instanceof Error ? error.message : 'Could not load this source. Check your connection.' });

@@ -11,16 +11,25 @@ give the search a name, enter its HTTPS board URL, and set tags. Space-separated
 tags combine terms, underscores join words, and `-tag` excludes a term, subject
 to the board's own tag syntax.
 
-The board must expose a public Gelbooru-style DAPI endpoint. The app accepts XML
-and common JSON response shapes, sends an identifying User-Agent, and supports
-pagination. It does not bypass API blocks, sign-in requirements, or browser
-challenges. An inactive or API-restricted board produces an explicit error.
-The safe-rated filter is enabled initially and is also checked client-side.
+Hosted booru.org boards use the older Gelbooru public HTML listings, not the
+newer DAPI endpoint. The app reads those normal listing pages and resolves exact
+original URLs from each post. It never guesses a GIF/PNG URL from a JPEG
+thumbnail. Pagination uses 20-post offsets.
+
+Requests are serialized and paced across searches on the same board. First
+results appear as originals resolve; permission errors and rate limiting stop
+the search instead of triggering repeated retries. Failed individual posts are
+reported alongside successful results. The app sends an identifying User-Agent
+and does not bypass sign-in requirements or browser challenges.
+
+The safe-rated filter is enabled initially and checked client-side. Ratings
+are supplied by the board and cannot guarantee the nature of its content.
 
 ## Reddit account setup
 
-The Replit account connection was not enabled. Instead, the optional **Reddit
-account** section uses Reddit's installed-app OAuth flow directly on the device.
+Devvit CLI authentication belongs to a Reddit-hosted Devvit app. The native
+player does not extract those credentials or embed them in the APK. Its optional
+**Reddit account** section uses Reddit's installed-app OAuth flow directly on the device.
 Before it can work, supply the public client ID of a Reddit installed app with
 the necessary Reddit API authorization/approval. Never supply a password or
 client secret. Register this exact redirect URI:

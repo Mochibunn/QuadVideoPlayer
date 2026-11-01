@@ -89,6 +89,7 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
               </View>
               {result?.loading && <ActivityIndicator color={colors.primary} />}
               {!!result?.error && label(result.error)}
+              {!!result?.notice && label(result.notice)}
               {result?.loaded && label(`${result.images.length} images / GIFs · ${videos.length} videos. Unsupported links and filtered posts are skipped.`, true)}
               {videos.length > 0 && button('Play source videos', () => onPlayVideos(videos, source.name))}
               {result?.loaded && !result.items.length && label('No supported media on this page. Try different tags, another page, or check the source access settings.', true)}

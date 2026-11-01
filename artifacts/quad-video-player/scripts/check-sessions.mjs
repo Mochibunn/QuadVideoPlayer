@@ -22,7 +22,7 @@ async function load(path, modules) {
 }
 const sound = await load('../lib/sound-settings.ts', {});
 const slideshow = await load('../lib/slideshow.ts', {});
-const online = await load('../lib/online-sources.ts', { 'fast-xml-parser': nativeRequire('fast-xml-parser') });
+const online = await load('../lib/online-sources.ts', { 'fast-xml-parser': nativeRequire('fast-xml-parser'), htmlparser2: nativeRequire('htmlparser2') });
 const codec = await load('../lib/sessions.ts', { './sound-settings': sound, './slideshow': slideshow, './online-sources': online });
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const media = (name) => ({ id: `content://files/${name}`, uri: `content://files/${name}`, name });

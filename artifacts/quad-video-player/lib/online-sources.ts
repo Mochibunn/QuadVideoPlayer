@@ -1,4 +1,5 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import { DomUtils, parseDocument } from 'htmlparser2';
 
 export type OnlineSource = {
   id: string; name: string; kind: 'booru' | 'reddit'; board: string; tags: string;
@@ -7,7 +8,7 @@ export type OnlineSource = {
 export type RemoteMedia = {
   id: string; uri: string; name: string; kind: 'image' | 'video'; postUrl: string; preview?: string;
 };
-export type SourcePage = { items: RemoteMedia[]; cursor: string | number | null; hasMore: boolean };
+export type SourcePage = { items: RemoteMedia[]; cursor: string | number | null; hasMore: boolean; notice?: string };
 export function publicMediaUrl(value: unknown, base?: string): string | null {
   if (typeof value !== 'string' || !value || value.length > 16000) return null;
   try {
@@ -58,11 +59,56 @@ export function parseOnlineSources(value: unknown): OnlineSource[] {
 export function booruSearchUrl(source: OnlineSource, page: number): string {
   const url = new URL('/index.php', normalizeBoard(source.board));
   const tags = [source.tags, source.safeOnly ? 'rating:safe' : ''].filter(Boolean).join(' ');
-  url.search = new URLSearchParams({ page: 'dapi', s: 'post', q: 'index', limit: '40', pid: String(Math.max(0, Math.floor(page))), tags }).toString();
+  // Hosted booru.org boards run the older HTML-only engine. Its pid is an
+  // offset in 20-post pages, not the DAPI page number used by newer engines.
+  url.search = new URLSearchParams({ page: 'post', s: 'list', pid: String(Math.max(0, Math.floor(page)) * 20), tags: tags || 'all' }).toString();
   return url.href;
 }
 function upgradeBooruUrl(value: unknown, board: string) {
   return publicMediaUrl(typeof value === 'string' ? value.replace(/^http:\/\//i, 'https://') : value, board);
+}
+export type BooruListingPost = { id: string; name: string; postUrl: string; preview?: string };
+export function parseBooruListing(text: string, source: OnlineSource): BooruListingPost[] {
+  const document = parseDocument(text, { decodeEntities: true });
+  const board = normalizeBoard(source.board);
+  const thumbnails = DomUtils.findAll((node) =>
+    node.name === 'span' && (node.attribs.class ?? '').split(/\s+/).includes('thumb'), document.children);
+  if (!thumbnails.length) {
+    const message = DomUtils.textContent(document);
+    if (/Gelbooru/i.test(text) && /Nobody here but us chickens|No (?:images|posts|results)(?: were)? found/i.test(message)) return [];
+    throw new Error('This board did not return a public post listing. Sign-in pages and browser challenges are not supported.');
+  }
+  const posts: BooruListingPost[] = [];
+  const seen = new Set<string>();
+  for (const thumb of thumbnails) {
+    const image = DomUtils.findOne((node) => node.name === 'img', thumb.children);
+    const anchor = DomUtils.findOne((node) => node.name === 'a' && !!node.attribs.href, thumb.children);
+    if (!image || !anchor) continue;
+    let url: URL;
+    try { url = new URL(anchor.attribs.href, board); } catch { continue; }
+    const id = url.searchParams.get('id');
+    if (url.origin !== board || url.searchParams.get('page') !== 'post' ||
+      url.searchParams.get('s') !== 'view' || !id || !/^\d+$/.test(id) || seen.has(id)) continue;
+    const title = image.attribs.title ?? '';
+    const rating = title.match(/\brating:\s*(safe|general|questionable|explicit|[sqeg])\b/i)?.[1]?.toLowerCase();
+    if (source.safeOnly && !['s', 'safe', 'g', 'general'].includes(rating ?? '')) continue;
+    seen.add(id);
+    posts.push({ id, name: title.replace(/\s*(?:score|rating):[\s\S]*$/i, '').trim().slice(0, 200) || `Post ${id}`,
+      postUrl: `${board}/index.php?page=post&s=view&id=${id}`,
+      preview: upgradeBooruUrl(image.attribs['data-src'] ?? image.attribs.src, board) ?? undefined });
+  }
+  return posts;
+}
+export function parseBooruOriginal(text: string, source: OnlineSource, post: BooruListingPost): RemoteMedia {
+  const document = parseDocument(text, { decodeEntities: true });
+  const image = DomUtils.findOne((node) => node.name === 'img' && node.attribs.id === 'image', document.children);
+  const video = DomUtils.findOne((node) => node.name === 'video' && node.attribs.id === 'image', document.children);
+  const videoSource = video && DomUtils.findOne((node) => node.name === 'source' && !!node.attribs.src, video.children);
+  const uri = upgradeBooruUrl(image?.attribs.src ?? video?.attribs.src ?? videoSource?.attribs.src, normalizeBoard(source.board));
+  if (!uri || !/\.(png|jpe?g|gif|webp|avif|bmp|mp4|webm|mov)(?:$|\?)/i.test(uri)) {
+    throw new Error('The post did not expose a supported original image or video.');
+  }
+  return { ...post, id: `${source.id}:${post.id}`, uri, kind: /\.(mp4|webm|mov)(?:$|\?)/i.test(uri) ? 'video' : 'image' };
 }
 export function parseBooruPage(text: string, source: OnlineSource, page: number): SourcePage {
   let data: any;
@@ -141,21 +187,87 @@ export function parseRedditPage(value: unknown, source: OnlineSource): SourcePag
   const after = typeof listing.data.after === 'string' && /^t3_[a-z0-9]+$/i.test(listing.data.after) ? listing.data.after : null;
   return { items: unique, cursor: after, hasMore: after !== null };
 }
+const boardQueues = new Map<string, Promise<void>>();
+function boardRequest<T>(board: string, signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+  const previous = boardQueues.get(board) ?? Promise.resolve();
+  const next = previous.then(async () => {
+    if (signal.aborted) throw new Error('The search was canceled.');
+    // Share pacing across all searches on a board, not just within one page.
+    await new Promise<void>((resolve, reject) => {
+      const cancel = () => { clearTimeout(timer); reject(new Error('The search was canceled.')); };
+      const timer = setTimeout(() => { signal.removeEventListener('abort', cancel); resolve(); }, 1500);
+      signal.addEventListener('abort', cancel, { once: true });
+    });
+    return work();
+  });
+  const tail = next.then(() => undefined, () => undefined);
+  boardQueues.set(board, tail);
+  void tail.then(() => { if (boardQueues.get(board) === tail) boardQueues.delete(board); });
+  return next;
+}
 export async function fetchSourcePage(source: OnlineSource, cursor: string | number | null,
-  redditGet: (path: string) => Promise<unknown>, signal?: AbortSignal): Promise<SourcePage> {
+  redditGet: (path: string) => Promise<unknown>, signal?: AbortSignal,
+  onProgress?: (items: RemoteMedia[]) => void): Promise<SourcePage> {
   if (source.kind === 'reddit') return parseRedditPage(await redditGet(redditListingPath(source, cursor)), source);
+  if (signal?.aborted) throw new Error('The search was canceled.');
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal?.addEventListener('abort', abort);
-  const timer = setTimeout(abort, 15000);
+  const timer = setTimeout(abort, 90000);
+  let fatalError = '';
+  const board = normalizeBoard(source.board);
+  const readPage = (url: string): Promise<string> => boardRequest(board, controller.signal, async () => {
+    if (controller.signal.aborted) throw new Error('The search was canceled or timed out.');
+    const request = new AbortController();
+    const cancel = () => request.abort();
+    controller.signal.addEventListener('abort', cancel);
+    const timeout = setTimeout(cancel, 15000);
+    try {
+      const response = await fetch(url, { signal: request.signal,
+        headers: { Accept: 'text/html, application/xhtml+xml;q=0.9', 'User-Agent': 'QuadVideoPlayer/1.10.1 (Android; read-only)' } });
+      if (!response.ok) {
+        const message = response.status === 429 ? 'The board rate-limited this search. Wait before retrying.' :
+          `The board returned HTTP ${response.status}. Its public pages may be unavailable or require permission.`;
+        if ([401, 403, 429].includes(response.status)) { fatalError = message; controller.abort(); }
+        throw new Error(message);
+      }
+      const text = await response.text();
+      if (text.length > 3_000_000) throw new Error('The board response is too large.');
+      return text;
+    } catch (error) {
+      if (request.signal.aborted) throw new Error(fatalError || (controller.signal.aborted ?
+        'The search was canceled or timed out.' : 'The board request timed out. Try again.'));
+      throw error;
+    } finally {
+      clearTimeout(timeout); controller.signal.removeEventListener('abort', cancel);
+    }
+  });
   try {
-    const response = await fetch(booruSearchUrl(source, typeof cursor === 'number' ? cursor : 0), {
-      signal: controller.signal, headers: { Accept: 'application/xml, application/json;q=0.9', 'User-Agent': 'QuadVideoPlayer/1.10 (Android; read-only)' },
-    });
-    if (!response.ok) throw new Error(response.status === 429 ? 'The board rate-limited this search. Wait before retrying.' :
-      `The board returned HTTP ${response.status}. Its public API may be unavailable or require permission.`);
-    const text = await response.text();
-    if (text.length > 3_000_000) throw new Error('The board response is too large.');
-    return parseBooruPage(text, source, typeof cursor === 'number' ? cursor : 0);
+    const page = typeof cursor === 'number' ? cursor : 0;
+    const text = await readPage(booruSearchUrl(source, page));
+    const posts = parseBooruListing(text, source).slice(0, 20);
+    const items: (RemoteMedia | undefined)[] = new Array(posts.length);
+    let next = 0, failed = 0;
+    const errors: string[] = [];
+    // Resolve exact original URLs. A thumbnail ending in .jpg can represent a
+    // .png or animated .gif; deriving the original by path replacement is wrong.
+    await Promise.all(Array.from({ length: Math.min(3, posts.length) }, async () => {
+      while (next < posts.length && !controller.signal.aborted) {
+        const index = next++;
+        try {
+          items[index] = parseBooruOriginal(await readPage(posts[index].postUrl), source, posts[index]);
+          onProgress?.(items.filter((item): item is RemoteMedia => !!item));
+        }
+        catch (error) { failed++; errors.push(error instanceof Error ? error.message : String(error)); }
+      }
+    }));
+    if (controller.signal.aborted) throw new Error(fatalError || (signal?.aborted ? 'The search was canceled.' : 'The board search timed out. Try again.'));
+    const resolved = items.filter((item): item is RemoteMedia => !!item);
+    if (posts.length && !resolved.length) throw new Error(errors[0] || 'The original media could not be loaded.');
+    const hasMore = /class=["'][^"']*\bthumb\b/i.test(text) && (
+      (text.match(/class=["'][^"']*\bthumb\b/g) ?? []).length >= 20 ||
+      [...text.matchAll(/[?&](?:amp;)?pid=(\d+)/g)].some((match) => Number(match[1]) > page * 20));
+    return { items: resolved, cursor: page + 1, hasMore,
+      ...(failed ? { notice: `${failed} post(s) could not be loaded. Refresh to retry.` } : {}) };
   } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
 }
