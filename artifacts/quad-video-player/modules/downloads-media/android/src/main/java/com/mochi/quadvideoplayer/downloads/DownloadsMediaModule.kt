@@ -8,10 +8,59 @@ import android.os.Environment
 import android.provider.MediaStore
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.Promise
+import expo.modules.kotlin.functions.Queues
+import android.app.PictureInPictureParams
+import android.util.Rational
+import androidx.fragment.app.FragmentActivity
 
 class DownloadsMediaModule : Module() {
+  private val filePicker = FileManagerPicker()
+
   override fun definition() = ModuleDefinition {
     Name("DownloadsMedia")
+    Events("pipChanged", "pipClosed")
+
+    AsyncFunction("inspectSessionMedia") { uris: List<String>, retain: Boolean ->
+      val context = appContext.reactContext
+        ?: throw IllegalStateException("The Android application is not available.")
+      SessionMediaAccess.inspect(context, uris, retain)
+    }
+
+    AsyncFunction("enterQuadPip") {
+      val activity = appContext.throwingActivity as? FragmentActivity
+        ?: throw IllegalStateException("The Android activity is unavailable.")
+      check(Build.VERSION.SDK_INT >= 26 &&
+        activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+        "This Android device does not support picture-in-picture."
+      }
+      val tag = "quad-picture-in-picture"
+      if (activity.supportFragmentManager.findFragmentByTag(tag) == null) {
+        val observer = QuadPipFragment().apply {
+          onChange = { active -> sendEvent("pipChanged", mapOf("active" to active)) }
+          onClosed = { sendEvent("pipClosed", emptyMap<String, Any>()) }
+        }
+        activity.supportFragmentManager.beginTransaction().add(observer, tag).commitNow()
+      }
+      val params = PictureInPictureParams.Builder().setAspectRatio(Rational(8, 5)).build()
+      check(activity.enterPictureInPictureMode(params)) {
+        "Android did not allow picture-in-picture. Enable it for Quad Video Player in Android Settings."
+      }
+    }.runOnQueue(Queues.MAIN)
+
+    AsyncFunction("pickFiles") { samsung: Boolean, promise: Promise ->
+      filePicker.launch(appContext.throwingActivity, samsung, promise)
+    }.runOnQueue(Queues.MAIN)
+
+    OnActivityResult { _, (requestCode, resultCode, data) ->
+      appContext.reactContext?.let { filePicker.onResult(it, requestCode, resultCode, data) }
+    }
+
+    AsyncFunction("getVideoPreview") { uri: String ->
+      val context = appContext.reactContext
+        ?: throw IllegalStateException("The Android application is not available.")
+      VideoPreviewStore.get(context, uri)
+    }
 
     AsyncFunction("getVideos") {
       val context = appContext.reactContext

@@ -1,6 +1,5 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as DocumentPicker from 'expo-document-picker';
 import { Directory } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -29,6 +28,13 @@ import BackgroundAudioMixer from '@/components/audio/BackgroundAudioMixer';
 import SettingSwitch from '@/components/SettingSwitch';
 import FadingControls from '@/components/FadingControls';
 import ControlsTimeoutSetting from '@/components/ControlsTimeoutSetting';
+import PoolVideoPreview from '@/components/PoolVideoPreview';
+import SoundEffectsSettings from '@/components/SoundEffectsSettings';
+import { usePlayerSoundEffects, useSoundSettings } from '@/hooks/useSoundSettings';
+import { useSessionRegistry } from '@/hooks/useSessionRegistry';
+import SessionControls from '@/components/SessionControls';
+import { seekPosition, type SessionSnapshot, type VideoSnapshot } from '@/lib/sessions';
+import { pickMediaFiles } from '@/lib/media-picker';
 import { DEFAULT_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
 import { readDownloadsVideos } from '@/lib/downloads-library';
 import { getVideoAudioMode } from '@/lib/audio-mode';
@@ -188,6 +194,7 @@ function VideoTile({
   fillVideos,
   controlsVisible,
   onToggleControls,
+  initialSnapshot,
 }: {
   asset: VideoAsset;
   pool: VideoAsset[];
@@ -200,28 +207,60 @@ function VideoTile({
   fillVideos: boolean;
   controlsVisible: boolean;
   onToggleControls: () => void;
+  initialSnapshot?: VideoSnapshot;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [currentAsset, setCurrentAsset] = useState(asset);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(false);
-  const [individualVolume, setIndividualVolume] = useState(START_VOLUME);
+  const [isMuted, setIsMuted] = useState(initialSnapshot?.muted ?? false);
+  const [individualVolume, setIndividualVolume] = useState(initialSnapshot?.volume ?? START_VOLUME);
   const volume = linkedVolume ? sharedVolume : individualVolume;
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [volumeTrackWidth, setVolumeTrackWidth] = useState(0);
   const currentAssetRef = useRef(asset);
   currentAssetRef.current = currentAsset;
+  const registry = useSessionRegistry();
+  const pendingPosition = useRef<number | null>(initialSnapshot?.position ?? null);
+  const restorePlaying = useRef(initialSnapshot?.playing ?? true);
+  const firstGlobalEffect = useRef(true);
+  const changingSource = useRef(false);
+  const nextSourcePlaying = useRef(false);
+  const snapshotState = useRef({ individualVolume, isMuted, globalPlaying });
+  snapshotState.current = { individualVolume, isMuted, globalPlaying };
 
   const player = useVideoPlayer({ uri: asset.uri }, (videoPlayer) => {
     videoPlayer.loop = false;
-    videoPlayer.volume = linkedVolume ? sharedVolume : START_VOLUME;
-    videoPlayer.muted = false;
+    videoPlayer.volume = linkedVolume ? sharedVolume : (initialSnapshot?.volume ?? START_VOLUME);
+    videoPlayer.muted = initialSnapshot?.muted ?? false;
     videoPlayer.audioMixingMode = 'mixWithOthers';
     videoPlayer.keepScreenOnWhilePlaying = true;
-    videoPlayer.play();
+    if (!initialSnapshot) videoPlayer.play();
   });
+  usePlayerSoundEffects(player);
+  const restorePosition = useCallback(() => {
+    if (pendingPosition.current === null) return;
+    player.currentTime = seekPosition(pendingPosition.current, player.duration);
+    pendingPosition.current = null;
+    if (restorePlaying.current) player.play();
+    else player.pause();
+  }, [globalPlaying, player]);
+  useEventListener(player, 'sourceLoad', restorePosition);
+  useEffect(() => {
+    if (player.status === 'readyToPlay') restorePosition();
+  }, [player, restorePosition]);
+  useEffect(() => {
+    const capture = (): VideoSnapshot => ({
+      asset: currentAssetRef.current,
+      position: pendingPosition.current ?? (changingSource.current ? 0 : Math.max(0, player.currentTime || 0)),
+      volume: snapshotState.current.individualVolume,
+      muted: snapshotState.current.isMuted,
+      playing: restorePlaying.current,
+    });
+    registry.videos.set(index, capture);
+    return () => { if (registry.videos.get(index) === capture) registry.videos.delete(index); };
+  }, [index, player, registry]);
 
   const advance = useCallback(
     async (forcePlayback = false) => {
@@ -229,6 +268,9 @@ function VideoTile({
       if (!next) return;
       const shouldResume =
         globalPlaying && (forcePlayback || player.playing);
+      changingSource.current = true;
+      nextSourcePlaying.current = shouldResume;
+      restorePlaying.current = shouldResume;
       currentAssetRef.current = next;
       setCurrentAsset(next);
       setErrorMessage('');
@@ -259,7 +301,9 @@ function VideoTile({
     if (status === 'error') {
       setErrorMessage(mediaPlaybackError(error?.message));
     } else if (status === 'readyToPlay') {
+      changingSource.current = false;
       setErrorMessage('');
+      restorePosition();
     }
   });
 
@@ -291,6 +335,16 @@ function VideoTile({
   }, [isMuted, player]);
 
   useEffect(() => {
+    if (firstGlobalEffect.current) {
+      firstGlobalEffect.current = false;
+      if (initialSnapshot) {
+        if (pendingPosition.current === null && restorePlaying.current) player.play();
+        else player.pause();
+        return;
+      }
+    }
+    restorePlaying.current = globalPlaying;
+    if (pendingPosition.current !== null) return;
     if (globalPlaying) {
       player.play();
     } else {
@@ -321,13 +375,18 @@ function VideoTile({
 
   const toggleTilePlayback = () => {
     if (player.playing) {
+      restorePlaying.current = false;
       player.pause();
     } else {
+      restorePlaying.current = true;
       player.play();
     }
   };
 
   const retry = async () => {
+    changingSource.current = true;
+    nextSourcePlaying.current = globalPlaying;
+    restorePlaying.current = globalPlaying;
     setErrorMessage('');
     setIsLoading(true);
     try {
@@ -504,6 +563,10 @@ function VideoTile({
 }
 
 export default function QuadVideoPlayerScreen() {
+  const { inPip, enterPip, pipClosed, sound, setSound, loaded: soundLoaded } = useSoundSettings();
+  const registry = useSessionRegistry();
+  const [sessionBusy, setSessionBusy] = useState(false);
+  const [restoredStreams, setRestoredStreams] = useState<VideoSnapshot[] | null>(null);
   const [themeId, setThemeId] = useState<ThemeId>('amethyst');
   const colors = getThemeColors(themeId);
   const [themeLoaded, setThemeLoaded] = useState(false);
@@ -524,7 +587,10 @@ export default function QuadVideoPlayerScreen() {
   const [sourceLabel, setSourceLabel] = useState('');
   const insets = useSafeAreaInsets();
   const hasVideos = activeVideos.length > 0;
-  const controls = useAutoHideControls(hasVideos, activePanel !== null || isPicking, controlsHideSeconds);
+  const controls = useAutoHideControls(hasVideos, activePanel !== null || isPicking || sessionBusy, controlsHideSeconds);
+  useEffect(() => {
+    if (pipClosed) setGlobalPlaying(false);
+  }, [pipClosed]);
 
   useEffect(() => {
     let mounted = true;
@@ -613,6 +679,7 @@ export default function QuadVideoPlayerScreen() {
       return;
     }
     setPool(videos);
+    setRestoredStreams(null);
     setActiveVideos(pickInitialVideos(videos));
     setSession((current) => current + 1);
     setGlobalPlaying(true);
@@ -621,14 +688,8 @@ export default function QuadVideoPlayerScreen() {
   const chooseVideoFiles = async () => {
     setIsPicking(true);
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        // Some Android providers report MOV/MKV/etc. as generic binary files.
-        // Do not hide those files based on unreliable MIME metadata.
-        type: '*/*',
-        multiple: true,
-        copyToCacheDirectory: false,
-      });
-      if (!result.canceled) {
+      const result = await pickMediaFiles();
+      if (!result.canceled && result.assets) {
         const videos = result.assets
           .filter(isVideoFile)
           .map((item) => ({
@@ -799,6 +860,44 @@ export default function QuadVideoPlayerScreen() {
     setGlobalPlaying(false);
   };
 
+  const captureSession = (): SessionSnapshot => {
+    if (!registry.captureAudio) throw new Error('The audio mixer is still preparing. Please try saving again.');
+    const streams = activeVideos.map((_, index) => {
+      const capture = registry.videos.get(index);
+      if (!capture) throw new Error('A quadrant is still preparing. Please try saving again.');
+      const stream = capture();
+      if (!pool.some((item) => item.uri === stream.asset.uri)) {
+        throw new Error('A quadrant is changing files. Please try saving again.');
+      }
+      return stream;
+    });
+    return {
+      version: 1, savedAt: new Date().toISOString(), pool, streams,
+      audio: registry.captureAudio(), sourceLabel, globalPlaying,
+      settings: { themeId, normalize: normalizeEnabled, sync: syncEnabled, fill: fillVideos,
+        controlsDelay: controlsHideSeconds, sharedVolume, sound },
+    };
+  };
+  const restoreSession = (saved: SessionSnapshot) => {
+    if (!registry.restoreAudio) throw new Error('The audio mixer is still preparing. Please try resuming again.');
+    const s = saved.settings;
+    setThemeId(isThemeId(s.themeId) ? s.themeId : 'amethyst');
+    setNormalizeEnabled(s.normalize);
+    setSyncEnabled(s.sync);
+    setFillVideos(s.fill);
+    setControlsHideSeconds(s.controlsDelay);
+    setSharedVolume(s.sharedVolume);
+    setSound(s.sound);
+    setSourceLabel(saved.sourceLabel);
+    setPool(saved.pool);
+    setRestoredStreams(saved.streams);
+    setActiveVideos(saved.streams.map((stream) => stream.asset));
+    setGlobalPlaying(saved.globalPlaying);
+    registry.restoreAudio(saved.audio);
+    setSession((current) => current + 1);
+    setActivePanel(null);
+  };
+
   return (
     <ColorContext.Provider value={colors}>
     <SafeAreaView
@@ -812,6 +911,7 @@ export default function QuadVideoPlayerScreen() {
       <StatusBar hidden />
       <NavigationBar hidden={hasVideos} style="light" />
       <View
+        pointerEvents={sessionBusy ? 'none' : 'auto'}
         style={[styles.screen, !hasVideos && styles.browserScreen]}
         onTouchStart={controls.hold}
         onTouchEnd={(event) => {
@@ -819,7 +919,7 @@ export default function QuadVideoPlayerScreen() {
         }}
         onTouchCancel={controls.release}
       >
-        <FadingControls visible={!hasVideos || controls.visible} style={hasVideos ? [
+        <FadingControls visible={!inPip && (!hasVideos || controls.visible)} style={hasVideos ? [
           styles.toolbarOverlay,
           {
             backgroundColor: colors.playbackOverlay,
@@ -850,6 +950,13 @@ export default function QuadVideoPlayerScreen() {
           </View>
 
           <View pointerEvents="box-none" style={styles.topActions}>
+            <SessionControls
+              capture={captureSession} restore={restoreSession}
+              canSave={pool.length > 0 || backgroundTrackCount > 0}
+              hasCurrent={pool.length > 0 || backgroundTrackCount > 0}
+              disabled={isPicking || inPip || !themeLoaded || !playbackSettingsLoaded || !soundLoaded}
+              compact={hasVideos} onBusyChange={setSessionBusy}
+            />
             {activeVideos.length > 0 ? (
               <>
                 <ActionButton
@@ -872,6 +979,13 @@ export default function QuadVideoPlayerScreen() {
                   label="Shuffle all four streams"
                   onPress={() => startStreams(pool)}
                   disabled={isPicking || pool.length === 0}
+                />
+                <ActionButton
+                  compact
+                  icon="minimize-2"
+                  label="Picture in picture · all four videos"
+                  onPress={() => void enterPip()}
+                  disabled={isPicking || inPip || Platform.OS !== 'android'}
                 />
                 <ActionButton
                   compact
@@ -943,8 +1057,9 @@ export default function QuadVideoPlayerScreen() {
                 sharedVolume={sharedVolume}
                 onSharedVolumeChange={setSharedVolume}
                 fillVideos={fillVideos}
-                controlsVisible={controls.visible}
+                controlsVisible={!inPip && controls.visible}
                 onToggleControls={controls.toggle}
+                initialSnapshot={restoredStreams?.[row * 2 + column]}
               />
             ))}
               </View>
@@ -1106,6 +1221,7 @@ export default function QuadVideoPlayerScreen() {
               onChange={setControlsHideSeconds}
               disabled={!playbackSettingsLoaded}
             />
+            <SoundEffectsSettings />
             <Text style={[styles.themeSectionTitle, { color: colors.mutedForeground }]}>
               Accent themes
             </Text>
@@ -1183,6 +1299,9 @@ export default function QuadVideoPlayerScreen() {
                 keyExtractor={(asset) => asset.id}
                 style={styles.poolList}
                 contentContainerStyle={styles.poolListContent}
+                initialNumToRender={6}
+                maxToRenderPerBatch={4}
+                windowSize={3}
                 showsVerticalScrollIndicator
                 renderItem={({ item: asset }) => (
                   <View
@@ -1192,9 +1311,7 @@ export default function QuadVideoPlayerScreen() {
                       { borderBottomColor: colors.border },
                     ]}
                   >
-                    <View style={styles.poolFileIcon}>
-                      <Feather name="film" size={16} color={colors.primary} />
-                    </View>
+                    <PoolVideoPreview uri={asset.uri} />
                     <Text
                       numberOfLines={1}
                       ellipsizeMode="middle"
@@ -1248,6 +1365,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 4,
+    flexWrap: 'wrap',
+    rowGap: 8,
   },
   brandBlock: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   brandMark: {
@@ -1263,7 +1382,7 @@ const styles = StyleSheet.create({
   brandSquare: { width: 12, height: 12, borderRadius: 3 },
   brandName: { fontSize: 15, fontWeight: '700', letterSpacing: 1.7 },
   brandMeta: { fontSize: 9, fontWeight: '600', letterSpacing: 1, marginTop: 2 },
-  topActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 1 },
   actionButton: {
     minHeight: 42,
     flexDirection: 'row',
@@ -1455,14 +1574,13 @@ const styles = StyleSheet.create({
   poolList: { flexGrow: 0, maxHeight: 460 },
   poolListContent: { paddingBottom: 4 },
   poolRow: {
-    minHeight: 56,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingVertical: 5,
   },
-  poolFileIcon: { width: 30, alignItems: 'center' },
   poolFileName: { flex: 1, fontSize: 14, fontWeight: '500' },
   removeFileButton: {
     width: 44,

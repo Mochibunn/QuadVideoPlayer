@@ -2,7 +2,7 @@
   "expo": {
     "name": "Quad Video Player",
     "slug": "quad-video-player",
-    "version": "1.4.1",
+    "version": "1.7.0",
     "platforms": [
       "ios",
       "android"
@@ -19,7 +19,7 @@
       "supportsTablet": false
     },
     "android": {
-      "versionCode": 8,
+      "versionCode": 11,
       "package": "com.mochi.quadvideoplayer",
       "permissions": [
         "android.permission.READ_MEDIA_VIDEO",
@@ -28,7 +28,10 @@
     },
     "plugins": [
       "expo-router",
-      "expo-video",
+      [
+        "expo-video",
+        { "supportsPictureInPicture": true }
+      ],
       [
         "expo-navigation-bar",
         {

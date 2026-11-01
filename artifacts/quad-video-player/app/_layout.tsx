@@ -5,6 +5,8 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LaunchSplash from '@/components/LaunchSplash';
+import { SoundSettingsProvider } from '@/hooks/useSoundSettings';
+import { SessionRegistryProvider } from '@/hooks/useSessionRegistry';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -51,9 +53,13 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
+            <SessionRegistryProvider>
+            <SoundSettingsProvider>
             <KeyboardProvider>
               <RootLayoutNav />
             </KeyboardProvider>
+            </SoundSettingsProvider>
+            </SessionRegistryProvider>
             {showWelcome && <LaunchSplash onFinish={finishWelcome} />}
           </GestureHandlerRootView>
         </QueryClientProvider>

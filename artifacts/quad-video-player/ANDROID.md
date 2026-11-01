@@ -47,7 +47,67 @@ A public release needs a private signing key and a deliberate update/signing pla
 No Android device is connected to this workspace. Building and inspecting the
 APK does not verify sustained decoding performance on the target tablet.
 
+## Saved session
+
+Use **Save session** (the floppy-disk toolbar icon during playback) to save one
+complete checkpoint. **Resume saved session** is available after reopening the
+app; nothing starts playing automatically at launch. Saving again asks before
+replacing the previous checkpoint.
+
+The checkpoint includes the full selected video pool, current video and
+position in each quadrant, individual play/mute/volume state, shared level and
+normalization mode, background tracks with positions and levels, accent theme,
+Fit/Fill, control timeout, EQ, reverb, and echo. Saving does not pause or restart
+the active players. Resume deliberately replaces the current mix after asking.
+
+Android grants are retained when the provider supports them. Third-party
+GET_CONTENT selections can be temporary; the app warns at save time instead of
+copying potentially huge video files. A system-picker document selection or
+granted folder is preferable for lasting access. Any permission can still be
+revoked or storage disconnected.
+
+Resume checks actual readability before changing the live mix. Unavailable
+media is listed for confirmation; missing quadrants can use other available
+pool videos from the beginning. The stored checkpoint is never overwritten by
+a partial restore, cancellation, or failed resume. Reconnect storage/re-grant
+access and retry to use the original checkpoint.
+
+## File manager selection and pool previews
+
+**Select files** (and **Add audio tracks**) offers Samsung My Files, an Android
+chooser for other installed compatible apps, or the existing system picker.
+My Files must be installed and expose a compatible selection activity.
+Long-press to multi-select when the chosen manager supports it. Canceling leaves
+the current pool/audio untouched. These choices do not replace Android's
+separate, restricted folder-grant dialog.
+
+Selections use the returned read grants without copying large media files.
+Third-party managers may grant only temporary access; do not assume those URIs
+will remain readable after a restart.
+
+The video pool shows small cached still previews beside filenames. Generation
+is serialized, requests for unmounted rows are skipped, and the disk cache is
+bounded to 32 MiB. Unsupported or inaccessible previews display **No preview**
+without removing the video or interrupting playback.
+
 ## Audio modes and themes
+
+### Picture-in-picture and sound effects
+
+During video playback, the **Picture in picture** toolbar button minimizes the
+entire 2×2 layout into one Android PiP window. App controls fade out for the
+compact window; expand it to return to the full controls. Android must support
+PiP and allow it for this app. Entering PiP is explicit, not automatic on Home.
+Closing the PiP window pauses the mix rather than leaving hidden playback.
+
+Settings includes saved **Cozy room**, **Concert hall**, and **Dreamy plate**
+reverb choices, an **Echo** toggle, and a **5-band equalizer** spanning 60 Hz to
+14 kHz with ±12 dB adjustments and Flat/Bass/Voice/Bright presets. These run in
+each native PCM audio chain for both video streams and background audio.
+Effects are off by default, EQ boosts reserve headroom, and **Reset sound
+effects** restores unprocessed audio without changing volume or normalization.
+Effects do not create extra video decoders. They do not depend on a device's
+optional Android audio-effect implementation.
 
 Settings keeps the surrounding surfaces OLED-black and saves the chosen accent.
 The default is `#6b5cb1`, with the requested silver, green, red, and yellow plus

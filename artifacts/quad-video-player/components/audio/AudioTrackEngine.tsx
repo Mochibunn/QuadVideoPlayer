@@ -2,6 +2,9 @@ import { useEventListener } from 'expo';
 import { useVideoPlayer } from 'expo-video';
 import { memo, useEffect, useRef } from 'react';
 import { mediaPlaybackError } from '@/lib/media-formats';
+import { usePlayerSoundEffects, useSoundSettings } from '@/hooks/useSoundSettings';
+import { useSessionRegistry } from '@/hooks/useSessionRegistry';
+import { seekPosition } from '@/lib/sessions';
 
 export type AudioTrackStatus = 'loading' | 'ready' | 'error';
 
@@ -15,6 +18,7 @@ export type AudioTrack = {
   status: AudioTrackStatus;
   error: string;
   retry: number;
+  initialPosition?: number;
 };
 
 type Props = {
@@ -25,7 +29,10 @@ type Props = {
 // This component must stay mounted outside the modal and virtualized list.
 // Closing the panel or scrolling a row offscreen must not release its player.
 function AudioTrackEngine({ track, onStatus }: Props) {
+  const { pipClosed } = useSoundSettings();
   const blockingError = useRef('');
+  const registry = useSessionRegistry();
+  const pendingPosition = useRef<number | null>(track.initialPosition ?? null);
   // Configure the native audio-only selector BEFORE loading any media, so even
   // preparing a video source cannot allocate a fifth video decoder.
   const player = useVideoPlayer(null, (instance) => {
@@ -39,6 +46,18 @@ function AudioTrackEngine({ track, onStatus }: Props) {
   });
 
   const audioOnlySupported = typeof (player as typeof player & { audioOnly?: boolean }).audioOnly === 'boolean';
+  usePlayerSoundEffects(player);
+  useEffect(() => {
+    const capture = () => pendingPosition.current ?? Math.max(0, player.currentTime || 0);
+    registry.audio.set(track.id, capture);
+    return () => { if (registry.audio.get(track.id) === capture) registry.audio.delete(track.id); };
+  }, [player, registry, track.id]);
+  const restorePosition = () => {
+    if (pendingPosition.current !== null) {
+      player.currentTime = seekPosition(pendingPosition.current, player.duration);
+      pendingPosition.current = null;
+    }
+  };
 
   useEventListener(player, 'sourceLoad', ({ videoSource, availableAudioTracks }) => {
     if (!videoSource) return;
@@ -46,6 +65,8 @@ function AudioTrackEngine({ track, onStatus }: Props) {
       blockingError.current = 'This file contains no audio track usable by Android. Choose another file.';
       player.pause();
       onStatus(track.id, 'error', blockingError.current);
+    } else {
+      restorePosition();
     }
   });
 
@@ -59,7 +80,8 @@ function AudioTrackEngine({ track, onStatus }: Props) {
       return;
     }
     if (status === 'readyToPlay' && audioOnlySupported) {
-      if (track.paused) player.pause();
+      restorePosition();
+      if (track.paused || pipClosed) player.pause();
       else player.play();
     }
     onStatus(
@@ -97,9 +119,9 @@ function AudioTrackEngine({ track, onStatus }: Props) {
   }, [player, track.muted]);
 
   useEffect(() => {
-    if (!audioOnlySupported || blockingError.current || track.paused) player.pause();
+    if (!audioOnlySupported || blockingError.current || track.paused || pipClosed || pendingPosition.current !== null) player.pause();
     else player.play();
-  }, [audioOnlySupported, player, track.paused]);
+  }, [audioOnlySupported, player, track.paused, pipClosed]);
 
   // useVideoPlayer releases the native player on unmount/removal.
   return null;

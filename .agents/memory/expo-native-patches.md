@@ -30,3 +30,14 @@ generated Java entry point against the previous identity.
 android/build/generated/autolinking/autolinking.json if it still has the old
 project.android.packageName, then let Gradle regenerate it. Do not hand-edit
 generated Java or discard all native/C++ build intermediates.
+
+Whole-activity PiP must prepare every player to remain active before calling
+Android's entry method, then restore ordinary background behavior on exit.
+
+**Why:** Android can deliver the pause/background lifecycle event before the
+PiP-mode callback. Checking only the current PiP flag in a pause handler can
+therefore pause all four streams during the transition.
+
+**How to apply:** Arm the player background exemption before entering and
+allow the overlay fade to finish. Clear the exemption after expansion/failure,
+and explicitly pause the mix when the PiP window is closed.

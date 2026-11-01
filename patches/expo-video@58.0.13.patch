@@ -1,8 +1,19 @@
 diff --git a/android/src/main/java/expo/modules/video/VideoModule.kt b/android/src/main/java/expo/modules/video/VideoModule.kt
-index c2711344c58758e0ce5b71572d59c930330f0103..7e8936cf88b3d6a348d724b47f13ef537a914906 100644
+index c2711344c58758e0ce5b71572d59c930330f0103..ef4f5ec604faf7dd19e8c1dc2f870d5da39a052a 100644
 --- a/android/src/main/java/expo/modules/video/VideoModule.kt
 +++ b/android/src/main/java/expo/modules/video/VideoModule.kt
-@@ -104,6 +104,22 @@ class VideoModule : Module() {
+@@ -73,6 +73,10 @@ class VideoModule : Module() {
+     }
+ 
+     Class(VideoPlayer::class) {
++      Property("soundEffects")
++        .get { ref: VideoPlayer -> ref.soundEffects }
++        .set { ref: VideoPlayer, value: String -> ref.soundEffects = value }
++
+       Constructor { source: VideoSource?, /* useSynchronousReplace - iOS-only */ _: Boolean?, playerBuilderOptions: PlayerBuilderOptions? ->
+         val applicationContext = appContext.reactContext?.applicationContext ?: throw Exceptions.ReactContextLost()
+         val player = VideoPlayer(applicationContext, appContext, source, playerBuilderOptions)
+@@ -104,6 +108,22 @@ class VideoModule : Module() {
            ref.volume = volume
          }
  
@@ -25,6 +36,32 @@ index c2711344c58758e0ce5b71572d59c930330f0103..7e8936cf88b3d6a348d724b47f13ef53
        Property("currentTime")
          .get { ref: VideoPlayer ->
            // TODO: we shouldn't block the thread, but there are no events for the player position change,
+diff --git a/android/src/main/java/expo/modules/video/managers/PictureInPictureManager.kt b/android/src/main/java/expo/modules/video/managers/PictureInPictureManager.kt
+index 1792ff268567a5b3553be0aa667cf8ddfa798afd..db144f37b425287c019fc661695d4c512d3f7dc7 100644
+--- a/android/src/main/java/expo/modules/video/managers/PictureInPictureManager.kt
++++ b/android/src/main/java/expo/modules/video/managers/PictureInPictureManager.kt
+@@ -303,6 +303,8 @@ class PictureInPictureManager(appContext: AppContext) : PictureInPictureFragment
+   }
+ 
+   private fun shouldPauseOnBackground(videoView: VideoView): Boolean {
++    // A manually entered whole-activity PiP window retains every quadrant.
++    if (mainActivity.get()?.isInPictureInPictureMode == true && currentPiPViewCandidate.get() == null) return false
+     if (videoView.isInFullscreen) {
+       return false
+     }
+diff --git a/android/src/main/java/expo/modules/video/managers/VideoManager.kt b/android/src/main/java/expo/modules/video/managers/VideoManager.kt
+index 5f9ad2a5bdf5e9e79f0d80b9d6d2cf635bd8704c..4f9262d9e962295a3d04bd3abcc1725e59f5a840 100644
+--- a/android/src/main/java/expo/modules/video/managers/VideoManager.kt
++++ b/android/src/main/java/expo/modules/video/managers/VideoManager.kt
+@@ -177,6 +177,8 @@ object VideoManager {
+   }
+ 
+   private fun shouldPauseVideo(videoView: VideoView): Boolean {
++    // Whole-activity Quad PiP keeps all four views, not a single Expo PiP view.
++    if (appContext.get()?.currentActivity?.isInPictureInPictureMode == true) return false
+     return videoView.videoPlayer?.staysActiveInBackground == false &&
+       !videoView.pipParams.autoEnter && // PiP view pausing is handled by the PiPManager, since they need to hide the controls before pausing
+       !videoView.pipParams.willEnter &&
 diff --git a/android/src/main/java/expo/modules/video/player/LoudnessNormalizerAudioProcessor.kt b/android/src/main/java/expo/modules/video/player/LoudnessNormalizerAudioProcessor.kt
 new file mode 100644
 index 0000000000000000000000000000000000000000..6ce2840f5699b1b8e85909b553598365076a673e
@@ -222,8 +259,176 @@ index 0000000000000000000000000000000000000000..6ce2840f5699b1b8e85909b553598365
 +    z2 = 0.0
 +  }
 +}
+diff --git a/android/src/main/java/expo/modules/video/player/SoundEffectsAudioProcessor.kt b/android/src/main/java/expo/modules/video/player/SoundEffectsAudioProcessor.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..795e439f9c40cac9366a62cac2e5194884da9333
+--- /dev/null
++++ b/android/src/main/java/expo/modules/video/player/SoundEffectsAudioProcessor.kt
+@@ -0,0 +1,162 @@
++package expo.modules.video.player
++
++import androidx.media3.common.C
++import androidx.media3.common.audio.AudioProcessor
++import androidx.media3.common.audio.BaseAudioProcessor
++import androidx.media3.common.util.UnstableApi
++import org.json.JSONObject
++import java.nio.ByteBuffer
++import java.nio.ByteOrder
++import kotlin.math.*
++
++/** Per-player PCM effects; no platform audio-session effects or global mixer. */
++@UnstableApi
++internal class SoundEffectsAudioProcessor : BaseAudioProcessor() {
++  data class Settings(
++    val eq: Boolean = false,
++    val bands: List<Double> = List(5) { 0.0 },
++    val reverb: String = "off",
++    val echo: Boolean = false
++  ) {
++    val active get() = eq || reverb != "off" || echo
++  }
++
++  @Volatile var settings = Settings()
++  private var applied: Settings? = null
++  private var channels = emptyArray<Channel>()
++  private var channelIndex = 0
++  private var headroom = 1.0
++
++  fun setJson(value: String) {
++    val json = JSONObject(value)
++    val bands = json.optJSONArray("bands")
++    settings = Settings(
++      eq = json.optBoolean("eq"),
++      bands = List(5) { i ->
++        (bands?.optDouble(i, 0.0) ?: 0.0).let { if (it.isFinite()) it.coerceIn(-12.0, 12.0) else 0.0 }
++      },
++      reverb = json.optString("reverb", "off").takeIf { it in listOf("room", "hall", "plate") } ?: "off",
++      echo = json.optBoolean("echo")
++    )
++  }
++
++  override fun onConfigure(format: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
++    applied = null
++    return if (format.encoding == C.ENCODING_PCM_16BIT || format.encoding == C.ENCODING_PCM_FLOAT)
++      format else AudioProcessor.AudioFormat.NOT_SET
++  }
++
++  override fun queueInput(inputBuffer: ByteBuffer) {
++    // Preserve Media3's shared empty sentinel and pending output.
++    if (!inputBuffer.hasRemaining()) return
++    val config = settings
++    if (applied != config) {
++      channels = if (config.active)
++        Array(inputAudioFormat.channelCount) { Channel(inputAudioFormat.sampleRate, config, it) }
++      else emptyArray()
++      channelIndex = 0
++      // Pre-attenuate boosted EQ bands instead of making loud presets clip.
++      headroom = if (config.eq) 10.0.pow(-config.bands.filter { it > 0 }.sum() / 20.0) else 1.0
++      applied = config
++    }
++    val output = replaceOutputBuffer(inputBuffer.remaining()).order(ByteOrder.LITTLE_ENDIAN)
++    if (!config.active) {
++      output.put(inputBuffer)
++      output.flip()
++      return
++    }
++    val input = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
++    val floats = inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
++    while (input.remaining() >= if (floats) 4 else 2) {
++      val raw = if (floats) input.float.toDouble() else input.short / 32768.0
++      val sample = if (raw.isFinite()) raw.coerceIn(-1.0, 1.0) else 0.0
++      val processed = channels[channelIndex].process(sample * headroom)
++      channelIndex = (channelIndex + 1) % channels.size
++      val safe = if (processed.isFinite()) processed.coerceIn(-0.98, 0.98) else 0.0
++      if (floats) output.putFloat(safe.toFloat())
++      else output.putShort((safe * 32767).roundToInt().toShort())
++    }
++    output.flip()
++  }
++
++  override fun onFlush() { applied = null; channels = emptyArray(); channelIndex = 0 }
++  override fun onReset() = onFlush()
++
++  private class Channel(rate: Int, config: Settings, index: Int) {
++    private val filters = if (config.eq)
++      listOf(60.0, 230.0, 910.0, 3600.0, 14000.0).mapIndexed { i, frequency ->
++        PeakFilter(rate, min(frequency, rate * 0.45), config.bands[i])
++      } else emptyList()
++    private val combs = if (config.reverb != "off") {
++      val times = when (config.reverb) {
++        "room" -> listOf(0.019, 0.023, 0.029, 0.031)
++        "plate" -> listOf(0.029, 0.037, 0.041, 0.053)
++        else -> listOf(0.043, 0.059, 0.071, 0.089)
++      }
++      val feedback = when (config.reverb) { "room" -> 0.57; "plate" -> 0.77; else -> 0.84 }
++      times.map { Comb((rate * it).toInt() + index * 23, feedback) }
++    } else emptyList()
++    private val diffusion = if (combs.isNotEmpty())
++      listOf(AllPass((rate * 0.005).toInt()), AllPass((rate * 0.0017).toInt())) else emptyList()
++    private val echo = if (config.echo) Comb((rate * 0.28).toInt(), 0.36) else null
++
++    fun process(input: Double): Double {
++      var dry = input
++      for (filter in filters) dry = filter.process(dry)
++      var result = dry
++      if (combs.isNotEmpty()) {
++        var wet = 0.0
++        for (comb in combs) wet += comb.process(dry) * 0.25
++        for (allPass in diffusion) wet = allPass.process(wet)
++        result = 0.78 * dry + 0.22 * wet
++      }
++      echo?.let { result = 0.8 * result + 0.2 * it.process(result) }
++      return result
++    }
++  }
++
++  private class Comb(size: Int, private val feedback: Double) {
++    private val buffer = DoubleArray(size.coerceAtLeast(1))
++    private var position = 0
++    private var damped = 0.0
++    fun process(input: Double): Double {
++      val output = buffer[position]
++      damped = output * 0.65 + damped * 0.35
++      buffer[position] = input + damped * feedback
++      position = (position + 1) % buffer.size
++      return output
++    }
++  }
++
++  private class AllPass(size: Int) {
++    private val buffer = DoubleArray(size.coerceAtLeast(1))
++    private var position = 0
++    fun process(input: Double): Double {
++      val delayed = buffer[position]
++      val output = delayed - input
++      buffer[position] = input + delayed * 0.5
++      position = (position + 1) % buffer.size
++      return output
++    }
++  }
++
++  private class PeakFilter(rate: Int, frequency: Double, gain: Double) {
++    private val a = 10.0.pow(gain / 40.0)
++    private val omega = 2 * PI * frequency / rate
++    private val alpha = sin(omega) / 2 // Q=1
++    private val a0 = 1 + alpha / a
++    private val b0 = (1 + alpha * a) / a0
++    private val b1 = -2 * cos(omega) / a0
++    private val b2 = (1 - alpha * a) / a0
++    private val a1 = b1
++    private val a2 = (1 - alpha / a) / a0
++    private var z1 = 0.0
++    private var z2 = 0.0
++    fun process(input: Double): Double {
++      val output = b0 * input + z1
++      z1 = b1 * input - a1 * output + z2
++      z2 = b2 * input - a2 * output
++      return output
++    }
++  }
++}
 diff --git a/android/src/main/java/expo/modules/video/player/VideoPlayer.kt b/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
-index 7ccce9681477328701755792fdc3bab09b428e30..14d3d0b7c3363a4e90afc17d775ec2975fea0346 100644
+index 7ccce9681477328701755792fdc3bab09b428e30..ffa3629a899ede1eaabe0ea1db47cd2428fbdd3a 100644
 --- a/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
 +++ b/android/src/main/java/expo/modules/video/player/VideoPlayer.kt
 @@ -20,6 +20,9 @@ import androidx.media3.exoplayer.DecoderReuseEvaluation
@@ -236,12 +441,18 @@ index 7ccce9681477328701755792fdc3bab09b428e30..14d3d0b7c3363a4e90afc17d775ec297
  import androidx.media3.exoplayer.hls.HlsManifest
  import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
  import androidx.media3.session.MediaSession
-@@ -61,7 +64,21 @@ import kotlin.time.DurationUnit
+@@ -61,7 +64,27 @@ import kotlin.time.DurationUnit
  @UnstableApi
  class VideoPlayer(val context: Context, appContext: AppContext, source: VideoSource?, playerBuilderOptions: expo.modules.video.records.PlayerBuilderOptions? = null) : AutoCloseable, SharedObject(appContext), IntervalUpdateEmitter {
    // This improves the performance of playing DRM-protected content
 -  private var renderersFactory = DefaultRenderersFactory(context)
 +  private val loudnessNormalizer = LoudnessNormalizerAudioProcessor()
++  private val soundEffectsProcessor = SoundEffectsAudioProcessor()
++  var soundEffects: String = "{}"
++    set(value) {
++      soundEffectsProcessor.setJson(value)
++      field = value
++    }
 +  private var renderersFactory = object : DefaultRenderersFactory(context) {
 +    override fun buildAudioSink(
 +      context: Context,
@@ -250,7 +461,7 @@ index 7ccce9681477328701755792fdc3bab09b428e30..14d3d0b7c3363a4e90afc17d775ec297
 +    ): AudioSink {
 +      return DefaultAudioSink.Builder(context)
 +        .setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
-+        .setAudioProcessors(arrayOf(loudnessNormalizer))
++        .setAudioProcessors(arrayOf(loudnessNormalizer, soundEffectsProcessor))
 +        .setEnableFloatOutput(false)
 +        .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
 +        .build()
@@ -259,7 +470,7 @@ index 7ccce9681477328701755792fdc3bab09b428e30..14d3d0b7c3363a4e90afc17d775ec297
      .forceEnableMediaCodecAsynchronousQueueing()
      .setEnableDecoderFallback(true)
    private val listeners: MutableList<WeakReference<VideoPlayerListener>> = mutableListOf()
-@@ -108,6 +125,24 @@ class VideoPlayer(val context: Context, appContext: AppContext, source: VideoSou
+@@ -108,6 +131,24 @@ class VideoPlayer(val context: Context, appContext: AppContext, source: VideoSou
  
    // Volume of the player if there was no mute applied.
    var userVolume = 1f
@@ -451,5 +662,103 @@ index 0000000000000000000000000000000000000000..c214037095efcad679321f6ce4133812
 +      }
 +      flip()
 +    }
++  }
++}
+diff --git a/android/src/test/java/expo/modules/video/player/SoundEffectsAudioProcessorTest.kt b/android/src/test/java/expo/modules/video/player/SoundEffectsAudioProcessorTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..dffe08357d0fff335c4e27602f66671b42a18f5c
+--- /dev/null
++++ b/android/src/test/java/expo/modules/video/player/SoundEffectsAudioProcessorTest.kt
+@@ -0,0 +1,92 @@
++package expo.modules.video.player
++
++import androidx.media3.common.C
++import androidx.media3.common.audio.AudioProcessor
++import org.junit.Assert.*
++import org.junit.Test
++import java.nio.ByteBuffer
++import java.nio.ByteOrder
++import kotlin.math.*
++
++class SoundEffectsAudioProcessorTest {
++  private fun processor(settings: SoundEffectsAudioProcessor.Settings, channels: Int = 1, floats: Boolean = true) =
++    SoundEffectsAudioProcessor().apply {
++      this.settings = settings
++      configure(AudioProcessor.AudioFormat(48000, channels, if (floats) C.ENCODING_PCM_FLOAT else C.ENCODING_PCM_16BIT))
++      flush()
++    }
++
++  private fun samples(processor: SoundEffectsAudioProcessor, input: FloatArray): FloatArray {
++    val buffer = ByteBuffer.allocateDirect(input.size * 4).order(ByteOrder.LITTLE_ENDIAN)
++    input.forEach { buffer.putFloat(it) }
++    buffer.flip()
++    processor.queueInput(buffer)
++    val output = processor.output.order(ByteOrder.LITTLE_ENDIAN)
++    return FloatArray(output.remaining() / 4) { output.float }
++  }
++
++  @Test fun bypassIsBitExactAndEmptyDoesNotDiscardOutput() {
++    val p = processor(SoundEffectsAudioProcessor.Settings())
++    val input = byteArrayOf(0, 0, 0, 63)
++    p.queueInput(ByteBuffer.wrap(input))
++    p.queueInput(AudioProcessor.EMPTY_BUFFER)
++    val output = p.output
++    assertArrayEquals(input, ByteArray(output.remaining()).also { output.get(it) })
++    p.queueInput(AudioProcessor.EMPTY_BUFFER)
++  }
++  @Test fun everyEffectHandlesEmptyInput() {
++    for (mode in listOf("off", "room", "hall", "plate")) {
++      val p = processor(SoundEffectsAudioProcessor.Settings(eq = true, reverb = mode, echo = true))
++      p.queueInput(AudioProcessor.EMPTY_BUFFER)
++      samples(p, FloatArray(1024) { 0.1f })
++      p.queueInput(AudioProcessor.EMPTY_BUFFER)
++      p.queueEndOfStream()
++    }
++  }
++  @Test fun reverbPresetsHaveDifferentTails() {
++    val tails = listOf("room", "hall", "plate").map { mode ->
++      val p = processor(SoundEffectsAudioProcessor.Settings(reverb = mode))
++      samples(p, FloatArray(24000) { if (it == 0) 0.5f else 0f })
++    }
++    tails.forEach { tail -> assertTrue(tail.drop(1).any { abs(it) > 0.00001 }) }
++    assertFalse(tails[0].contentEquals(tails[1]))
++    assertFalse(tails[1].contentEquals(tails[2]))
++  }
++  @Test fun echoProducesDelayedSignal() {
++    val p = processor(SoundEffectsAudioProcessor.Settings(echo = true))
++    val output = samples(p, FloatArray(20000) { if (it == 0) 0.5f else 0f })
++    assertEquals(0.4f, output[0], 0.0001f)
++    assertTrue(output[13440] > 0.09f)
++  }
++  @Test fun eqCutsItsTargetBand() {
++    val tone = FloatArray(48000) { (0.2 * sin(2 * PI * 910 * it / 48000)).toFloat() }
++    val flat = samples(processor(SoundEffectsAudioProcessor.Settings(eq = true)), tone)
++    val cut = samples(processor(SoundEffectsAudioProcessor.Settings(eq = true, bands = listOf(0.0, 0.0, -12.0, 0.0, 0.0))), tone)
++    fun energy(values: FloatArray) = values.drop(1000).sumOf { it.toDouble() * it }
++    assertTrue(energy(cut) < energy(flat) * 0.1)
++  }
++  @Test fun stereoChannelsDoNotLeak() {
++    val p = processor(SoundEffectsAudioProcessor.Settings(reverb = "hall", echo = true), channels = 2)
++    val output = samples(p, FloatArray(48000) { if (it == 0) 0.5f else 0f })
++    assertTrue(output.filterIndexed { index, _ -> index % 2 == 1 }.all { it == 0f })
++  }
++  @Test fun flushClearsDelayAndDisablingIsExactBypass() {
++    val p = processor(SoundEffectsAudioProcessor.Settings(echo = true))
++    samples(p, FloatArray(1000) { 0.5f })
++    p.flush()
++    assertTrue(samples(p, FloatArray(20000)).all { it == 0f })
++    p.settings = SoundEffectsAudioProcessor.Settings()
++    assertArrayEquals(floatArrayOf(0.2f, -0.5f), samples(p, floatArrayOf(0.2f, -0.5f)), 0f)
++  }
++  @Test fun integerPcmAndNonFiniteFloatStayBounded() {
++    val config = SoundEffectsAudioProcessor.Settings(eq = true, bands = List(5) { 12.0 }, reverb = "plate", echo = true)
++    val p = processor(config, floats = false)
++    val input = ByteBuffer.allocateDirect(4000).order(ByteOrder.LITTLE_ENDIAN)
++    repeat(2000) { input.putShort(Short.MAX_VALUE) }
++    input.flip()
++    p.queueInput(input)
++    assertEquals(4000, p.output.remaining())
++    val output = samples(processor(config), floatArrayOf(Float.NaN, Float.POSITIVE_INFINITY, 1f, -1f))
++    assertTrue(output.all { it.isFinite() && abs(it) <= 0.981f })
 +  }
 +}

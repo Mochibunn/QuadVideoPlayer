@@ -1,5 +1,4 @@
 import { Feather } from '@expo/vector-icons';
-import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,6 +14,9 @@ import { useColors } from '@/hooks/useColors';
 import AudioTrackEngine, { type AudioTrack, type AudioTrackStatus } from './AudioTrackEngine';
 import TrackVolumeControl from './TrackVolumeControl';
 import { hasVideoExtension, isBackgroundMediaFile } from '@/lib/media-formats';
+import { pickMediaFiles } from '@/lib/media-picker';
+import { useSessionRegistry } from '@/hooks/useSessionRegistry';
+import type { AudioSnapshot } from '@/lib/sessions';
 
 type Props = {
   visible: boolean;
@@ -25,8 +27,29 @@ type Props = {
 export default function BackgroundAudioMixer({ visible, onClose, onCountChange }: Props) {
   const colors = useColors();
   const [tracks, setTracks] = useState<AudioTrack[]>([]);
+  const [audioSession, setAudioSession] = useState(0);
+  const registry = useSessionRegistry();
   const [isPicking, setIsPicking] = useState(false);
   const allPaused = tracks.length > 0 && tracks.every((track) => track.paused);
+  useEffect(() => {
+    const capture = (): AudioSnapshot[] => tracks.map((track) => {
+      const position = registry.audio.get(track.id);
+      if (!position) throw new Error('An audio track is still preparing. Please try saving again.');
+      return { id: track.id, uri: track.uri, name: track.name, volume: track.volume,
+        muted: track.muted, paused: track.paused, position: position() };
+    });
+    const restore = (saved: AudioSnapshot[]) => {
+      setTracks(saved.map((track) => ({ ...track, initialPosition: track.position,
+        status: 'loading', error: '', retry: 0 })));
+      setAudioSession((current) => current + 1);
+    };
+    registry.captureAudio = capture;
+    registry.restoreAudio = restore;
+    return () => {
+      if (registry.captureAudio === capture) registry.captureAudio = null;
+      if (registry.restoreAudio === restore) registry.restoreAudio = null;
+    };
+  }, [registry, tracks]);
 
   useEffect(() => {
     onCountChange(tracks.length);
@@ -48,13 +71,8 @@ export default function BackgroundAudioMixer({ visible, onClose, onCountChange }
     if (isPicking) return;
     setIsPicking(true);
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        // Include video containers and files with generic provider MIME types.
-        type: '*/*',
-        multiple: true,
-        copyToCacheDirectory: false,
-      });
-      if (result.canceled) return;
+      const result = await pickMediaFiles();
+      if (result.canceled || !result.assets) return;
       const selected = result.assets.filter(isBackgroundMediaFile);
       if (selected.length === 0) {
         Alert.alert('No media selected', 'Choose audio files or videos containing an audio track.');
@@ -98,7 +116,7 @@ export default function BackgroundAudioMixer({ visible, onClose, onCountChange }
     <>
       {tracks.map((track) => (
         <AudioTrackEngine
-          key={`${track.id}:${track.retry}`}
+          key={`${audioSession}:${track.id}:${track.retry}`}
           track={track}
           onStatus={reportStatus}
         />

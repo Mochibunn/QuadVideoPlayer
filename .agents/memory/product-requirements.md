@@ -76,3 +76,34 @@ Expo's navigation style names describe button color, not background color;
 **How to apply:** Use light navigation content, disable navigation contrast
 enforcement, and keep the underlying activity/app background true black.
 Preserve the existing immersive playback behavior.
+
+The user wants file selection through another installed file manager, preferably
+Samsung My Files, and small visual previews in the video pool.
+
+**Why:** They find the built-in picker difficult to use and filenames alone are
+not descriptive enough.
+
+**How to apply:** Preserve third-party file-manager choices alongside a system
+fallback. Treat previews as cached still images, not additional playing video
+instances that compete with the four simultaneous streams.
+
+Preserve whole-layout picture-in-picture and saved sound-playground settings
+(reverb variants, echo, and adjustable EQ) for videos and background audio.
+
+**Why:** The user requested PiP and fun sound-processing controls. Whole-layout
+PiP preserves the app's four-stream purpose; processing each native PCM chain
+avoids device-dependent audio-session effects.
+
+**How to apply:** Keep the four players mounted and looping in PiP, hide app
+overlays there, and stop playback when its window is closed. Effects default to
+off and must retain an exact bypass and the Media3 empty-buffer safety contract.
+
+The user wants an explicit Save session button so the previous active mix can
+be resumed without rebuilding it.
+
+**Why:** The user explicitly asked to avoid redoing the active session.
+
+**How to apply:** Save a complete checkpoint, including the pool, four current
+videos and positions, independent controls, background tracks and settings.
+Resume must be explicit, preserve the saved copy on failure/partial restore,
+and honestly report temporary or revoked Android file access.
