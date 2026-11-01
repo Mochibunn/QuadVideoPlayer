@@ -120,3 +120,13 @@ audio, animate GIFs, preserve aspect ratio and screen bounds, and pass touches
 through the overlay. Include its pool and controls in saved sessions. Multiple
 instances must share the pool, not require separate copies, and keep independent
 controls and timing. Hardware resource limits still apply.
+
+The user wants to link a Reddit account and pull posts from configurable
+subreddits, plus retrieve images from specific booru websites using tag filters.
+They want multiple separate searches to supply independent kinds of images.
+
+**Why:** The user explicitly requested these online media sources.
+
+**How to apply:** Keep searches configurable and independently assignable rather
+than merging every query into one undifferentiated image pool. Confirm the booru
+sites and desired Reddit media types before choosing provider-specific APIs.
