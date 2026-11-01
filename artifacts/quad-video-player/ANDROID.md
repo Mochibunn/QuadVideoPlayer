@@ -47,6 +47,35 @@ A public release needs a private signing key and a deliberate update/signing pla
 No Android device is connected to this workspace. Building and inspecting the
 APK does not verify sustained decoding performance on the target tablet.
 
+## Playback troubleshooting and image overlay
+
+Native video sources load through guarded async preparation, with staggered
+slot startup rather than simultaneous constructor playback. Local read-ahead
+targets are 12 MiB per video and 2 MiB per background track, with size taking
+priority over buffering time. These limits do not include decoder surfaces,
+GIF frames, or total app RAM, and cannot guarantee arbitrary 4×4K codec support.
+
+If Android closes the app, reopen it. A previous crash report is offered when
+Android has one available. **Settings → Last crash report** can show/share it
+again. Reports remain on the device unless the user explicitly shares them;
+they may contain local media filenames. Java crashes are recorded before
+delegating to Android's normal crash handler, and Android 11+ exit history can
+also identify native crashes, ANRs, or low-memory termination. Some system exits
+have no stack trace. No physical tablet is attached here, so startup hardening
+is not proof that a reported hardware crash has been resolved.
+
+**Settings → Image / GIF slideshow** manages a separate, additive image pool.
+Enable **Show slideshow** to overlay it on active video playback. Controls
+include scale, opacity, horizontal/vertical placement, time per image, and
+DVD-style bounce with speed adjustment. Images fit without distortion; the
+overlay passes touches through to the existing player controls. GIFs animate
+natively, pool previews are static, and bounce runs as native-driver timing
+loops rather than per-frame JavaScript work.
+
+Save session includes this pool, its current image, placement, and motion
+settings. Older saved sessions still load with the overlay disabled. Removing
+an image from the pool never deletes its source file.
+
 ## Saved session
 
 Use **Save session** (the floppy-disk toolbar icon during playback) to save one

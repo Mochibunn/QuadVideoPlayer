@@ -19,7 +19,8 @@ async function load(path, modules) {
   return exports;
 }
 const sound = await load('../lib/sound-settings.ts', {});
-const codec = await load('../lib/sessions.ts', { './sound-settings': sound });
+const slideshow = await load('../lib/slideshow.ts', {});
+const codec = await load('../lib/sessions.ts', { './sound-settings': sound, './slideshow': slideshow });
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const media = (name) => ({ id: `content://files/${name}`, uri: `content://files/${name}`, name });
 function fixture() {
@@ -121,6 +122,21 @@ test('permission inspection only requests unique selected URIs', () => {
   const value = fixture();
   value.audio.push({ ...value.audio[0], ...value.pool[0] });
   assert.equal(codec.sessionUris(value).length, 6);
+});
+test('slideshow pool, GIF selection, placement and DVD bounce round-trip', () => {
+  const value = fixture();
+  value.slideshow = { ...plain(slideshow.DEFAULT_SLIDESHOW), enabled: true,
+    pool: [media('logo.gif'), media('photo.jpg')], index: 1, scale: 42, x: 5, y: 93, opacity: 0.45, bounce: true };
+  assert.deepEqual(plain(codec.parseSession(JSON.stringify(value))), value);
+  assert.equal(codec.sessionUris(value).length, 8);
+});
+test('partial restore validates images without discarding the stored image pool', () => {
+  const value = fixture();
+  value.slideshow = { ...plain(slideshow.DEFAULT_SLIDESHOW), enabled: true, pool: [media('logo.gif'), media('photo.jpg')], index: 1 };
+  const result = codec.prepareSession(value, new Set([...codec.sessionUris(value)].filter((uri) => !uri.endsWith('logo.gif'))));
+  assert.equal(result.session.slideshow.pool.length, 1);
+  assert.equal(result.session.slideshow.index, 0);
+  assert.equal(value.slideshow.pool.length, 2);
 });
 
 // Exercise the real controls with lightweight hooks/storage/native mocks.

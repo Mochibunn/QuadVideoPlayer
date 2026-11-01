@@ -107,3 +107,12 @@ be resumed without rebuilding it.
 videos and positions, independent controls, background tracks and settings.
 Resume must be explicit, preserve the saved copy on failure/partial restore,
 and honestly report temporary or revoked Android file access.
+
+The user wants a separate image/GIF slideshow overlay with adjustable scale,
+position, opacity, and a slow DVD-logo-style bouncing option.
+
+**Why:** The user explicitly requested these controls alongside video playback.
+
+**How to apply:** Keep the image/GIF pool separate from videos and background
+audio, animate GIFs, preserve aspect ratio and screen bounds, and pass touches
+through the overlay. Include its pool and controls in saved sessions.

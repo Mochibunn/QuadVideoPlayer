@@ -64,11 +64,11 @@ export default function SessionControls({ capture, restore, canSave, hasCurrent,
         const original = parseSession(raw);
         const access = await inspectSessionMedia(sessionUris(original), false);
         const prepared = prepareSession(original, new Set(access.filter((item) => item.readable).map((item) => item.uri)));
-        if (!prepared.session.pool.length && !prepared.session.audio.length) {
+        if (!prepared.session.pool.length && !prepared.session.audio.length && !prepared.session.slideshow?.pool.length) {
           throw new Error('None of the saved media is currently accessible. Reconnect its storage or restore file permissions, then try Resume again. Your saved session has not been changed.');
         }
         if (prepared.missing) {
-          const missingNames = [...original.pool, ...original.audio]
+          const missingNames = [...original.pool, ...original.audio, ...(original.slideshow?.pool ?? [])]
             .filter((item) => !access.some((a) => a.uri === item.uri && a.readable))
             .map((item) => item.name);
           if (!await confirm('Some saved files are unavailable',

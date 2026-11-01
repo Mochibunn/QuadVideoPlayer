@@ -1,4 +1,5 @@
 import { parseSoundSettings, type SoundSettings } from './sound-settings';
+import { parseSlideshow, type Slideshow } from './slideshow';
 
 export const SESSION_KEY = 'quad-video-player.saved-session.v1';
 export type SessionMedia = { id: string; uri: string; name: string };
@@ -11,6 +12,7 @@ export type AudioSnapshot = {
 export type SessionSnapshot = {
   version: 1; savedAt: string; pool: SessionMedia[]; streams: VideoSnapshot[];
   audio: AudioSnapshot[]; sourceLabel: string; globalPlaying: boolean;
+  slideshow?: Slideshow;
   settings: {
     themeId: string; normalize: boolean; sync: boolean; fill: boolean;
     controlsDelay: number; sharedVolume: number; sound: SoundSettings;
@@ -66,6 +68,7 @@ export function parseSession(raw: string): SessionSnapshot {
     version: 1, savedAt, pool, streams, audio,
     sourceLabel: typeof v.sourceLabel === 'string' ? v.sourceLabel : 'Saved session',
     globalPlaying: bool(v.globalPlaying),
+    ...(v.slideshow !== undefined ? { slideshow: parseSlideshow(v.slideshow) } : {}),
     settings: {
       themeId: text(s.themeId), normalize: bool(s.normalize), sync: bool(s.sync), fill: bool(s.fill),
       controlsDelay: Math.round(number(s.controlsDelay, 0, 30)), sharedVolume: number(s.sharedVolume, 0, 1),
@@ -74,11 +77,20 @@ export function parseSession(raw: string): SessionSnapshot {
   };
 }
 export function sessionUris(session: SessionSnapshot): string[] {
-  return [...new Set([...session.pool.map((p) => p.uri), ...session.audio.map((p) => p.uri)])];
+  return [...new Set([...session.pool.map((p) => p.uri), ...session.audio.map((p) => p.uri),
+    ...(session.slideshow?.pool.map((p) => p.uri) ?? [])])];
 }
 export function prepareSession(session: SessionSnapshot, readable: Set<string>) {
   const pool = session.pool.filter((item) => readable.has(item.uri));
   const audio = session.audio.filter((item) => readable.has(item.uri));
+  const slideshow = session.slideshow ? {
+    ...session.slideshow,
+    pool: session.slideshow.pool.filter((item) => readable.has(item.uri)),
+  } : undefined;
+  if (slideshow) {
+    const current = session.slideshow?.pool[session.slideshow.index]?.uri;
+    slideshow.index = Math.max(0, slideshow.pool.findIndex((item) => item.uri === current));
+  }
   let replacements = 0;
   const streams = pool.length ? session.streams.map((stream, index) => {
     if (readable.has(stream.asset.uri)) return stream;
@@ -86,7 +98,7 @@ export function prepareSession(session: SessionSnapshot, readable: Set<string>) 
     return { ...stream, asset: pool[index % pool.length], position: 0 };
   }) : [];
   return {
-    session: { ...session, pool, audio, streams },
+    session: { ...session, pool, audio, streams, ...(slideshow ? { slideshow } : {}) },
     missing: sessionUris(session).filter((uri) => !readable.has(uri)).length,
     replacements,
   };

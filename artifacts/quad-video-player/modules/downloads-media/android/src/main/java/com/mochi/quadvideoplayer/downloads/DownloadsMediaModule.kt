@@ -20,6 +20,12 @@ class DownloadsMediaModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("DownloadsMedia")
     Events("pipChanged", "pipClosed")
+    OnCreate {
+      appContext.reactContext?.let { CrashReports.install(it) }
+    }
+    AsyncFunction("getCrashReport") {
+      appContext.reactContext?.let { CrashReports.read(it) }
+    }
 
     AsyncFunction("inspectSessionMedia") { uris: List<String>, retain: Boolean ->
       val context = appContext.reactContext

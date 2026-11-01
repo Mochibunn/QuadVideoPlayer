@@ -7,6 +7,8 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LaunchSplash from '@/components/LaunchSplash';
 import { SoundSettingsProvider } from '@/hooks/useSoundSettings';
 import { SessionRegistryProvider } from '@/hooks/useSessionRegistry';
+import CrashReportNotice from '@/components/CrashReportNotice';
+import { SlideshowProvider } from '@/hooks/useSlideshow';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -55,9 +57,12 @@ export default function RootLayout() {
           <GestureHandlerRootView style={{ flex: 1 }}>
             <SessionRegistryProvider>
             <SoundSettingsProvider>
+            <SlideshowProvider>
             <KeyboardProvider>
               <RootLayoutNav />
+              <CrashReportNotice />
             </KeyboardProvider>
+            </SlideshowProvider>
             </SoundSettingsProvider>
             </SessionRegistryProvider>
             {showWelcome && <LaunchSplash onFinish={finishWelcome} />}

@@ -34,6 +34,12 @@ import { usePlayerSoundEffects, useSoundSettings } from '@/hooks/useSoundSetting
 import { useSessionRegistry } from '@/hooks/useSessionRegistry';
 import SessionControls from '@/components/SessionControls';
 import { seekPosition, type SessionSnapshot, type VideoSnapshot } from '@/lib/sessions';
+import { prepareVideoSlot, QUAD_BUFFER_OPTIONS } from '@/lib/player-startup';
+import { showCrashReport } from '@/components/CrashReportNotice';
+import { useSlideshow } from '@/hooks/useSlideshow';
+import { DEFAULT_SLIDESHOW } from '@/lib/slideshow';
+import SlideshowOverlay from '@/components/slideshow/SlideshowOverlay';
+import SlideshowPanel from '@/components/slideshow/SlideshowPanel';
 import { pickMediaFiles } from '@/lib/media-picker';
 import { DEFAULT_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
 import { readDownloadsVideos } from '@/lib/downloads-library';
@@ -51,7 +57,7 @@ type VideoAsset = {
   uri: string;
 };
 
-type ActivePanel = 'settings' | 'pool' | 'audio' | null;
+type ActivePanel = 'settings' | 'pool' | 'audio' | 'slideshow' | null;
 
 const THEME_STORAGE_KEY = 'quad-video-player.theme';
 const NORMALIZE_STORAGE_KEY = 'quad-video-player.normalize';
@@ -226,19 +232,31 @@ function VideoTile({
   const restorePlaying = useRef(initialSnapshot?.playing ?? true);
   const firstGlobalEffect = useRef(true);
   const changingSource = useRef(false);
+  const sourcePrepared = useRef(false);
   const nextSourcePlaying = useRef(false);
   const snapshotState = useRef({ individualVolume, isMuted, globalPlaying });
   snapshotState.current = { individualVolume, isMuted, globalPlaying };
 
-  const player = useVideoPlayer({ uri: asset.uri }, (videoPlayer) => {
+  const player = useVideoPlayer(null, (videoPlayer) => {
+    videoPlayer.bufferOptions = QUAD_BUFFER_OPTIONS;
     videoPlayer.loop = false;
     videoPlayer.volume = linkedVolume ? sharedVolume : (initialSnapshot?.volume ?? START_VOLUME);
     videoPlayer.muted = initialSnapshot?.muted ?? false;
     videoPlayer.audioMixingMode = 'mixWithOthers';
     videoPlayer.keepScreenOnWhilePlaying = true;
-    if (!initialSnapshot) videoPlayer.play();
   });
   usePlayerSoundEffects(player);
+  useEffect(() => prepareVideoSlot(
+    player, asset.uri, index,
+    () => {
+      sourcePrepared.current = true;
+      return pendingPosition.current === null && restorePlaying.current;
+    },
+    (error) => {
+      setErrorMessage(mediaPlaybackError(error instanceof Error ? error.message : undefined));
+      setIsLoading(false);
+    },
+  ), [asset.uri, index, player]);
   const restorePosition = useCallback(() => {
     if (pendingPosition.current === null) return;
     player.currentTime = seekPosition(pendingPosition.current, player.duration);
@@ -301,6 +319,7 @@ function VideoTile({
     if (status === 'error') {
       setErrorMessage(mediaPlaybackError(error?.message));
     } else if (status === 'readyToPlay') {
+      sourcePrepared.current = true;
       changingSource.current = false;
       setErrorMessage('');
       restorePosition();
@@ -344,7 +363,7 @@ function VideoTile({
       }
     }
     restorePlaying.current = globalPlaying;
-    if (pendingPosition.current !== null) return;
+    if (pendingPosition.current !== null || !sourcePrepared.current) return;
     if (globalPlaying) {
       player.play();
     } else {
@@ -563,6 +582,7 @@ function VideoTile({
 }
 
 export default function QuadVideoPlayerScreen() {
+  const { slideshow, setSlideshow } = useSlideshow();
   const { inPip, enterPip, pipClosed, sound, setSound, loaded: soundLoaded } = useSoundSettings();
   const registry = useSessionRegistry();
   const [sessionBusy, setSessionBusy] = useState(false);
@@ -873,7 +893,7 @@ export default function QuadVideoPlayerScreen() {
     });
     return {
       version: 1, savedAt: new Date().toISOString(), pool, streams,
-      audio: registry.captureAudio(), sourceLabel, globalPlaying,
+      audio: registry.captureAudio(), sourceLabel, globalPlaying, slideshow,
       settings: { themeId, normalize: normalizeEnabled, sync: syncEnabled, fill: fillVideos,
         controlsDelay: controlsHideSeconds, sharedVolume, sound },
     };
@@ -888,6 +908,7 @@ export default function QuadVideoPlayerScreen() {
     setControlsHideSeconds(s.controlsDelay);
     setSharedVolume(s.sharedVolume);
     setSound(s.sound);
+    setSlideshow(saved.slideshow ?? { ...DEFAULT_SLIDESHOW, pool: [] });
     setSourceLabel(saved.sourceLabel);
     setPool(saved.pool);
     setRestoredStreams(saved.streams);
@@ -952,8 +973,8 @@ export default function QuadVideoPlayerScreen() {
           <View pointerEvents="box-none" style={styles.topActions}>
             <SessionControls
               capture={captureSession} restore={restoreSession}
-              canSave={pool.length > 0 || backgroundTrackCount > 0}
-              hasCurrent={pool.length > 0 || backgroundTrackCount > 0}
+              canSave={pool.length > 0 || backgroundTrackCount > 0 || slideshow.pool.length > 0}
+              hasCurrent={pool.length > 0 || backgroundTrackCount > 0 || slideshow.pool.length > 0}
               disabled={isPicking || inPip || !themeLoaded || !playbackSettingsLoaded || !soundLoaded}
               compact={hasVideos} onBusyChange={setSessionBusy}
             />
@@ -1120,6 +1141,7 @@ export default function QuadVideoPlayerScreen() {
             </Text>
           </View>
         )}
+        <SlideshowOverlay active={hasVideos && !pipClosed} />
       </View>
       <Modal
         visible={activePanel === 'settings'}
@@ -1222,6 +1244,9 @@ export default function QuadVideoPlayerScreen() {
               disabled={!playbackSettingsLoaded}
             />
             <SoundEffectsSettings />
+            <ActionButton icon="image" label={`Image / GIF slideshow (${slideshow.pool.length})`}
+              onPress={() => setActivePanel('slideshow')} />
+            <ActionButton icon="alert-circle" label="Last crash report" onPress={() => void showCrashReport()} />
             <Text style={[styles.themeSectionTitle, { color: colors.mutedForeground }]}>
               Accent themes
             </Text>
@@ -1341,6 +1366,7 @@ export default function QuadVideoPlayerScreen() {
           </View>
         </View>
       </Modal>
+      <SlideshowPanel visible={activePanel === 'slideshow'} onClose={() => setActivePanel('settings')} />
       <BackgroundAudioMixer
         visible={activePanel === 'audio'}
         onClose={() => setActivePanel(null)}

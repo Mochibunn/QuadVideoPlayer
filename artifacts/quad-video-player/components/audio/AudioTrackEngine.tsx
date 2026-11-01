@@ -5,6 +5,7 @@ import { mediaPlaybackError } from '@/lib/media-formats';
 import { usePlayerSoundEffects, useSoundSettings } from '@/hooks/useSoundSettings';
 import { useSessionRegistry } from '@/hooks/useSessionRegistry';
 import { seekPosition } from '@/lib/sessions';
+import { AUDIO_BUFFER_OPTIONS } from '@/lib/player-startup';
 
 export type AudioTrackStatus = 'loading' | 'ready' | 'error';
 
@@ -36,6 +37,7 @@ function AudioTrackEngine({ track, onStatus }: Props) {
   // Configure the native audio-only selector BEFORE loading any media, so even
   // preparing a video source cannot allocate a fifth video decoder.
   const player = useVideoPlayer(null, (instance) => {
+    instance.bufferOptions = AUDIO_BUFFER_OPTIONS;
     const native = instance as typeof instance & { audioOnly?: boolean };
     if (typeof native.audioOnly === 'boolean') native.audioOnly = true;
     instance.loop = true;
