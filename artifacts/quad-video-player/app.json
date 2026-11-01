@@ -2,7 +2,7 @@
   "expo": {
     "name": "Quad Video Player",
     "slug": "quad-video-player",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "platforms": [
       "ios",
       "android"
@@ -18,7 +18,7 @@
       "supportsTablet": false
     },
     "android": {
-      "versionCode": 5,
+      "versionCode": 6,
       "package": "com.anonymous.quadvideoplayer"
     },
     "plugins": [

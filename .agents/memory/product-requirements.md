@@ -46,5 +46,15 @@ actual quarter of the whole screen, not a smaller rectangle between controls.
 areas and preventing true full-screen quadrants.
 
 **How to apply:** Toolbar, filename and volume controls must overlay playback
-rather than reserve layout space. Keep a gapless 2×2 viewport, reveal controls
-on touch, and never resize or restart video players when controls hide.
+rather than reserve layout space. Keep a gapless 2×2 viewport, and never resize
+or restart video players when controls hide.
+
+Tapping a video must toggle the controls in both directions with a fade. Settings
+must include a saved slider from 0 to 30 seconds for the auto-hide delay.
+
+**Why:** The user reported that screen taps were not fading controls away and
+explicitly requested the timing slider.
+
+**How to apply:** A video tap must hide already-visible controls, not reveal
+them again on touch-down. Keep ordinary control interactions separate from
+video-surface taps, so adjusting playback does not accidentally hide controls.

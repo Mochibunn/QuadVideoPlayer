@@ -26,6 +26,9 @@ import { ColorContext, useColors } from '@/hooks/useColors';
 import { useAutoHideControls } from '@/hooks/useAutoHideControls';
 import BackgroundAudioMixer from '@/components/audio/BackgroundAudioMixer';
 import SettingSwitch from '@/components/SettingSwitch';
+import FadingControls from '@/components/FadingControls';
+import ControlsTimeoutSetting from '@/components/ControlsTimeoutSetting';
+import { DEFAULT_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
 import { getVideoAudioMode } from '@/lib/audio-mode';
 import { hasVideoExtension, isVideoFile, mediaPlaybackError } from '@/lib/media-formats';
 import {
@@ -46,6 +49,7 @@ const THEME_STORAGE_KEY = 'quad-video-player.theme';
 const NORMALIZE_STORAGE_KEY = 'quad-video-player.normalize';
 const SYNC_STORAGE_KEY = 'quad-video-player.sync';
 const VIDEO_FILL_STORAGE_KEY = 'quad-video-player.video-fill';
+const CONTROLS_DELAY_STORAGE_KEY = 'quad-video-player.controls-hide-seconds';
 
 function isThemeId(value: string | null): value is ThemeId {
   return themePresets.some((theme) => theme.id === value);
@@ -181,7 +185,7 @@ function VideoTile({
   onSharedVolumeChange,
   fillVideos,
   controlsVisible,
-  onRevealControls,
+  onToggleControls,
 }: {
   asset: VideoAsset;
   pool: VideoAsset[];
@@ -193,7 +197,7 @@ function VideoTile({
   onSharedVolumeChange: (volume: number) => void;
   fillVideos: boolean;
   controlsVisible: boolean;
-  onRevealControls: () => void;
+  onToggleControls: () => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -355,7 +359,7 @@ function VideoTile({
           accessibilityRole="button"
           accessibilityLabel={`Show playback controls for stream ${index + 1}`}
           accessible={!controlsVisible}
-          onPress={onRevealControls}
+          onPress={onToggleControls}
         />
         {isLoading && !errorMessage && (
           <View pointerEvents="none" style={styles.videoStatus}>
@@ -386,8 +390,7 @@ function VideoTile({
         )}
       </View>
 
-      {controlsVisible && (
-      <View style={[
+      <FadingControls visible={controlsVisible} interactive={false} style={[
         styles.tileHeader,
         {
           backgroundColor: colors.playbackOverlay,
@@ -405,11 +408,9 @@ function VideoTile({
           {currentAsset.name}
         </Text>
         <View style={[styles.liveDot, { backgroundColor: errorMessage ? colors.destructive : colors.primary }]} />
-      </View>
-      )}
+      </FadingControls>
 
-      {controlsVisible && (
-      <View style={[
+      <FadingControls visible={controlsVisible} style={[
         styles.tileControls,
         {
           backgroundColor: colors.playbackOverlay,
@@ -495,8 +496,7 @@ function VideoTile({
         <Text style={[styles.volumePercent, { color: colors.mutedForeground }]}>
           {Math.round(volume * 100)}
         </Text>
-      </View>
-      )}
+      </FadingControls>
     </View>
   );
 }
@@ -508,6 +508,7 @@ export default function QuadVideoPlayerScreen() {
   const [normalizeEnabled, setNormalizeEnabled] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(false);
   const [fillVideos, setFillVideos] = useState(false);
+  const [controlsHideSeconds, setControlsHideSeconds] = useState(DEFAULT_CONTROLS_HIDE_SECONDS);
   const audioMode = getVideoAudioMode(normalizeEnabled, syncEnabled);
   const [playbackSettingsLoaded, setPlaybackSettingsLoaded] = useState(false);
   const [sharedVolume, setSharedVolume] = useState(START_VOLUME);
@@ -521,7 +522,7 @@ export default function QuadVideoPlayerScreen() {
   const [sourceLabel, setSourceLabel] = useState('');
   const insets = useSafeAreaInsets();
   const hasVideos = activeVideos.length > 0;
-  const controls = useAutoHideControls(hasVideos, activePanel !== null || isPicking);
+  const controls = useAutoHideControls(hasVideos, activePanel !== null || isPicking, controlsHideSeconds);
 
   useEffect(() => {
     let mounted = true;
@@ -555,8 +556,8 @@ export default function QuadVideoPlayerScreen() {
 
   useEffect(() => {
     let mounted = true;
-    AsyncStorage.multiGet([NORMALIZE_STORAGE_KEY, SYNC_STORAGE_KEY, VIDEO_FILL_STORAGE_KEY])
-      .then(([normalizeEntry, syncEntry, fillEntry]) => {
+    AsyncStorage.multiGet([NORMALIZE_STORAGE_KEY, SYNC_STORAGE_KEY, VIDEO_FILL_STORAGE_KEY, CONTROLS_DELAY_STORAGE_KEY])
+      .then(([normalizeEntry, syncEntry, fillEntry, controlsEntry]) => {
         if (!mounted) return;
         if (normalizeEntry[1] !== null) {
           setNormalizeEnabled(normalizeEntry[1] === 'true');
@@ -567,6 +568,7 @@ export default function QuadVideoPlayerScreen() {
         if (fillEntry[1] !== null) {
           setFillVideos(fillEntry[1] === 'true');
         }
+        setControlsHideSeconds(parseControlsHideSeconds(controlsEntry[1]));
       })
       .catch(() => {
         Alert.alert(
@@ -595,6 +597,13 @@ export default function QuadVideoPlayerScreen() {
       );
     });
   }, [normalizeEnabled, playbackSettingsLoaded, syncEnabled, fillVideos]);
+
+  useEffect(() => {
+    if (!playbackSettingsLoaded) return;
+    AsyncStorage.setItem(CONTROLS_DELAY_STORAGE_KEY, String(controlsHideSeconds)).catch(() => {
+      Alert.alert('Could not save controls setting', 'The auto-hide delay will reset when the app is restarted.');
+    });
+  }, [controlsHideSeconds, playbackSettingsLoaded]);
 
   const startStreams = useCallback((videos: VideoAsset[]) => {
     if (videos.length === 0) {
@@ -731,8 +740,7 @@ export default function QuadVideoPlayerScreen() {
         }}
         onTouchCancel={controls.release}
       >
-        {(!hasVideos || controls.visible) && (
-        <View style={hasVideos ? [
+        <FadingControls visible={!hasVideos || controls.visible} style={hasVideos ? [
           styles.toolbarOverlay,
           {
             backgroundColor: colors.playbackOverlay,
@@ -741,8 +749,8 @@ export default function QuadVideoPlayerScreen() {
             paddingRight: Math.max(12, insets.right),
           },
         ] : styles.browserToolbar}>
-        <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
-          <View style={styles.brandBlock}>
+        <View pointerEvents="box-none" style={[styles.topBar, { borderBottomColor: colors.border }]}>
+          <View pointerEvents="none" style={styles.brandBlock}>
             <View style={styles.brandMark}>
               <View style={[styles.brandSquare, { backgroundColor: colors.primary }]} />
               <View style={[styles.brandSquare, { backgroundColor: colors.accent }]} />
@@ -762,7 +770,7 @@ export default function QuadVideoPlayerScreen() {
             </View>
           </View>
 
-          <View style={styles.topActions}>
+          <View pointerEvents="box-none" style={styles.topActions}>
             {activeVideos.length > 0 ? (
               <>
                 <ActionButton
@@ -838,8 +846,7 @@ export default function QuadVideoPlayerScreen() {
             />
           </View>
         </View>
-        </View>
-        )}
+        </FadingControls>
 
         {activeVideos.length > 0 ? (
           <View style={styles.grid}>
@@ -858,7 +865,7 @@ export default function QuadVideoPlayerScreen() {
                 onSharedVolumeChange={setSharedVolume}
                 fillVideos={fillVideos}
                 controlsVisible={controls.visible}
-                onRevealControls={controls.reveal}
+                onToggleControls={controls.toggle}
               />
             ))}
               </View>
@@ -1015,6 +1022,11 @@ export default function QuadVideoPlayerScreen() {
               </View>
               <SettingSwitch label="Fill video quarters" value={fillVideos} onValueChange={setFillVideos} />
             </View>
+            <ControlsTimeoutSetting
+              value={controlsHideSeconds}
+              onChange={setControlsHideSeconds}
+              disabled={!playbackSettingsLoaded}
+            />
             <Text style={[styles.themeSectionTitle, { color: colors.mutedForeground }]}>
               Accent themes
             </Text>

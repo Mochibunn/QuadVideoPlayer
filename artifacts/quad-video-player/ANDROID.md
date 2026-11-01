@@ -72,8 +72,10 @@ Playback uses the entire app window as a gapless 2×2 grid: no toolbar, filename
 row or volume-control row reserves space around the video. Android's navigation
 bar is hidden during playback; an edge swipe can reveal system navigation.
 
-Tap a video to reveal the toolbar and per-video controls. These are translucent
-overlays and disappear after 4.5 seconds without interaction. Holding a control,
+Tap a video to toggle the toolbar and per-video controls with a short fade.
+These are translucent overlays and disappear after 5 seconds without interaction
+by default. Settings has a saved 0–30 second slider in one-second steps; 0 means
+never auto-hide (tap still toggles the controls). Holding a control,
 opening a panel or file picker, or using a screen reader keeps controls visible.
 After closing a panel or returning to the app, a fresh idle interval starts.
 Showing or hiding controls never remounts the video views or restarts streams.
