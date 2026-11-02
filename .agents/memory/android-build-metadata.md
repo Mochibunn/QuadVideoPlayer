@@ -5,6 +5,6 @@ description: Validate the native APK's embedded identity and release metadata be
 
 For an Android release, verify the final APK's application ID, version code/name, signature, and checksum instead of trusting `app.json` or Gradle inputs alone.
 
-**Why:** A release build exposed that the configured Expo version and the Android Gradle project's embedded version could diverge, leaving a signed but stale APK in the delivery folder.
+**Why:** Android Gradle metadata can lag Expo configuration, and the Wear OS companion is a separate Gradle app whose version can lag the phone APK too. Either mismatch can leave a signed but stale install package.
 
-**How to apply:** After building, inspect the packaged APK manifest and signature, compare them with the intended package identity and version, and checksum the exact file being shared.
+**How to apply:** Inspect each packaged APK separately. Keep phone and watch versions aligned, verify each manifest identity and signature, and checksum the exact files being shared.
