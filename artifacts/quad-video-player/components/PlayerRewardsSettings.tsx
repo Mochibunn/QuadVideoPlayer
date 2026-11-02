@@ -43,9 +43,10 @@ export default function PlayerRewardsSettings({
 
   return (
     <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
-      <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Session rewards & borders</Text>
+      <Text style={[styles.kicker, { color: colors.primary }]}>GUILD PROGRESSION</Text>
+      <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Session spoils & frames</Text>
       <Text style={[styles.description, { color: colors.mutedForeground }]}>
-        Earn 1 XP per active playback minute. Every 10 XP raises your level.
+        Earn 1 XP for each active minute. Every 10 XP earns a new guild rank.
       </Text>
       <View style={styles.levelHeading}>
         <View>
@@ -59,7 +60,7 @@ export default function PlayerRewardsSettings({
       </View>
       <Text style={[styles.unlockHint, { color: colors.mutedForeground }]}>
         {settings.allRewardsUnlocked
-          ? 'All themes, borders, animated borders, and advanced EQ presets are unlocked.'
+          ? 'Every theme, frame, moving pattern, and advanced EQ preset is yours.'
           : nextReward
             ? `${nextReward.description} unlock at level ${nextReward.level}.`
             : 'All current rewards are unlocked.'}
@@ -79,20 +80,20 @@ export default function PlayerRewardsSettings({
           color={settings.allRewardsUnlocked ? colors.primary : colors.primaryForeground} />
         <View style={styles.unlockAllCopy}>
           <Text style={[styles.unlockAllTitle, { color: settings.allRewardsUnlocked ? colors.primary : colors.primaryForeground }]}>
-            {settings.allRewardsUnlocked ? 'Everything unlocked' : 'Unlock everything'}
+            {settings.allRewardsUnlocked ? 'The whole armory is open' : 'Open the whole armory'}
           </Text>
           <Text style={[styles.unlockAllDescription, { color: settings.allRewardsUnlocked ? colors.mutedForeground : colors.primaryForeground }]}>
             {settings.allRewardsUnlocked
-              ? 'XP and your session history remain unchanged.'
-              : 'Skip the XP gates for themes, borders, and advanced EQ presets.'}
+              ? 'Your XP and session history remain unchanged.'
+              : 'Open every theme, frame, and advanced EQ preset at once.'}
           </Text>
         </View>
       </Pressable>
 
       <View style={styles.settingRow}>
         <View style={styles.settingCopy}>
-          <Text style={[styles.label, { color: colors.foreground }]}>Quarter frames</Text>
-          <Text style={[styles.description, { color: colors.mutedForeground }]}>Frame each video quadrant separately.</Text>
+          <Text style={[styles.label, { color: colors.foreground }]}>Four-way frame</Text>
+          <Text style={[styles.description, { color: colors.mutedForeground }]}>Give each stream its own guild border.</Text>
         </View>
         <SettingSwitch label="Show quarter frames" value={settings.borderEnabled} disabled={disabled}
           onValueChange={(borderEnabled) => update({ borderEnabled })} />
@@ -135,8 +136,8 @@ export default function PlayerRewardsSettings({
         <View style={styles.textureSetting}>
           <View style={styles.levelHeading}>
             <View style={styles.settingCopy}>
-              <Text style={[styles.label, { color: colors.foreground }]}>Puzzle texture scale</Text>
-              <Text style={[styles.description, { color: colors.mutedForeground }]}>Change the size of the repeating puzzle pieces.</Text>
+              <Text style={[styles.label, { color: colors.foreground }]}>Runic texture scale</Text>
+              <Text style={[styles.description, { color: colors.mutedForeground }]}>Adjust the repeating frame pattern.</Text>
             </View>
             <Text style={[styles.optionMeta, { color: colors.primary }]}>{Math.round(settings.textureScale * 100)}%</Text>
           </View>
@@ -159,14 +160,14 @@ export default function PlayerRewardsSettings({
 
       <View style={styles.settingRow}>
         <View style={styles.settingCopy}>
-          <Text style={[styles.label, { color: colors.foreground }]}>Scroll border pattern</Text>
+          <Text style={[styles.label, { color: colors.foreground }]}>Wandering frame pattern</Text>
           <Text style={[styles.description, { color: colors.mutedForeground }]}>
             {settings.borderStyle !== 'puzzled'
-              ? 'Select Puzzled to scroll its texture.'
-              : animationUnlocked ? 'Move the Puzzled texture around the frame.' : `Unlocks at level ${ANIMATED_BORDER_LEVEL}.`}
+              ? 'Choose Puzzled to set its pattern in motion.'
+              : animationUnlocked ? 'Let the pattern drift around the frame.' : `Earn guild rank ${ANIMATED_BORDER_LEVEL} to unlock.`}
           </Text>
         </View>
-        <SettingSwitch label="Scroll border pattern" value={settings.scrollBorder}
+        <SettingSwitch label="Wander frame pattern" value={settings.scrollBorder}
           disabled={scrollSwitchDisabled}
           onValueChange={(scrollBorder) => update({ scrollBorder })} />
       </View>
@@ -211,9 +212,9 @@ export default function PlayerRewardsSettings({
       )}
 
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
-      <Text style={[styles.label, { color: colors.foreground }]}>Milestone messages</Text>
+      <Text style={[styles.label, { color: colors.foreground }]}>Guild milestone notes</Text>
       <Text style={[styles.description, { color: colors.mutedForeground }]}>
-        One message per line. A message appears with confetti every 10 active minutes.
+        One note per line. Your message appears with falling guild ribbons every 10 active minutes.
       </Text>
       <TextInput
         accessibilityLabel="Editable session congratulations messages"
@@ -222,7 +223,7 @@ export default function PlayerRewardsSettings({
         maxLength={1_000}
         value={settings.congratsText}
         onChangeText={(congratsText) => update({ congratsText })}
-        placeholder="Write one message per line"
+        placeholder="Write one guild note per line"
         placeholderTextColor={colors.mutedForeground}
         textAlignVertical="top"
         returnKeyType="default"
@@ -236,8 +237,9 @@ export default function PlayerRewardsSettings({
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 16, gap: 10 },
-  sectionTitle: { fontSize: 15, fontWeight: '700' },
+  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, padding: 16, gap: 11 },
+  kicker: { fontSize: 8, fontWeight: '900', letterSpacing: 1.5 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', letterSpacing: 0.1 },
   description: { fontSize: 12, lineHeight: 18 },
   levelHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   level: { fontSize: 12, fontWeight: '800', letterSpacing: 0.8 },

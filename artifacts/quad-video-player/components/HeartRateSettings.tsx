@@ -67,7 +67,7 @@ export default function HeartRateSettings() {
   }, [native, refreshState]);
 
   const ensureBluetoothPermission = async () => {
-    if (Platform.Version < 31) return true;
+    if (Number(Platform.Version) < 31) return true;
     const permission = PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT;
     if (!permission) throw new Error('This Android version does not expose Bluetooth connection permission.');
     const current = await PermissionsAndroid.check(permission);
@@ -153,7 +153,7 @@ export default function HeartRateSettings() {
 
       <Text style={[styles.sectionTitle, { color: colors.foreground }]}>On the watch-paired phone</Text>
       <Text style={[styles.description, { color: colors.mutedForeground }]}>
-        Install Quad Video Player and the companion watch APK. Start this relay on the phone.
+        Install the phone app and watch APK. On the watch, open Goon Quest Link and tap Start; then start this relay on the phone.
       </Text>
       <View style={styles.buttonRow}>
         <ActionButton

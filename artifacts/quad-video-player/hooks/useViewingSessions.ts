@@ -158,6 +158,28 @@ export function useViewingSessions(isPlaybackActive: boolean) {
   const recordVideosWatched = useCallback((ids: readonly string[]) =>
     mutate((current) => applyWatchedVideos(current, ids)), [mutate]);
 
+  const restoreStore = useCallback(async (next: ViewingSessionStore) => {
+    if (!loadedRef.current) return false;
+    const now = Date.now();
+    const restored: ViewingSessionStore = {
+      ...next,
+      active: next.active ? { ...next.active, resumedAtMs: null, lastCheckpointMs: now } : null,
+    };
+    const operation = operations.current.catch(() => undefined).then(async () => {
+      await AsyncStorage.setItem(VIEWING_SESSIONS_KEY, JSON.stringify(restored));
+      storeRef.current = restored;
+      setStore(restored);
+      setError('');
+      setFinishRecap(null);
+      setCelebration(null);
+      setMilestone(null);
+      syncXp(restored, now);
+    });
+    operations.current = operation.catch(() => undefined);
+    await operation;
+    return true;
+  }, [syncXp]);
+
   return { store, ready, error, celebration, setCelebration, milestone, setMilestone, xp, finishRecap,
-    setFinishRecap, finishSession, recordVideosWatched, retryStorage: reload };
+    setFinishRecap, finishSession, recordVideosWatched, restoreStore, retryStorage: reload };
 }

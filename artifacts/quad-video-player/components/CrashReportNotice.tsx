@@ -17,7 +17,7 @@ export async function showCrashReport(onlyNew = false) {
       [
         { text: 'Continue', style: 'cancel' },
         { text: 'Share report', onPress: () => {
-          void Share.share({ message: report.text, title: 'Quad Video Player crash report' })
+          void Share.share({ message: report.text, title: 'Goon Quest crash report' })
             .catch(() => Alert.alert('Could not share report', 'Open Last crash report in Settings and try again.'));
         } },
       ]);

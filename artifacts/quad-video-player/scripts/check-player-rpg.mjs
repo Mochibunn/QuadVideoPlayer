@@ -30,9 +30,27 @@ test('RPG progress starts locally with daily and weekly quests', () => {
   const now = localNoon(2026, 10, 2);
   const state = rpg.emptyPlayerRpgState(now);
   assert.equal(state.coins, 0);
-  assert.equal(state.petName, 'Familiar');
-  assert.equal(rpg.getRpgQuests(state, now).length, 3);
+  assert.equal(state.petName, 'Pawstar');
+  assert.equal(rpg.getRpgQuests(state, now).length, 6);
   assert.equal(rpg.getRpgQuests(state, now)[0].progress, 0);
+});
+
+test('classes, quests, and mature cosmetics use the furry fantasy Goon Quest theme', () => {
+  const now = localNoon(2026, 10, 2);
+  const state = rpg.emptyPlayerRpgState(now);
+  assert.deepEqual(rpg.goonQuestClasses.map(({ name }) => name), [
+    'Moonfang Warden',
+    'Foxfire Enchanter',
+    'Wildpaw Stalker',
+    'Slytail Trickster',
+  ]);
+  assert.equal(rpg.goonQuestClasses.find(({ id }) => id === 'rogue').spell, 'Goonstorm');
+  assert.match(rpg.getRpgQuests(state, now).find(({ id }) => id === 'daily-focus').title, /Gooning/);
+  assert.match(rpg.getRpgQuests(state, now).find(({ id }) => id === 'daily-hunter').title, /Bouncing beast/);
+  assert.equal(
+    rpg.rpgShopItems.find(({ id }) => id === 'after-dark-charm').name,
+    'Gooner’s Velvet Charm',
+  );
 });
 
 test('play time advances the companion and qualifies a daily streak once', () => {
@@ -138,9 +156,39 @@ test('saved RPG data is sanitized, rolls daily state, and rejects damaged JSON',
   const parsed = rpg.parsePlayerRpg(raw, now);
   assert.equal(parsed.coins, 0);
   assert.equal(parsed.skills.fortune, rpg.SKILL_RANK_LIMIT);
-  assert.equal(parsed.petName, 'Familiar');
+  assert.equal(parsed.petName, 'Pawstar');
   assert.deepEqual(parsed.ownedItemIds, ['pixel-crown']);
   const nextDay = rpg.parsePlayerRpg(JSON.stringify(parsed), shiftDays(now, 1));
   assert.equal(nextDay.todayPlaybackMs, 0);
   assert.throws(() => rpg.parsePlayerRpg('{'));
+});
+
+test('version one saves migrate into Goon Quest combat defaults', () => {
+  const now = localNoon(2026, 10, 2);
+  const legacy = rpg.emptyPlayerRpgState(now);
+  delete legacy.classId;
+  delete legacy.totalDefeated;
+  delete legacy.defeatedToday;
+  delete legacy.spellsToday;
+  delete legacy.dungeonsToday;
+  legacy.version = 1;
+  const migrated = rpg.parsePlayerRpg(JSON.stringify(legacy), now);
+  assert.equal(migrated.version, 2);
+  assert.equal(migrated.classId, 'guardian');
+  assert.equal(migrated.totalDefeated, 0);
+  assert.equal(migrated.dungeonsToday, 0);
+});
+
+test('combat records targets, casts, dungeon clears, and class selection', () => {
+  const now = localNoon(2026, 10, 2);
+  let state = rpg.emptyPlayerRpgState(now);
+  state = rpg.recordRpgCombat(state, { defeats: 3, spells: 2, dungeons: 1 }, now);
+  assert.equal(state.totalDefeated, 3);
+  assert.equal(state.defeatedToday, 3);
+  assert.equal(state.spellsToday, 2);
+  assert.equal(state.dungeonsToday, 1);
+  assert.equal(state.coins, 26);
+  state = rpg.setGoonQuestClass(state, 'arcanist');
+  assert.equal(state.classId, 'arcanist');
+  assert.equal(rpg.getRpgQuests(state, now).find((quest) => quest.id === 'daily-hunter').progress, 3);
 });

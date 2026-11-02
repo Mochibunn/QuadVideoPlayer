@@ -50,7 +50,7 @@ export default function LaunchSplash({ onFinish }: { onFinish: () => void }) {
 
   return (
     <Animated.View
-      accessibilityLabel="Quad Video Player. Four screens, endless possibilities."
+      accessibilityLabel="Goon Quest. A moonlit guild for four-stream adventures."
       accessibilityViewIsModal
       style={[styles.overlay, { opacity }]}
     >
@@ -75,9 +75,9 @@ export default function LaunchSplash({ onFinish }: { onFinish: () => void }) {
           </Animated.View>
         ))}
       </View>
-      <Text style={styles.eyebrow}>PRESS PLAY. MULTIPLY THE FUN.</Text>
-      <Text style={styles.title}>QUAD VIDEO PLAYER</Text>
-      <Text style={styles.subtitle}>Four screens. Endless possibilities.</Text>
+      <Text style={styles.eyebrow}>MOON UP. EARS AT THE READY.</Text>
+      <Text style={styles.title}>GOON QUEST</Text>
+      <Text style={styles.subtitle}>Find your class. Keep the loop rolling.</Text>
     </Animated.View>
   );
 }
@@ -90,9 +90,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 100,
   },
-  mark: { width: 164, height: 164, flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 26 },
-  tile: { width: 77, height: 77, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  eyebrow: { color: colors.primary, fontSize: 10, fontWeight: '700', letterSpacing: 2, marginBottom: 10 },
-  title: { color: colors.foreground, fontSize: 24, fontWeight: '700', letterSpacing: 2, textAlign: 'center' },
-  subtitle: { color: colors.mutedForeground, fontSize: 13, marginTop: 10 },
+  mark: { width: 164, height: 164, flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 29 },
+  tile: { width: 77, height: 77, borderRadius: 23, justifyContent: 'center', alignItems: 'center' },
+  eyebrow: { color: colors.primary, fontSize: 9, fontWeight: '800', letterSpacing: 2.1, marginBottom: 11 },
+  title: { color: colors.foreground, fontSize: 25, fontWeight: '900', letterSpacing: 2.4, textAlign: 'center' },
+  subtitle: { color: colors.mutedForeground, fontSize: 13, marginTop: 11 },
 });

@@ -10,11 +10,13 @@ const { outputText } = ts.transpileModule(source, {
 const achievements = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 
 test('player ranks advance at their published level thresholds', () => {
-  assert.equal(achievements.playerRankTitle(1), 'Rookie');
-  assert.equal(achievements.playerRankTitle(2), 'Rookie');
-  assert.equal(achievements.playerRankTitle(3), 'Loop Runner');
-  assert.equal(achievements.playerRankTitle(5), 'Arcade Ace');
-  assert.equal(achievements.playerRankTitle(20), 'Loop Legend');
+  assert.equal(achievements.playerRankTitle(1), 'Denling');
+  assert.equal(achievements.playerRankTitle(2), 'Denling');
+  assert.equal(achievements.playerRankTitle(3), 'Gooner on the Prowl');
+  assert.equal(achievements.playerRankTitle(5), 'Moonfang Regular');
+  assert.equal(achievements.playerRankTitle(8), 'Wildpaw Adept');
+  assert.equal(achievements.playerRankTitle(12), 'After-hours Enchanter');
+  assert.equal(achievements.playerRankTitle(20), 'Grand Goonmancer');
 });
 
 test('achievement progress is derived from playback stats and unlocks at its target', () => {

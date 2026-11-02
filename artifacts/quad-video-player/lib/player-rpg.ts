@@ -1,5 +1,5 @@
 export const PLAYER_RPG_KEY = 'quad.player.rpg.v1';
-export const PLAYER_RPG_VERSION = 1;
+export const PLAYER_RPG_VERSION = 2;
 export const STREAK_QUALIFY_MS = 10 * 60_000;
 export const DAILY_PLAYBACK_TARGET_MS = 15 * 60_000;
 export const DAILY_VIDEO_TARGET = 4;
@@ -14,7 +14,23 @@ export const streakRewards = [
 ] as const;
 
 export type RpgSkillId = 'fortune' | 'bond' | 'bargain';
+export type GoonQuestClassId = 'guardian' | 'arcanist' | 'ranger' | 'rogue';
 export type RpgSkills = Record<RpgSkillId, number>;
+export const goonQuestClasses: {
+  id: GoonQuestClassId;
+  name: string;
+  role: string;
+  skill: string;
+  spell: string;
+  skillDamage: number;
+  spellDamage: number;
+  areaSpell: boolean;
+}[] = [
+  { id: 'guardian', name: 'Moonfang Warden', role: 'Wolfkin defender who holds the den through every frenzy', skill: 'Pounce', spell: 'Lunar Roar', skillDamage: 2, spellDamage: 1, areaSpell: true },
+  { id: 'arcanist', name: 'Foxfire Enchanter', role: 'Foxkin spellcaster with a talent for irresistible bursts', skill: 'Hexed Touch', spell: 'Starfall', skillDamage: 3, spellDamage: 2, areaSpell: false },
+  { id: 'ranger', name: 'Wildpaw Stalker', role: 'Beastkin hunter with quick, precise strikes', skill: 'Scent Mark', spell: 'Moonlit Volley', skillDamage: 2, spellDamage: 1, areaSpell: true },
+  { id: 'rogue', name: 'Slytail Trickster', role: 'Playful combo artist who loves a long, teasing game', skill: 'Tease and Strike', spell: 'Goonstorm', skillDamage: 2, spellDamage: 2, areaSpell: true },
+];
 export type RpgShopItem = {
   id: string;
   name: string;
@@ -25,18 +41,18 @@ export type RpgShopItem = {
 };
 
 export const rpgSkills: { id: RpgSkillId; name: string; description: string }[] = [
-  { id: 'fortune', name: 'Fortune', description: '+10% quest coins per rank.' },
-  { id: 'bond', name: 'Familiar Bond', description: '+25% companion XP per rank.' },
-  { id: 'bargain', name: 'Barter', description: 'Shop prices −5% per rank.' },
+  { id: 'fortune', name: 'Treasure Scent', description: 'Sniff out +10% more quest coins per rank.' },
+  { id: 'bond', name: 'Pawbound Pact', description: 'Your beastkin familiar earns +25% XP per rank.' },
+  { id: 'bargain', name: 'Den Trader', description: 'Charm the shopkeeper into −5% prices per rank.' },
 ];
 
 export const rpgShopItems: RpgShopItem[] = [
-  { id: 'pixel-crown', name: 'Pixel Crown', description: 'A bright little crown for your familiar.', cost: 40, icon: 'star' },
-  { id: 'moon-charm', name: 'Moon Charm', description: 'A quiet charm for late-night loops.', cost: 65, icon: 'moon' },
+  { id: 'pixel-crown', name: 'Starfang Crown', description: 'A moon-bright circlet for your loyal beastkin familiar.', cost: 40, icon: 'star' },
+  { id: 'moon-charm', name: 'Moonpaw Collar', description: 'A velvet charm for private, late-night den rituals.', cost: 65, icon: 'moon' },
   {
     id: 'after-dark-charm',
-    name: 'After Dark Charm',
-    description: 'A cheeky, adult-only flourish for your familiar.',
+    name: 'Gooner’s Velvet Charm',
+    description: 'A teasing after-dark accessory for a den champion.',
     cost: 90,
     icon: 'heart',
     matureOnly: true,
@@ -44,7 +60,7 @@ export const rpgShopItems: RpgShopItem[] = [
 ];
 
 export type PlayerRpgState = {
-  version: 1;
+  version: 2;
   dayKey: string;
   weekKey: string;
   todayPlaybackMs: number;
@@ -66,16 +82,21 @@ export type PlayerRpgState = {
   claimedDailyQuestIds: string[];
   weeklyQuestClaimed: boolean;
   awardedLevel: number;
+  classId: GoonQuestClassId;
+  totalDefeated: number;
+  defeatedToday: number;
+  spellsToday: number;
+  dungeonsToday: number;
 };
 
 export type RpgQuest = {
-  id: 'daily-focus' | 'daily-explorer' | 'weekly-cadence';
+  id: 'daily-focus' | 'daily-explorer' | 'daily-hunter' | 'daily-arcana' | 'daily-dungeon' | 'weekly-cadence';
   title: string;
   adultTitle: string;
   description: string;
   progress: number;
   target: number;
-  unit: 'min' | 'videos' | 'days';
+  unit: 'min' | 'videos' | 'targets' | 'casts' | 'dungeons' | 'days';
   rewardCoins: number;
   claimed: boolean;
   weekly: boolean;
@@ -134,7 +155,7 @@ export function emptyPlayerRpgState(now = Date.now()): PlayerRpgState {
     coins: 0,
     skillPoints: 0,
     skills: { fortune: 0, bond: 0, bargain: 0 },
-    petName: 'Familiar',
+    petName: 'Pawstar',
     petXp: 0,
     petXpRemainderMs: 0,
     ownedItemIds: [],
@@ -143,6 +164,11 @@ export function emptyPlayerRpgState(now = Date.now()): PlayerRpgState {
     claimedDailyQuestIds: [],
     weeklyQuestClaimed: false,
     awardedLevel: 1,
+    classId: 'guardian',
+    totalDefeated: 0,
+    defeatedToday: 0,
+    spellsToday: 0,
+    dungeonsToday: 0,
   };
 }
 
@@ -157,6 +183,9 @@ export function advancePlayerRpgDate(state: PlayerRpgState, now = Date.now()): P
     todayPlaybackMs: dayKey === state.dayKey ? state.todayPlaybackMs : 0,
     todayVideoIds: dayKey === state.dayKey ? state.todayVideoIds : [],
     claimedDailyQuestIds: dayKey === state.dayKey ? state.claimedDailyQuestIds : [],
+    defeatedToday: dayKey === state.dayKey ? state.defeatedToday : 0,
+    spellsToday: dayKey === state.dayKey ? state.spellsToday : 0,
+    dungeonsToday: dayKey === state.dayKey ? state.dungeonsToday : 0,
     weeklyQuestClaimed: weekKey === state.weekKey ? state.weeklyQuestClaimed : false,
   };
 }
@@ -173,7 +202,9 @@ export function parsePlayerRpg(raw: string | null, now = Date.now()): PlayerRpgS
     throw new Error('The RPG progress data is damaged.');
   }
   const data = parsed as Record<string, unknown>;
-  if (data.version !== PLAYER_RPG_VERSION) throw new Error('The RPG progress format is not supported.');
+  if (data.version !== 1 && data.version !== PLAYER_RPG_VERSION) {
+    throw new Error('The RPG progress format is not supported.');
+  }
   const today = localDayKey(now);
   const week = localWeekKey(now);
   const validOwned = listOfStrings(data.ownedItemIds, rpgShopItems.length, 80)
@@ -209,16 +240,22 @@ export function parsePlayerRpg(raw: string | null, now = Date.now()): PlayerRpgS
       bond: allowedSkillIds.has('bond') ? clampInteger(skills.bond, 0, SKILL_RANK_LIMIT) : 0,
       bargain: allowedSkillIds.has('bargain') ? clampInteger(skills.bargain, 0, SKILL_RANK_LIMIT) : 0,
     },
-    petName: rawName || 'Familiar',
+    petName: rawName || 'Pawstar',
     petXp: clampInteger(data.petXp, 0),
     petXpRemainderMs: clampInteger(data.petXpRemainderMs, 0, 59_999),
     ownedItemIds: validOwned,
     equippedItemId,
     adultFlavorEnabled: data.adultFlavorEnabled === true,
     claimedDailyQuestIds: isDayKey(data.dayKey) && data.dayKey === today
-      ? listOfStrings(data.claimedDailyQuestIds, 3, 40) : [],
+      ? listOfStrings(data.claimedDailyQuestIds, 8, 40) : [],
     weeklyQuestClaimed: data.weekKey === week && data.weeklyQuestClaimed === true,
     awardedLevel: Math.max(1, clampInteger(data.awardedLevel, 1, 1_000_000)),
+    classId: goonQuestClasses.some((item) => item.id === data.classId)
+      ? data.classId as GoonQuestClassId : 'guardian',
+    totalDefeated: clampInteger(data.totalDefeated, 0),
+    defeatedToday: data.dayKey === today ? clampInteger(data.defeatedToday, 0) : 0,
+    spellsToday: data.dayKey === today ? clampInteger(data.spellsToday, 0) : 0,
+    dungeonsToday: data.dayKey === today ? clampInteger(data.dungeonsToday, 0) : 0,
   };
   if (equippedItemId && rpgShopItems.find((item) => item.id === equippedItemId)?.matureOnly &&
     !state.adultFlavorEnabled) {
@@ -278,6 +315,31 @@ export function recordRpgVideos(state: PlayerRpgState, ids: readonly string[], n
   return { ...current, todayVideoIds: [...known] };
 }
 
+export function recordRpgCombat(
+  state: PlayerRpgState,
+  progress: { defeats?: number; spells?: number; dungeons?: number },
+  now = Date.now(),
+): PlayerRpgState {
+  const current = advancePlayerRpgDate(state, now);
+  const defeats = clampInteger(progress.defeats, 0, 1000);
+  const spells = clampInteger(progress.spells, 0, 1000);
+  const dungeons = clampInteger(progress.dungeons, 0, 100);
+  if (!defeats && !spells && !dungeons) return current;
+  return {
+    ...current,
+    totalDefeated: current.totalDefeated + defeats,
+    defeatedToday: current.defeatedToday + defeats,
+    spellsToday: current.spellsToday + spells,
+    dungeonsToday: current.dungeonsToday + dungeons,
+    coins: current.coins + defeats * 2 + dungeons * 20,
+  };
+}
+
+export function setGoonQuestClass(state: PlayerRpgState, classId: GoonQuestClassId): PlayerRpgState {
+  return goonQuestClasses.some((item) => item.id === classId) && state.classId !== classId
+    ? { ...state, classId } : state;
+}
+
 export function weeklyActiveDayCount(state: PlayerRpgState, now = Date.now()): number {
   const weekKey = localWeekKey(now);
   const today = localDayKey(now);
@@ -301,9 +363,9 @@ export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[
   return [
     {
       id: 'daily-focus',
-      title: current.adultFlavorEnabled ? 'After-hours focus' : 'Daily focus',
-      adultTitle: 'After-hours focus',
-      description: 'Play for 15 active minutes today.',
+      title: current.adultFlavorEnabled ? 'Gooner’s focus ritual' : 'Gooning focus ritual',
+      adultTitle: 'Gooner’s focus ritual',
+      description: 'Keep your den session going for 15 active minutes today.',
       progress: Math.min(15, Math.floor(current.todayPlaybackMs / 60_000)),
       target: 15,
       unit: 'min',
@@ -313,9 +375,9 @@ export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[
     },
     {
       id: 'daily-explorer',
-      title: current.adultFlavorEnabled ? 'Private collection' : 'Gallery scout',
-      adultTitle: 'Private collection',
-      description: 'Play 4 different videos today.',
+      title: current.adultFlavorEnabled ? 'Private den collection' : 'Paw-print collection',
+      adultTitle: 'Private den collection',
+      description: 'Play 4 different videos to keep the den collection fresh today.',
       progress: Math.min(DAILY_VIDEO_TARGET, current.todayVideoIds.length),
       target: DAILY_VIDEO_TARGET,
       unit: 'videos',
@@ -324,10 +386,46 @@ export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[
       weekly: false,
     },
     {
+      id: 'daily-hunter',
+      title: current.adultFlavorEnabled ? 'Bouncing prey' : 'Bouncing beast hunt',
+      adultTitle: 'Bouncing prey',
+      description: 'Tap 5 bouncing image targets in your den today.',
+      progress: Math.min(5, current.defeatedToday),
+      target: 5,
+      unit: 'targets',
+      rewardCoins: 30,
+      claimed: current.claimedDailyQuestIds.includes('daily-hunter'),
+      weekly: false,
+    },
+    {
+      id: 'daily-arcana',
+      title: current.adultFlavorEnabled ? 'After-dark Gooncraft' : 'Gooncraft practice',
+      adultTitle: 'After-dark Gooncraft',
+      description: 'Cast 3 class skills or spells to keep your focus charged.',
+      progress: Math.min(3, current.spellsToday),
+      target: 3,
+      unit: 'casts',
+      rewardCoins: 25,
+      claimed: current.claimedDailyQuestIds.includes('daily-arcana'),
+      weekly: false,
+    },
+    {
+      id: 'daily-dungeon',
+      title: current.adultFlavorEnabled ? 'Velvet Den Delve' : 'Moonfang den delve',
+      adultTitle: 'Velvet Den Delve',
+      description: 'Clear one image dungeon and handle the whole horde today.',
+      progress: Math.min(1, current.dungeonsToday),
+      target: 1,
+      unit: 'dungeons',
+      rewardCoins: 50,
+      claimed: current.claimedDailyQuestIds.includes('daily-dungeon'),
+      weekly: false,
+    },
+    {
       id: 'weekly-cadence',
-      title: current.adultFlavorEnabled ? 'Late-night regular' : 'Weekly rhythm',
-      adultTitle: 'Late-night regular',
-      description: `Qualify on ${WEEKLY_ACTIVE_DAY_TARGET} days this week.`,
+      title: current.adultFlavorEnabled ? 'After-hours den regular' : 'Moonlit Gooner',
+      adultTitle: 'After-hours den regular',
+      description: `Keep the den streak going on ${WEEKLY_ACTIVE_DAY_TARGET} days this week.`,
       progress: Math.min(WEEKLY_ACTIVE_DAY_TARGET, weeklyActiveDayCount(current, now)),
       target: WEEKLY_ACTIVE_DAY_TARGET,
       unit: 'days',
@@ -405,5 +503,5 @@ export function setAdultRewardFlavor(state: PlayerRpgState, enabled: boolean): P
 
 export function renameRpgCompanion(state: PlayerRpgState, name: string): PlayerRpgState {
   const petName = name.trim().slice(0, 24);
-  return { ...state, petName: petName || 'Familiar' };
+  return { ...state, petName: petName || 'Pawstar' };
 }

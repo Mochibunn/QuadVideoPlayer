@@ -4,8 +4,8 @@ import { levelForExperience } from '@/lib/player-rewards';
 import {
   addRpgPlaybackTime, awardRpgSkillPoints, canClaimRpgQuest, claimRpgQuest,
   emptyPlayerRpgState, equipRpgItem, parsePlayerRpg, purchaseRpgItem,
-  recordRpgVideos, renameRpgCompanion, setAdultRewardFlavor, upgradeRpgSkill,
-  PLAYER_RPG_KEY, type PlayerRpgState, type RpgQuest, type RpgSkillId,
+  recordRpgCombat, recordRpgVideos, renameRpgCompanion, setAdultRewardFlavor, setGoonQuestClass, upgradeRpgSkill,
+  PLAYER_RPG_KEY, type GoonQuestClassId, type PlayerRpgState, type RpgQuest, type RpgSkillId,
 } from '@/lib/player-rpg';
 
 export function usePlayerRpg(isPlaybackActive: boolean, xp: number, xpReady: boolean) {
@@ -79,6 +79,17 @@ export function usePlayerRpg(isPlaybackActive: boolean, xp: number, xpReady: boo
   const recordVideosWatched = useCallback((ids: readonly string[]) => {
     if (ids.length) commit((current) => recordRpgVideos(current, ids, Date.now()));
   }, [commit]);
+  const recordCombat = useCallback((progress: { defeats?: number; spells?: number; dungeons?: number }) => {
+    commit((current) => recordRpgCombat(current, progress, Date.now()));
+  }, [commit]);
+  const setClass = useCallback((classId: GoonQuestClassId) => {
+    commit((current) => setGoonQuestClass(current, classId));
+  }, [commit]);
+  const replaceState = useCallback((next: PlayerRpgState) => {
+    if (!loadedRef.current) return false;
+    commit(() => next);
+    return true;
+  }, [commit]);
   const claimQuest = useCallback((id: RpgQuest['id']) => {
     let claimed = false;
     commit((current) => {
@@ -109,6 +120,9 @@ export function usePlayerRpg(isPlaybackActive: boolean, xp: number, xpReady: boo
     error,
     retry: reload,
     recordVideosWatched,
+    recordCombat,
+    setClass,
+    replaceState,
     claimQuest,
     upgradeSkill,
     buyItem,

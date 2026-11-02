@@ -2,6 +2,8 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as DocumentPicker from 'expo-document-picker';
+import * as Speech from 'expo-speech';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
@@ -33,6 +35,9 @@ import ControlsTimeoutSetting from '@/components/ControlsTimeoutSetting';
 import PoolVideoPreview from '@/components/PoolVideoPreview';
 import PlayerRewardsSettings from '@/components/PlayerRewardsSettings';
 import PlayerRpgDashboard from '@/components/PlayerRpgDashboard';
+import GoonQuestOverlay from '@/components/GoonQuestOverlay';
+import PlayExtrasSettings from '@/components/PlayExtrasSettings';
+import KeyJingleOverlay from '@/components/KeyJingleOverlay';
 import HeartRateSettings from '@/components/HeartRateSettings';
 import ScreenBorder from '@/components/ScreenBorder';
 import SoundEffectsSettings from '@/components/SoundEffectsSettings';
@@ -44,7 +49,8 @@ import SessionControls from '@/components/SessionControls';
 import ViewingSessionTimer from '@/components/ViewingSessionTimer';
 import { useViewingSessions } from '@/hooks/useViewingSessions';
 import { usePlayerRpg } from '@/hooks/usePlayerRpg';
-import { seekPosition, type SessionSnapshot, type VideoSnapshot } from '@/lib/sessions';
+import { usePlayExtrasSettings } from '@/hooks/usePlayExtrasSettings';
+import { parseSession, seekPosition, SESSION_KEY, type SessionSnapshot, type VideoSnapshot } from '@/lib/sessions';
 import { prepareVideoSlot, QUAD_BUFFER_OPTIONS } from '@/lib/player-startup';
 import { showCrashReport } from '@/components/CrashReportNotice';
 import { useSlideshow } from '@/hooks/useSlideshow';
@@ -70,6 +76,13 @@ import {
   themePresets,
   type ThemeId,
 } from '@/constants/colors';
+import {
+  createGoonQuestBackup, MAX_BACKUP_CHARS, parseGoonQuestBackup,
+} from '@/lib/goon-quest-backup';
+import { PLAYER_RPG_KEY, type GoonQuestClassId } from '@/lib/player-rpg';
+import { PLAYER_REWARDS_KEY } from '@/lib/player-rewards';
+import { VIEWING_SESSIONS_KEY } from '@/lib/viewing-sessions';
+import { PLAY_EXTRAS_KEY } from '@/lib/play-extras';
 
 type ActivePanel = 'settings' | 'pool' | 'audio' | 'slideshow' | 'sources' | null;
 
@@ -198,6 +211,9 @@ function VideoTile({
   sharedVolume,
   onSharedVolumeChange,
   fillVideos,
+  focusIndex,
+  tileVisible,
+  onToggleFocus,
   controlsVisible,
   onToggleControls,
   initialSnapshot,
@@ -216,6 +232,9 @@ function VideoTile({
   sharedVolume: number;
   onSharedVolumeChange: (volume: number) => void;
   fillVideos: boolean;
+  focusIndex: number | null;
+  tileVisible: boolean;
+  onToggleFocus: (index: number) => void;
   controlsVisible: boolean;
   onToggleControls: () => void;
   initialSnapshot?: VideoSnapshot;
@@ -240,10 +259,13 @@ function VideoTile({
   const [seekingTime, setSeekingTime] = useState<number | null>(null);
   const currentAssetRef = useRef(asset);
   currentAssetRef.current = currentAsset;
+  const playModeRef = useRef({ focusIndex, globalPlaying, index });
+  playModeRef.current = { focusIndex, globalPlaying, index };
   const registry = useSessionRegistry();
   const pendingPosition = useRef<number | null>(initialSnapshot?.position ?? null);
   const restorePlaying = useRef(initialSnapshot?.playing ?? true);
   const firstGlobalEffect = useRef(true);
+  const previousPlayMode = useRef({ focusIndex, globalPlaying });
   const changingSource = useRef(false);
   const sourcePrepared = useRef(false);
   const nextSourcePlaying = useRef(false);
@@ -272,7 +294,9 @@ function VideoTile({
     player, asset.uri, index,
     () => {
       sourcePrepared.current = true;
-      return pendingPosition.current === null && restorePlaying.current;
+      return pendingPosition.current === null && restorePlaying.current &&
+        playModeRef.current.globalPlaying &&
+        (playModeRef.current.focusIndex === null || playModeRef.current.focusIndex === playModeRef.current.index);
     },
     (error) => {
       setErrorMessage(mediaPlaybackError(error instanceof Error ? error.message : undefined));
@@ -284,9 +308,9 @@ function VideoTile({
     player.currentTime = seekPosition(pendingPosition.current, player.duration);
     pendingPosition.current = null;
     updatePlaybackProgress(player.currentTime);
-    if (restorePlaying.current) player.play();
+    if (restorePlaying.current && globalPlaying && (focusIndex === null || focusIndex === index)) player.play();
     else player.pause();
-  }, [globalPlaying, player, updatePlaybackProgress]);
+  }, [focusIndex, globalPlaying, index, player, updatePlaybackProgress]);
   useEventListener(player, 'sourceLoad', restorePosition);
   useEventListener(player, 'timeUpdate', ({ currentTime }) => updatePlaybackProgress(currentTime));
   useEffect(() => {
@@ -308,8 +332,8 @@ function VideoTile({
     async (forcePlayback = false) => {
       const next = getNextVideo(index, currentAssetRef.current.id);
       if (!next) return;
-      const shouldResume =
-        globalPlaying && (forcePlayback || player.playing);
+      const shouldResume = globalPlaying && (focusIndex === null || focusIndex === index) &&
+        (forcePlayback || player.playing);
       changingSource.current = true;
       nextSourcePlaying.current = shouldResume;
       restorePlaying.current = shouldResume;
@@ -330,7 +354,7 @@ function VideoTile({
         setIsLoading(false);
       }
     },
-    [getNextVideo, globalPlaying, index, onAssetChange, player],
+    [focusIndex, getNextVideo, globalPlaying, index, onAssetChange, player],
   );
 
   useEventListener(player, 'playToEnd', () => {
@@ -385,10 +409,23 @@ function VideoTile({
   }, [isMuted, player]);
 
   useEffect(() => {
+    const globalChanged = previousPlayMode.current.globalPlaying !== globalPlaying;
+    const focusChanged = previousPlayMode.current.focusIndex !== focusIndex;
+    previousPlayMode.current = { focusIndex, globalPlaying };
+    if (focusIndex !== null && focusIndex !== index) {
+      if (globalChanged) restorePlaying.current = globalPlaying;
+      player.pause();
+      return;
+    }
+    if (!globalChanged && focusChanged) {
+      if (globalPlaying && restorePlaying.current) player.play();
+      else player.pause();
+      return;
+    }
     if (firstGlobalEffect.current) {
       firstGlobalEffect.current = false;
       if (initialSnapshot) {
-        if (pendingPosition.current === null && restorePlaying.current) player.play();
+        if (pendingPosition.current === null && restorePlaying.current && globalPlaying) player.play();
         else player.pause();
         return;
       }
@@ -400,7 +437,7 @@ function VideoTile({
     } else {
       player.pause();
     }
-  }, [globalPlaying, player]);
+  }, [focusIndex, globalPlaying, index, initialSnapshot, player]);
 
   const commitVolume = useCallback(
     (nextVolume: number) => {
@@ -448,13 +485,14 @@ function VideoTile({
 
   const retry = async () => {
     changingSource.current = true;
-    nextSourcePlaying.current = globalPlaying;
-    restorePlaying.current = globalPlaying;
+    const shouldPlay = globalPlaying && (focusIndex === null || focusIndex === index) && restorePlaying.current;
+    nextSourcePlaying.current = shouldPlay;
+    restorePlaying.current = shouldPlay;
     setErrorMessage('');
     setIsLoading(true);
     try {
       await player.replaceAsync(videoSourceForUri(currentAsset.uri));
-      if (globalPlaying) player.play();
+      if (shouldPlay) player.play();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'This video could not be opened.',
@@ -467,7 +505,7 @@ function VideoTile({
     <View
       style={[
         styles.tile,
-        { backgroundColor: colors.card, borderColor: colors.border },
+        { backgroundColor: colors.card, borderColor: colors.border, display: tileVisible ? 'flex' : 'none' },
       ]}
     >
       <View style={[styles.videoFrame, { backgroundColor: colors.background }]}>
@@ -540,6 +578,14 @@ function VideoTile({
           {currentAsset.name}
         </Text>
         <View style={[styles.liveDot, { backgroundColor: errorMessage ? colors.destructive : colors.primary }]} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={focusIndex === index ? 'Return to quad stream' : `Show stream ${index + 1} full screen`}
+          onPress={() => onToggleFocus(index)}
+          style={styles.focusButton}
+        >
+          <Feather name={focusIndex === index ? 'minimize-2' : 'maximize-2'} size={15} color={colors.foreground} />
+        </Pressable>
       </FadingControls>
 
       <FadingControls visible={controlsVisible} style={[
@@ -661,6 +707,7 @@ export default function QuadVideoPlayerScreen() {
   const { slideshow, captureSlideshow, restoreSlideshow } = useSlideshow();
   const online = useOnlineSources();
   const [sourcesReturn, setSourcesReturn] = useState<'settings' | 'slideshow'>('settings');
+  const [slideshowReturn, setSlideshowReturn] = useState<'settings' | null>('settings');
   const { inPip, enterPip, pipClosed, sound, setSound, loaded: soundLoaded } = useSoundSettings();
   const registry = useSessionRegistry();
   const [sessionBusy, setSessionBusy] = useState(false);
@@ -677,6 +724,9 @@ export default function QuadVideoPlayerScreen() {
   const [sharedVolume, setSharedVolume] = useState(START_VOLUME);
   const [backgroundTrackCount, setBackgroundTrackCount] = useState(0);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const [questVisible, setQuestVisible] = useState(false);
+  const [singleStreamIndex, setSingleStreamIndex] = useState<number | null>(null);
+  const [sessionListRevision, setSessionListRevision] = useState(0);
   const [pool, setPool] = useState<VideoAsset[]>([]);
   const [activeVideos, setActiveVideos] = useState<VideoAsset[]>([]);
   const [watchHistory, setWatchHistory] = useState<VideoWatchHistory>({});
@@ -776,6 +826,23 @@ export default function QuadVideoPlayerScreen() {
     playerRewards.settings.congratsText,
     viewing.milestone ?? viewing.celebration ?? 0,
   );
+  const playExtras = usePlayExtrasSettings();
+  const lastSpokenCelebration = useRef<string | null>(null);
+  const speakDialogue = useCallback((message: string) => {
+    if (!playExtras.ready || !playExtras.settings.speakDialogue || !message.trim()) return;
+    Speech.stop();
+    Speech.speak(message, { rate: 0.96, pitch: 1.02 });
+  }, [playExtras.ready, playExtras.settings.speakDialogue]);
+  useEffect(() => {
+    const celebration = viewing.milestone ?? viewing.celebration;
+    if (!playExtras.ready || !playExtras.settings.speakCelebrations || celebration === null) return;
+    const celebrationKey = `${session}:${celebration}`;
+    if (celebrationKey === lastSpokenCelebration.current) return;
+    lastSpokenCelebration.current = celebrationKey;
+    Speech.stop();
+    Speech.speak(congratulationsMessage, { rate: 0.96, pitch: 1.02 });
+  }, [congratulationsMessage, playExtras.ready, playExtras.settings.speakCelebrations,
+    session, viewing.celebration, viewing.milestone]);
   const controls = useAutoHideControls(hasVideos, activePanel !== null || isPicking || sessionBusy, controlsHideSeconds);
   useEffect(() => {
     if (pipClosed) setGlobalPlaying(false);
@@ -867,6 +934,8 @@ export default function QuadVideoPlayerScreen() {
       Alert.alert('No videos found', 'Choose a folder or select video files.');
       return;
     }
+    setSingleStreamIndex(null);
+    setQuestVisible(false);
     if (!watchHistoryLoaded) {
       Alert.alert('Video history is loading', 'Wait a moment, then choose the videos again.');
       return;
@@ -964,7 +1033,7 @@ export default function QuadVideoPlayerScreen() {
 
   const openAppSettings = () => {
     void Linking.openSettings().catch(() => {
-      Alert.alert('Could not open Settings', 'Open Android Settings → Apps → Quad Video Player → Permissions.');
+      Alert.alert('Could not open Settings', 'Open Android Settings → Apps → Goon Quest → Permissions.');
     });
   };
 
@@ -1057,6 +1126,7 @@ export default function QuadVideoPlayerScreen() {
     activeAssetsRef.current.clear();
     setActiveVideos([]);
     setGlobalPlaying(false);
+    setSingleStreamIndex(null);
     void viewing.finishSession();
   };
 
@@ -1101,9 +1171,129 @@ export default function QuadVideoPlayerScreen() {
     setRestoredStreams(streams);
     setActiveVideos(streams.map((stream) => stream.asset));
     setGlobalPlaying(saved.globalPlaying);
+    setSingleStreamIndex(null);
     registry.restoreAudio(saved.audio);
     setSession((current) => current + 1);
     setActivePanel(null);
+  };
+
+  const exportGoonQuestBackup = async () => {
+    try {
+      let savedSession: SessionSnapshot | null = null;
+      if (pool.length || backgroundTrackCount > 0 || slideshow.pool.length > 0) {
+        savedSession = captureSession();
+      } else {
+        const previous = await AsyncStorage.getItem(SESSION_KEY);
+        if (previous) savedSession = parseSession(previous);
+      }
+      const backup = createGoonQuestBackup({
+        appVersion: '1.13.0',
+        exportedAt: new Date().toISOString(),
+        session: savedSession,
+        progress: {
+          rpg: playerRpg.state,
+          viewing: viewing.store,
+          rewards: playerRewards.settings,
+          videoWatchHistory: watchHistory,
+          themeId,
+          playExtras: playExtras.settings,
+          playbackSettings: {
+            normalize: normalizeEnabled,
+            sync: syncEnabled,
+            fill: fillVideos,
+            controlsDelay: controlsHideSeconds,
+            sharedVolume,
+            sound,
+          },
+        },
+      });
+      const json = JSON.stringify(backup, null, 2);
+      if (json.length > MAX_BACKUP_CHARS) throw new Error('This backup is too large to export safely.');
+      const access = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (!access.granted) return;
+      const filename = `GoonQuest-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      const uri = await FileSystem.StorageAccessFramework.createFileAsync(
+        access.directoryUri, filename, 'application/json',
+      );
+      await FileSystem.writeAsStringAsync(uri, json, { encoding: FileSystem.EncodingType.UTF8 });
+      Alert.alert('Backup exported', 'Your RPG progress, playback settings, and saved session were written as a JSON file.');
+    } catch (error) {
+      Alert.alert('Could not export backup', error instanceof Error ? error.message : 'Please choose another folder and try again.');
+    }
+  };
+
+  const applyGoonQuestBackup = async (backup: ReturnType<typeof parseGoonQuestBackup>) => {
+    try {
+      const entries: [string, string][] = [
+        [PLAYER_RPG_KEY, JSON.stringify(backup.progress.rpg)],
+        [VIEWING_SESSIONS_KEY, JSON.stringify(backup.progress.viewing)],
+        [PLAYER_REWARDS_KEY, JSON.stringify(backup.progress.rewards)],
+        [VIDEO_WATCH_HISTORY_KEY, JSON.stringify(backup.progress.videoWatchHistory)],
+        [PLAY_EXTRAS_KEY, JSON.stringify(backup.progress.playExtras)],
+        [THEME_STORAGE_KEY, backup.progress.themeId],
+        [NORMALIZE_STORAGE_KEY, String(backup.progress.playbackSettings.normalize)],
+        [SYNC_STORAGE_KEY, String(backup.progress.playbackSettings.sync)],
+        [VIDEO_FILL_STORAGE_KEY, String(backup.progress.playbackSettings.fill)],
+        [CONTROLS_DELAY_STORAGE_KEY, String(backup.progress.playbackSettings.controlsDelay)],
+      ];
+      if (backup.session) entries.push([SESSION_KEY, JSON.stringify(backup.session)]);
+      await AsyncStorage.multiSet(entries);
+      if (!backup.session) await AsyncStorage.removeItem(SESSION_KEY);
+      if (!playerRpg.replaceState(backup.progress.rpg)) throw new Error('RPG data is not ready to restore yet.');
+      if (!await viewing.restoreStore(backup.progress.viewing)) throw new Error('Session history is not ready to restore yet.');
+      if (!playExtras.restore(backup.progress.playExtras)) throw new Error('Game audio settings are not ready to restore yet.');
+      playerRewards.update(backup.progress.rewards);
+      watchHistoryRef.current = backup.progress.videoWatchHistory;
+      watchHistoryWritable.current = true;
+      setWatchHistory(backup.progress.videoWatchHistory);
+      setPool((current) => applyVideoWatchHistory(current, backup.progress.videoWatchHistory));
+      setThemeId(backup.progress.themeId as ThemeId);
+      setNormalizeEnabled(backup.progress.playbackSettings.normalize);
+      setSyncEnabled(backup.progress.playbackSettings.sync);
+      setFillVideos(backup.progress.playbackSettings.fill);
+      setControlsHideSeconds(backup.progress.playbackSettings.controlsDelay);
+      setSharedVolume(backup.progress.playbackSettings.sharedVolume);
+      setSound(backup.progress.playbackSettings.sound);
+      setGlobalPlaying(false);
+      setSingleStreamIndex(null);
+      setSessionListRevision((current) => current + 1);
+      Alert.alert(
+        'Backup imported',
+        backup.session
+          ? 'Your progress and saved session are restored. Resume the session from the toolbar; Android may ask you to reconnect media files.'
+          : 'Your progress and settings are restored. No saved media session was included in this backup.',
+      );
+    } catch (error) {
+      Alert.alert('Could not import backup', error instanceof Error ? error.message : 'Your data was not fully restored.');
+    }
+  };
+
+  const importGoonQuestBackup = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets[0]) return;
+      if (typeof result.assets[0].size === 'number' && result.assets[0].size > MAX_BACKUP_CHARS) {
+        throw new Error('This backup is too large to import safely.');
+      }
+      const raw = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      const backup = parseGoonQuestBackup(raw);
+      Alert.alert(
+        'Replace local progress?',
+        `This imports the ${backup.appVersion} backup and replaces current RPG progress, viewing history, themes, and the saved session. Export a backup first if you want to keep the current data.${backup.session ? '\n\nThe media files are not copied into the JSON; Android storage access may need to be reconnected.' : ''}`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Import backup', style: 'destructive', onPress: () => void applyGoonQuestBackup(backup) },
+        ],
+      );
+    } catch (error) {
+      Alert.alert('Could not read backup', error instanceof Error ? error.message : 'Select a valid Goon Quest JSON backup.');
+    }
   };
 
   return (
@@ -1146,7 +1336,7 @@ export default function QuadVideoPlayerScreen() {
             </View>
             <View>
               <Text style={[styles.brandName, { color: colors.foreground }]}>
-                QUAD
+                GOON QUEST
               </Text>
               <Text style={[styles.brandMeta, { color: colors.mutedForeground }]}>
                 {pool.length > 0
@@ -1159,6 +1349,7 @@ export default function QuadVideoPlayerScreen() {
 
           <View pointerEvents="box-none" style={styles.topActions}>
             <SessionControls
+              key={sessionListRevision}
               capture={captureSession} restore={restoreSession}
               canSave={pool.length > 0 || backgroundTrackCount > 0 || slideshow.pool.length > 0}
               hasCurrent={pool.length > 0 || backgroundTrackCount > 0 || slideshow.pool.length > 0}
@@ -1188,6 +1379,14 @@ export default function QuadVideoPlayerScreen() {
                   onPress={() => startStreams(pool)}
                   disabled={isPicking || pool.length === 0}
                 />
+                {singleStreamIndex !== null && (
+                  <ActionButton
+                    compact
+                    icon="grid"
+                    label="Return to quad stream"
+                    onPress={() => setSingleStreamIndex(null)}
+                  />
+                )}
                 <ActionButton
                   compact
                   icon="minimize-2"
@@ -1252,7 +1451,10 @@ export default function QuadVideoPlayerScreen() {
         {activeVideos.length > 0 ? (
           <View style={styles.grid}>
             {[0, 1].map((row) => (
-              <View key={row} style={styles.gridRow}>
+            <View key={row} style={[
+              styles.gridRow,
+              singleStreamIndex !== null && Math.floor(singleStreamIndex / 2) !== row && styles.hiddenGridRow,
+            ]}>
             {activeVideos.slice(row * 2, row * 2 + 2).map((asset, column) => {
               const index = row * 2 + column;
               const playbackId = `${session}-${index}`;
@@ -1273,6 +1475,9 @@ export default function QuadVideoPlayerScreen() {
                   sharedVolume={sharedVolume}
                   onSharedVolumeChange={setSharedVolume}
                   fillVideos={fillVideos}
+                  focusIndex={singleStreamIndex}
+                  tileVisible={singleStreamIndex === null || singleStreamIndex === index}
+                  onToggleFocus={(slot) => setSingleStreamIndex((current) => current === slot ? null : slot)}
                   controlsVisible={!inPip && controls.visible}
                   onToggleControls={controls.toggle}
                   initialSnapshot={restoredStreams?.[index]}
@@ -1301,7 +1506,7 @@ export default function QuadVideoPlayerScreen() {
               </View>
             </LinearGradient>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              Four views. One screen.
+              Four views. One quest.
             </Text>
             <Text style={[styles.emptyDescription, { color: colors.mutedForeground }]}>
               Pick a video folder or select multiple files. Four clips start at
@@ -1366,6 +1571,30 @@ export default function QuadVideoPlayerScreen() {
           xp={viewing.xp}
           allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked}
         />
+        <KeyJingleOverlay
+          enabled={playExtras.settings.keysEnabled}
+          playing={isPlaybackActive}
+          repeatSeconds={playExtras.settings.keyRepeatSeconds}
+        />
+        {hasVideos && !inPip && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open quests and image dungeon"
+            onPress={() => setQuestVisible(true)}
+            style={[
+              styles.questFab,
+              {
+                left: Math.max(14, insets.left + 10),
+                bottom: Math.max(14, insets.bottom + 10),
+                backgroundColor: colors.primary,
+                borderColor: colors.primaryForeground,
+              },
+            ]}
+          >
+            <Feather name="compass" size={17} color={colors.primaryForeground} />
+            <Text style={[styles.questFabText, { color: colors.primaryForeground }]}>Quests</Text>
+          </Pressable>
+        )}
       </View>
       <Modal
         visible={activePanel === 'settings'}
@@ -1468,7 +1697,26 @@ export default function QuadVideoPlayerScreen() {
               onChange={setControlsHideSeconds}
               disabled={!playbackSettingsLoaded}
             />
+            <View style={[styles.backupCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+              <Text style={[styles.settingTitle, { color: colors.foreground }]}>Backup and transfer</Text>
+              <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
+                Export progress and the saved session as JSON. Media files are not copied; Android access may need reconnecting after transfer.
+              </Text>
+              <View style={styles.backupActions}>
+                <ActionButton icon="download" label="Export JSON" onPress={() => void exportGoonQuestBackup()}
+                  disabled={!themeLoaded || !playbackSettingsLoaded || !watchHistoryLoaded || !viewing.ready ||
+                    !playerRpg.ready || !playerRewards.ready || !playExtras.ready || !soundLoaded} />
+                <ActionButton icon="upload" label="Import JSON" onPress={() => void importGoonQuestBackup()}
+                  disabled={!themeLoaded || !playbackSettingsLoaded || !watchHistoryLoaded || !viewing.ready ||
+                    !playerRpg.ready || !playerRewards.ready || !playExtras.ready || !soundLoaded} />
+              </View>
+            </View>
             <SoundEffectsSettings xp={viewing.xp} allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked} />
+            <PlayExtrasSettings
+              settings={playExtras.settings}
+              update={playExtras.update}
+              ready={playExtras.ready}
+            />
             <PlayerRewardsSettings
               settings={playerRewards.settings}
               update={playerRewards.update}
@@ -1493,7 +1741,7 @@ export default function QuadVideoPlayerScreen() {
               setSourcesReturn('settings'); setActivePanel('sources');
             }} />
             <ActionButton icon="image" label={`Image / GIF slideshow (${slideshow.pool.length})`}
-              onPress={() => setActivePanel('slideshow')} />
+              onPress={() => { setSlideshowReturn('settings'); setActivePanel('slideshow'); }} />
             <ActionButton icon="alert-circle" label="Last crash report" onPress={() => void showCrashReport()} />
             <Text style={[styles.themeSectionTitle, { color: colors.mutedForeground }]}>
               Accent themes
@@ -1628,7 +1876,7 @@ export default function QuadVideoPlayerScreen() {
           </View>
         </View>
       </Modal>
-      <SlideshowPanel visible={activePanel === 'slideshow'} onClose={() => setActivePanel('settings')}
+      <SlideshowPanel visible={activePanel === 'slideshow'} onClose={() => setActivePanel(slideshowReturn === 'settings' ? 'settings' : null)}
         onManageSources={() => { setSourcesReturn('slideshow'); setActivePanel('sources'); }} />
       <OnlineSourcesPanel visible={activePanel === 'sources'} onClose={() => setActivePanel(sourcesReturn)}
         onPlayVideos={(items: RemoteMedia[], name: string) => {
@@ -1645,6 +1893,21 @@ export default function QuadVideoPlayerScreen() {
         visible={activePanel === 'audio'}
         onClose={() => setActivePanel(null)}
         onCountChange={setBackgroundTrackCount}
+      />
+      <GoonQuestOverlay
+        visible={questVisible}
+        onClose={() => setQuestVisible(false)}
+        pool={slideshow.pool}
+        state={playerRpg.state}
+        onSelectClass={playerRpg.setClass}
+        onCombatProgress={playerRpg.recordCombat}
+        onClaimQuest={playerRpg.claimQuest}
+        onManageImages={() => {
+          setQuestVisible(false);
+          setSlideshowReturn(null);
+          setActivePanel('slideshow');
+        }}
+        onDialogue={speakDialogue}
       />
     </SafeAreaView>
     </ColorContext.Provider>
@@ -1704,6 +1967,7 @@ const styles = StyleSheet.create({
     minHeight: 0,
     flexDirection: 'row',
   },
+  hiddenGridRow: { display: 'none' },
   tile: {
     flex: 1,
     minWidth: 0,
@@ -1721,6 +1985,20 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 10,
   },
+  focusButton: { width: 30, height: 28, alignItems: 'center', justifyContent: 'center' },
+  questFab: {
+    position: 'absolute',
+    zIndex: 16,
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 22,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  questFabText: { fontSize: 11, fontWeight: '800' },
   streamNumber: {
     width: 25,
     height: 22,
@@ -1857,6 +2135,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 10,
   },
+  backupCard: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 8, marginTop: 4, marginBottom: 10 },
+  backupActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   syncSettingRow: { marginLeft: 16 },
   settingCopy: { flex: 1 },
   settingTitle: { fontSize: 14, fontWeight: '600' },

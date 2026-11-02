@@ -17,21 +17,21 @@ export type AchievementStats = {
 };
 
 export const playerRanks = [
-  { level: 1, title: 'Rookie' },
-  { level: 3, title: 'Loop Runner' },
-  { level: 5, title: 'Arcade Ace' },
-  { level: 8, title: 'Combo Master' },
-  { level: 12, title: 'Focus Champion' },
-  { level: 20, title: 'Loop Legend' },
+  { level: 1, title: 'Denling' },
+  { level: 3, title: 'Gooner on the Prowl' },
+  { level: 5, title: 'Moonfang Regular' },
+  { level: 8, title: 'Wildpaw Adept' },
+  { level: 12, title: 'After-hours Enchanter' },
+  { level: 20, title: 'Grand Goonmancer' },
 ] as const;
 
 export const playerAchievements: PlayerAchievement[] = [
-  { id: 'first-clear', name: 'First Clear', description: 'Finish your first timed session.', icon: 'flag', metric: 'completedSessions', target: 1 },
-  { id: 'ten-runs', name: 'Ten Runs', description: 'Finish ten timed sessions.', icon: 'repeat', metric: 'completedSessions', target: 10 },
-  { id: 'timekeeper', name: 'Timekeeper', description: 'Reach one hour of total playback.', icon: 'clock', metric: 'totalPlaybackMs', target: 60 * 60_000 },
-  { id: 'marathon', name: 'Marathon', description: 'Finish a session lasting one hour.', icon: 'award', metric: 'bestSessionMs', target: 60 * 60_000 },
-  { id: 'arcade-regular', name: 'Arcade Regular', description: 'Reach ten hours of total playback.', icon: 'activity', metric: 'totalPlaybackMs', target: 10 * 60 * 60_000 },
-  { id: 'level-ten', name: 'Level Ten', description: 'Earn enough XP to reach level 10.', icon: 'zap', metric: 'xp', target: 90 },
+  { id: 'first-clear', name: 'First Pawprint', description: 'Complete your first den session.', icon: 'flag', metric: 'completedSessions', target: 1 },
+  { id: 'ten-runs', name: 'Ten Den Nights', description: 'Finish ten timed sessions in your private den.', icon: 'repeat', metric: 'completedSessions', target: 10 },
+  { id: 'timekeeper', name: 'An Hour in the Den', description: 'Reach one hour of total playback.', icon: 'clock', metric: 'totalPlaybackMs', target: 60 * 60_000 },
+  { id: 'marathon', name: 'Long-Haul Gooner', description: 'Finish a session lasting one hour.', icon: 'award', metric: 'bestSessionMs', target: 60 * 60_000 },
+  { id: 'arcade-regular', name: 'Den Fixture', description: 'Reach ten hours of total playback.', icon: 'activity', metric: 'totalPlaybackMs', target: 10 * 60 * 60_000 },
+  { id: 'level-ten', name: 'Goonmancer Apprentice', description: 'Earn enough XP to reach level 10.', icon: 'zap', metric: 'xp', target: 90 },
 ];
 
 export function playerRankTitle(level: number): string {

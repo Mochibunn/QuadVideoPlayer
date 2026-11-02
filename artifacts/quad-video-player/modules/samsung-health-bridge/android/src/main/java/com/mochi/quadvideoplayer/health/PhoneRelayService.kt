@@ -142,7 +142,7 @@ class PhoneRelayService : Service() {
     }
     return builder
       .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-      .setContentTitle("Quad Video Player heart-rate bridge")
+      .setContentTitle("Goon Quest heart-rate bridge")
       .setContentText("Ready to relay readings to a paired tablet.")
       .setOngoing(true)
       .build()
@@ -173,7 +173,7 @@ class PhoneRelayService : Service() {
   companion object {
     const val SERVICE_UUID_TEXT = "7d9f4a14-04ca-4bdb-a173-8e1ec1e6d5c1"
     private val SERVICE_UUID: UUID = UUID.fromString(SERVICE_UUID_TEXT)
-    private const val SERVICE_NAME = "Quad Video Player HR"
+    private const val SERVICE_NAME = "Goon Quest HR"
     private const val NOTIFICATION_CHANNEL = "qvp-heart-rate-bridge"
     private const val NOTIFICATION_ID = 8301
   }

@@ -133,20 +133,20 @@ export default function ViewingSessionTimer({
                   <Feather name="star" size={20} color={colors.primary} />
                 </View>
                 <Text style={[styles.celebrationEyebrow, { color: '#ffd248' }]}>
-                  {score >= 2 * VIEWING_ACHIEVEMENT_MS ? 'TWO-HOUR MILESTONE' : 'ONE-HOUR MILESTONE'}
+                  {score >= 2 * VIEWING_ACHIEVEMENT_MS ? 'TWO-HOUR GUILD MILESTONE' : 'ONE-HOUR GUILD MILESTONE'}
                 </Text>
                 <Text accessibilityRole="header" style={[styles.celebrationTitle, { color: colors.foreground }]}>
                   {congratsMessage}
                 </Text>
                 <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
                   You played for {formatViewingTime(score)} and finished on {localSessionDate(finishRecap?.finishedAtMs ?? now)}.
-                  {'\n'}All-time playback: {formatViewingTime(store.totalPlaybackMs)}.
-                  {'\n'}{recapRank ? `Leaderboard place: #${recapRank}.` : 'Your session is saved with your playback history.'}
+                  {'\n'}All-time loop: {formatViewingTime(store.totalPlaybackMs)}.
+                  {'\n'}{recapRank ? `Guild table place: #${recapRank}.` : 'Your run is saved in the guild ledger.'}
                 </Text>
                 <Pressable accessibilityRole="button" onPress={() => {
                   onCelebrateDone(); onRecapDismiss(); setLeaderboardVisible(true);
                 }} style={[styles.primaryButton, { backgroundColor: colors.primary }]}>
-                  <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>See the leaderboard</Text>
+                  <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>View guild standings</Text>
                 </Pressable>
                 <Pressable accessibilityRole="button" onPress={() => { onCelebrateDone(); onRecapDismiss(); }} style={styles.secondaryButton}>
                   <Text style={[styles.closeText, { color: colors.mutedForeground }]}>Close</Text>
@@ -157,22 +157,22 @@ export default function ViewingSessionTimer({
                 <View style={[styles.achievementBadge, { backgroundColor: `${colors.primary}24` }]}>
                   <Feather name="award" size={42} color={colors.primary} />
                 </View>
-                <Text style={[styles.celebrationEyebrow, { color: colors.primary }]}>SESSION SAVED</Text>
-                <Text accessibilityRole="header" style={[styles.celebrationTitle, { color: colors.foreground }]}>Your loop total</Text>
+                <Text style={[styles.celebrationEyebrow, { color: colors.primary }]}>RUN RECORDED</Text>
+                <Text accessibilityRole="header" style={[styles.celebrationTitle, { color: colors.foreground }]}>Your den session</Text>
                 <Text style={[styles.duration, styles.recapDuration, { color: colors.foreground }]}>
                   {formatViewingTime(finishRecap.durationMs)}
                 </Text>
                 <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-                  {recapRank ? `Leaderboard place: #${recapRank}.` : 'Session saved to your all-time total.'}
+                  {recapRank ? `Guild table place: #${recapRank}.` : 'Added to your all-time loop.'}
                   {'\n'}Finished {localSessionDate(finishRecap.finishedAtMs)}
                   {'\n'}Unique videos watched: {finishRecap.watchedVideoCount}
                   {'\n'}Videos in pool: {totalVideoCount}
-                  {'\n'}All-time playback: {formatViewingTime(store.totalPlaybackMs)}
+                  {'\n'}All-time loop: {formatViewingTime(store.totalPlaybackMs)}
                 </Text>
                 <Pressable accessibilityRole="button" onPress={() => {
                   onRecapDismiss(); setLeaderboardVisible(true);
                 }} style={[styles.primaryButton, { backgroundColor: colors.primary }]}>
-                  <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>See the leaderboard</Text>
+                  <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>View guild standings</Text>
                 </Pressable>
                 <Pressable accessibilityRole="button" onPress={onRecapDismiss} style={styles.secondaryButton}>
                   <Text style={[styles.closeText, { color: colors.mutedForeground }]}>Close</Text>
@@ -182,8 +182,8 @@ export default function ViewingSessionTimer({
               <>
                 <View style={styles.header}>
                   <View style={styles.heading}>
-                    <Text accessibilityRole="header" style={[styles.title, { color: colors.foreground }]}>Playback leaderboard</Text>
-                    <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Your best sessions · saved on this device</Text>
+                    <Text accessibilityRole="header" style={[styles.title, { color: colors.foreground }]}>Guild standings</Text>
+                    <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Your strongest runs · saved on this device</Text>
                   </View>
                   <Pressable accessibilityRole="button" accessibilityLabel="Close leaderboard"
                     onPress={() => setLeaderboardVisible(false)} style={styles.iconButton}>
@@ -246,7 +246,7 @@ export default function ViewingSessionTimer({
                   </View>
                   <View style={styles.achievementSection}>
                     <View style={styles.achievementHeading}>
-                      <Text style={[styles.totalLabel, { color: colors.foreground }]}>Achievement case</Text>
+                      <Text style={[styles.totalLabel, { color: colors.foreground }]}>Guild honors</Text>
                       <Text style={[styles.achievementCount, { color: colors.primary }]}>
                         {unlockedAchievements}/{achievements.length} unlocked
                       </Text>
@@ -290,7 +290,7 @@ export default function ViewingSessionTimer({
                     </View>
                   </View>
                   {!store.leaderboard.length ? (
-                    <Text style={[styles.empty, { color: colors.mutedForeground }]}>Finish a session to set your first score.</Text>
+                    <Text style={[styles.empty, { color: colors.mutedForeground }]}>Complete a run to earn your first place on the guild table.</Text>
                   ) : store.leaderboard.map((entry, index) => (
                     <View key={entry.id} style={[styles.scoreRow, { borderColor: colors.border }]}>
                       <Text style={[styles.rankNumber, { color: index === 0 ? '#ffd248' : colors.mutedForeground }]}>
@@ -327,8 +327,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 14, borderRadius: 24, borderWidth: 1,
   },
   floatingText: { fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'], maxWidth: 310 },
-  backdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 18, backgroundColor: 'rgba(0,0,0,0.84)' },
-  panel: { width: '92%', maxWidth: 520, maxHeight: '88%', padding: 20, borderRadius: 20, borderWidth: 1 },
+  backdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 18, backgroundColor: 'rgba(0,0,0,0.90)' },
+  panel: { width: '92%', maxWidth: 520, maxHeight: '88%', padding: 20, borderRadius: 22, borderWidth: 1 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   heading: { flex: 1 },
   title: { fontSize: 21, fontWeight: '800' },
@@ -336,8 +336,8 @@ const styles = StyleSheet.create({
   iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   rows: { flexShrink: 1 },
   rowsContent: { gap: 8, paddingVertical: 6 },
-  activeCard: { padding: 14, borderWidth: 1, borderRadius: 14, marginBottom: 5 },
-  xpCard: { padding: 12, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, gap: 8, marginBottom: 6 },
+  activeCard: { padding: 14, borderWidth: 1, borderRadius: 16, marginBottom: 5 },
+  xpCard: { padding: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, gap: 8, marginBottom: 6 },
   xpValue: { fontSize: 13, fontWeight: '700' },
   rankTitle: { fontSize: 10, fontWeight: '700', marginTop: 2 },
   xpTrack: { height: 6, borderRadius: 4, overflow: 'hidden' },
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
   achievementHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   achievementCount: { fontSize: 11, fontWeight: '800' },
   achievementGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
-  achievementCard: { width: '48%', minHeight: 118, borderWidth: 1, borderRadius: 12, padding: 10, gap: 6 },
+  achievementCard: { width: '48%', minHeight: 118, borderWidth: 1, borderRadius: 15, padding: 10, gap: 6 },
   achievementCardHeading: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   achievementName: { flex: 1, fontSize: 12, fontWeight: '800' },
   achievementDescription: { minHeight: 30, fontSize: 10, lineHeight: 14 },

@@ -77,7 +77,7 @@ export default function SessionMilestoneConfetti({
         );
       })}
       <View style={[styles.banner, { backgroundColor: colors.playbackOverlay, borderColor: colors.primary }]}>
-        <Text style={[styles.kicker, { color: colors.primary }]}>{minutes}-MINUTE MILESTONE · +10 XP</Text>
+        <Text style={[styles.kicker, { color: colors.primary }]}>{minutes}-MINUTE GUILD MARK · +10 XP</Text>
         <Text accessibilityLiveRegion="polite" style={[styles.message, { color: colors.foreground }]}>{message}</Text>
       </View>
     </View>
@@ -87,8 +87,8 @@ export default function SessionMilestoneConfetti({
 const styles = StyleSheet.create({
   particle: { position: 'absolute', left: 0, top: 0, borderRadius: 2 },
   banner: {
-    position: 'absolute', top: '24%', alignSelf: 'center', maxWidth: '86%', minWidth: 260,
-    paddingVertical: 15, paddingHorizontal: 22, borderRadius: 16, borderWidth: 1,
+    position: 'absolute', top: '24%', alignSelf: 'center', maxWidth: '88%', minWidth: 260,
+    paddingVertical: 17, paddingHorizontal: 23, borderRadius: 19, borderWidth: 1,
     alignItems: 'center', gap: 6,
   },
   kicker: { fontSize: 11, fontWeight: '800', letterSpacing: 1.1, textAlign: 'center' },

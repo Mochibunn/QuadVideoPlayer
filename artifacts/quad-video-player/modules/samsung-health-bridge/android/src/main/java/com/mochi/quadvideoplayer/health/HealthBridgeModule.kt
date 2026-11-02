@@ -27,7 +27,7 @@ class HealthBridgeModule : Module() {
           )
         }
         .sortedBy { it["name"]?.lowercase() ?: "" }
-    }.runOnQueue(Queues.IO)
+    }.runOnQueue(Queues.DEFAULT)
 
     AsyncFunction("startPhoneRelay") {
       val context = requireContext()
@@ -84,15 +84,15 @@ class HealthBridgeModule : Module() {
         throw IllegalStateException("Turn on Bluetooth on the tablet and phone.")
       }
       TabletBluetoothClient.connect(adapter, address)
-    }.runOnQueue(Queues.IO)
+    }.runOnQueue(Queues.DEFAULT)
 
     AsyncFunction("disconnectTablet") {
       TabletBluetoothClient.disconnect()
-    }.runOnQueue(Queues.IO)
+    }.runOnQueue(Queues.DEFAULT)
   }
 
   private fun requireContext() = appContext.reactContext
-    ?: throw IllegalStateException("Quad Video Player is not available.")
+    ?: throw IllegalStateException("Goon Quest is not available.")
 
   private fun requireBluetoothConnect(context: android.content.Context) {
     if (

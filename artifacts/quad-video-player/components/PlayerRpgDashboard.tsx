@@ -58,9 +58,10 @@ export default function PlayerRpgDashboard({
     <View style={[styles.card, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
       <View style={styles.header}>
         <View style={styles.headingCopy}>
-          <Text style={[styles.title, { color: colors.foreground }]}>RPG campaign</Text>
+          <Text style={[styles.kicker, { color: colors.primary }]}>MOONLIT GUILD</Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>Your campaign</Text>
           <Text style={[styles.caption, { color: colors.mutedForeground }]}>
-            Play to progress. All stats stay on this device.
+            Keep the loop rolling. Your ledger stays on this device.
           </Text>
         </View>
         <View style={[styles.coinPill, { backgroundColor: colors.accent }]}>
@@ -74,27 +75,27 @@ export default function PlayerRpgDashboard({
           <Feather name="zap" size={16} color={colors.primary} />
           <View>
             <Text style={[styles.statValue, { color: colors.foreground }]}>{streak} day{streak === 1 ? '' : 's'}</Text>
-            <Text style={[styles.statCaption, { color: colors.mutedForeground }]}>current streak</Text>
+            <Text style={[styles.statCaption, { color: colors.mutedForeground }]}>den streak</Text>
           </View>
         </View>
         <View style={[styles.streakBadge, { borderColor: colors.border, backgroundColor: colors.background }]}>
           <Feather name="award" size={16} color={colors.primary} />
           <View>
             <Text style={[styles.statValue, { color: colors.foreground }]}>{state.bestStreak} day{state.bestStreak === 1 ? '' : 's'}</Text>
-            <Text style={[styles.statCaption, { color: colors.mutedForeground }]}>best streak</Text>
+            <Text style={[styles.statCaption, { color: colors.mutedForeground }]}>longest run</Text>
           </View>
         </View>
       </View>
       <Text style={[styles.caption, { color: colors.mutedForeground, marginTop: 6 }]}>
         {nextStreakReward
-          ? `Next streak reward: ${nextStreakReward.days} days · ${nextStreakRewardCoins} coins`
-          : 'All one-time streak rewards earned'}
+          ? `Next guild purse: ${nextStreakReward.days} days · ${nextStreakRewardCoins} coins`
+          : 'Every streak purse is yours'}
       </Text>
 
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Quest board</Text>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Daily den duties</Text>
         <Text style={[styles.caption, { color: colors.mutedForeground }]}>
-          A day counts toward your streak after 10 active playback minutes.
+          Spend 10 active minutes with the guild to mark a day on your streak.
         </Text>
         {quests.map((quest) => {
           const complete = quest.progress >= quest.target;
@@ -138,16 +139,16 @@ export default function PlayerRpgDashboard({
           );
         })}
         <Text style={[styles.caption, { color: colors.mutedForeground }]}>
-          This week: {weeklyActiveDayCount(state)}/{4} qualifying days.
+          This week: {weeklyActiveDayCount(state)}/{4} nights in good company.
         </Text>
       </View>
 
       <View style={styles.section}>
         <View style={styles.sectionHeading}>
           <View>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Skill tree</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Beastfolk arts</Text>
             <Text style={[styles.caption, { color: colors.mutedForeground }]}>
-              {state.skillPoints} skill point{state.skillPoints === 1 ? '' : 's'} available · earned at each new level
+              {state.skillPoints} talent mark{state.skillPoints === 1 ? '' : 's'} · earned at each new rank
             </Text>
           </View>
         </View>
@@ -181,7 +182,7 @@ export default function PlayerRpgDashboard({
       <View style={styles.section}>
         <View style={styles.sectionHeading}>
           <Feather name="heart" size={18} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Companion</Text>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Your familiar</Text>
         </View>
         <View style={[styles.petCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
           <View style={[styles.petMark, { backgroundColor: colors.accent }]}>
@@ -190,13 +191,13 @@ export default function PlayerRpgDashboard({
           <View style={styles.petCopy}>
             <Text style={[styles.petName, { color: colors.foreground }]}>{state.petName}</Text>
             <Text style={[styles.caption, { color: colors.mutedForeground }]}>
-              Familiar · level {petLevel}{petAccessory ? ` · ${petAccessory.name}` : ''}
+              Den companion · rank {petLevel}{petAccessory ? ` · ${petAccessory.name}` : ''}
             </Text>
             <View style={[styles.petTrack, { backgroundColor: colors.muted }]}>
               <View style={[styles.petProgress, { width: `${Math.round(petLevelProgress * 100)}%`, backgroundColor: colors.primary }]} />
             </View>
             <Text style={[styles.progressText, { color: colors.mutedForeground }]}>
-              {state.petXp % PET_XP_PER_LEVEL}/{PET_XP_PER_LEVEL} companion XP
+              {state.petXp % PET_XP_PER_LEVEL}/{PET_XP_PER_LEVEL} familiar XP
             </Text>
           </View>
         </View>
@@ -206,7 +207,7 @@ export default function PlayerRpgDashboard({
           editable={!disabled}
           defaultValue={state.petName}
           maxLength={24}
-          placeholder="Name your companion"
+          placeholder="Name your familiar"
           placeholderTextColor={colors.mutedForeground}
           returnKeyType="done"
           onChangeText={setNameDraft}
@@ -216,9 +217,9 @@ export default function PlayerRpgDashboard({
       </View>
 
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Cosmetic shop</Text>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>The charm counter</Text>
         <Text style={[styles.caption, { color: colors.mutedForeground }]}>
-          Earn coins from quests, then equip a familiar charm.
+          Trade quest spoils for a little den finery.
         </Text>
         {rpgShopItems.filter((item) => !item.matureOnly || state.adultFlavorEnabled).map((item) => {
           const owned = state.ownedItemIds.includes(item.id);
@@ -258,9 +259,9 @@ export default function PlayerRpgDashboard({
         })}
         <View style={[styles.adultRow, { borderTopColor: colors.border }]}>
           <View style={styles.skillCopy}>
-            <Text style={[styles.questTitle, { color: colors.foreground }]}>After Dark flavor</Text>
+            <Text style={[styles.questTitle, { color: colors.foreground }]}>After-dark guild ledger</Text>
             <Text style={[styles.caption, { color: colors.mutedForeground }]}>
-              Optional 18+ cosmetic names and descriptions only.
+              Optional 18+ names and descriptions for cosmetic rewards only.
             </Text>
           </View>
           <SettingSwitch
@@ -285,12 +286,13 @@ export default function PlayerRpgDashboard({
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 15, gap: 15 },
+  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, padding: 16, gap: 16 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headingCopy: { flex: 1, gap: 3 },
-  title: { fontSize: 17, fontWeight: '800' },
+  kicker: { fontSize: 8, fontWeight: '900', letterSpacing: 1.5 },
+  title: { fontSize: 18, fontWeight: '900', letterSpacing: 0.2 },
   caption: { fontSize: 11, lineHeight: 16 },
-  coinPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 18, paddingHorizontal: 10, paddingVertical: 7 },
+  coinPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 18, paddingHorizontal: 11, paddingVertical: 8 },
   coinText: { fontSize: 11, fontWeight: '800' },
   streakRow: { flexDirection: 'row', gap: 8 },
   streakBadge: { flex: 1, minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: 11, paddingHorizontal: 10 },
@@ -298,8 +300,8 @@ const styles = StyleSheet.create({
   statCaption: { fontSize: 10, marginTop: 2 },
   section: { gap: 8 },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionTitle: { fontSize: 14, fontWeight: '800' },
-  quest: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 11, padding: 10 },
+  sectionTitle: { fontSize: 15, fontWeight: '800', letterSpacing: 0.1 },
+  quest: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 13, padding: 11 },
   questCopy: { flex: 1, gap: 4 },
   questTitle: { fontSize: 12, fontWeight: '700' },
   questProgressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 2 },
@@ -310,14 +312,14 @@ const styles = StyleSheet.create({
   skillIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   skillCopy: { flex: 1, gap: 3 },
   skillButton: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  petCard: { flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: 1, borderRadius: 12, padding: 11 },
+  petCard: { flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: 1, borderRadius: 15, padding: 12 },
   petMark: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   petCopy: { flex: 1, gap: 4 },
   petName: { fontSize: 14, fontWeight: '800' },
   petTrack: { height: 5, borderRadius: 4, overflow: 'hidden', marginTop: 2 },
   petProgress: { height: '100%', borderRadius: 4 },
   nameInput: { minHeight: 42, borderWidth: 1, borderRadius: 9, paddingHorizontal: 11, fontSize: 13 },
-  shopRow: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: 10, padding: 9 },
+  shopRow: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: 13, padding: 10 },
   shopIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   shopButton: { minWidth: 48, minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderWidth: 1, borderRadius: 9 },
   shopButtonText: { fontSize: 10, fontWeight: '800' },
