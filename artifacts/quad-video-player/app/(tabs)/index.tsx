@@ -30,8 +30,12 @@ import SettingSwitch from '@/components/SettingSwitch';
 import FadingControls from '@/components/FadingControls';
 import ControlsTimeoutSetting from '@/components/ControlsTimeoutSetting';
 import PoolVideoPreview from '@/components/PoolVideoPreview';
+import PlayerRewardsSettings from '@/components/PlayerRewardsSettings';
+import ScreenBorder from '@/components/ScreenBorder';
 import SoundEffectsSettings from '@/components/SoundEffectsSettings';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { usePlayerSoundEffects, useSoundSettings } from '@/hooks/useSoundSettings';
+import { usePlayerRewardsSettings } from '@/hooks/usePlayerRewardsSettings';
 import { useSessionRegistry } from '@/hooks/useSessionRegistry';
 import SessionControls from '@/components/SessionControls';
 import ViewingSessionTimer from '@/components/ViewingSessionTimer';
@@ -50,6 +54,7 @@ import { pickMediaFiles } from '@/lib/media-picker';
 import { DEFAULT_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
 import { readDownloadsVideos } from '@/lib/downloads-library';
 import { getVideoAudioMode } from '@/lib/audio-mode';
+import { congratulationsFor, isThemeUnlocked, themeUnlockLevels } from '@/lib/player-rewards';
 import { hasVideoExtension, isVideoFile, mediaPlaybackError, videoSourceForUri } from '@/lib/media-formats';
 import {
   applyVideoWatchHistory, formatLastPlayed, pickInitialVideos, pickNextVideo,
@@ -676,6 +681,11 @@ export default function QuadVideoPlayerScreen() {
   const isPlaybackActive = hasVideos && globalPlaying && !pipClosed &&
     (appIsActive || inPip) && [...playingQuadrants].some((id) => id.startsWith(`${session}-`));
   const viewing = useViewingSessions(isPlaybackActive);
+  const playerRewards = usePlayerRewardsSettings();
+  const congratulationsMessage = congratulationsFor(
+    playerRewards.settings.congratsText,
+    viewing.milestone ?? viewing.celebration ?? 0,
+  );
   const controls = useAutoHideControls(hasVideos, activePanel !== null || isPicking || sessionBusy, controlsHideSeconds);
   useEffect(() => {
     if (pipClosed) setGlobalPlaying(false);
@@ -1244,11 +1254,24 @@ export default function QuadVideoPlayerScreen() {
           error={viewing.error}
           isPlaying={isPlaybackActive}
           celebration={viewing.celebration}
+          milestone={viewing.milestone}
+          xp={viewing.xp}
+          congratsMessage={congratulationsMessage}
           finishRecap={viewing.finishRecap}
+          onMilestoneDone={() => viewing.setMilestone(null)}
           onCelebrateDone={() => viewing.setCelebration(null)}
           onRecapDismiss={() => viewing.setFinishRecap(null)}
           onEndSession={viewing.finishSession}
           onRetry={() => void viewing.retryStorage()}
+        />
+        <ScreenBorder
+          enabled={playerRewards.settings.borderEnabled}
+          styleId={playerRewards.settings.borderStyle}
+          scroll={playerRewards.settings.scrollBorder}
+          direction={playerRewards.settings.scrollDirection}
+          speed={playerRewards.settings.scrollSpeed}
+          xp={viewing.xp}
+          allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked}
         />
       </View>
       <Modal
@@ -1282,9 +1305,10 @@ export default function QuadVideoPlayerScreen() {
                 <Feather name="x" size={20} color={colors.foreground} />
               </Pressable>
             </View>
-            <ScrollView
+            <KeyboardAwareScrollViewCompat
               style={styles.settingsScroll}
               contentContainerStyle={styles.settingsContent}
+              bottomOffset={24}
               showsVerticalScrollIndicator
             >
             <View
@@ -1351,7 +1375,14 @@ export default function QuadVideoPlayerScreen() {
               onChange={setControlsHideSeconds}
               disabled={!playbackSettingsLoaded}
             />
-            <SoundEffectsSettings />
+            <SoundEffectsSettings xp={viewing.xp} allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked} />
+            <PlayerRewardsSettings
+              settings={playerRewards.settings}
+              update={playerRewards.update}
+              xp={viewing.xp}
+              ready={playerRewards.ready}
+              error={playerRewards.error}
+            />
             <ActionButton icon="globe" label="Online media sources" onPress={() => {
               setSourcesReturn('settings'); setActivePanel('sources');
             }} />
@@ -1364,28 +1395,37 @@ export default function QuadVideoPlayerScreen() {
             <View style={styles.themeGrid}>
               {themePresets.map((theme) => {
                 const isSelected = theme.id === themeId;
+                const themeUnlocked = isThemeUnlocked(theme.id, viewing.xp, playerRewards.settings.allRewardsUnlocked);
+                const selectionDisabled = !themeUnlocked && !isSelected;
                 return (
                   <Pressable
                     key={theme.id}
                     accessibilityRole="radio"
-                    accessibilityState={{ selected: isSelected }}
+                    accessibilityState={{ selected: isSelected, disabled: selectionDisabled }}
                     accessibilityLabel={`${theme.name} theme`}
+                    disabled={selectionDisabled}
                     onPress={() => setThemeId(theme.id)}
                     style={[
                       styles.themeOption,
                       {
                         backgroundColor: colors.secondary,
                         borderColor: isSelected ? colors.primary : colors.border,
+                        opacity: selectionDisabled ? 0.55 : 1,
                       },
                     ]}
                   >
                     <View style={[styles.themeSwatch, { backgroundColor: theme.primary }]} />
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.themeName, { color: colors.foreground }]}
-                    >
-                      {theme.name}
-                    </Text>
+                    <View style={styles.themeText}>
+                      <Text numberOfLines={1} style={[styles.themeName, { color: colors.foreground }]}>
+                        {theme.name}
+                      </Text>
+                      {selectionDisabled && (
+                        <Text style={[styles.themeUnlock, { color: colors.mutedForeground }]}>
+                          Level {themeUnlockLevels[theme.id] ?? '?'}
+                        </Text>
+                      )}
+                    </View>
+                    {selectionDisabled && <Feather name="lock" size={13} color={colors.mutedForeground} />}
                     {isSelected && (
                       <Feather name="check" size={15} color={colors.primary} />
                     )}
@@ -1393,7 +1433,7 @@ export default function QuadVideoPlayerScreen() {
                 );
               })}
             </View>
-            </ScrollView>
+            </KeyboardAwareScrollViewCompat>
           </View>
         </View>
       </Modal>
@@ -1724,7 +1764,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   themeSwatch: { width: 18, height: 18, borderRadius: 9 },
-  themeName: { flex: 1, fontSize: 13, fontWeight: '600' },
+  themeText: { flex: 1 },
+  themeName: { fontSize: 13, fontWeight: '600' },
+  themeUnlock: { fontSize: 9, marginTop: 1 },
   poolList: { flexGrow: 0, maxHeight: 460 },
   poolListContent: { paddingBottom: 4 },
   poolRow: {

@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import * as Crypto from 'expo-crypto';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useColors } from '@/hooks/useColors';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
 import { parseOnlineSource, type OnlineSource, type RemoteMedia } from '@/lib/online-sources';
@@ -67,6 +68,8 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
       </View>
       <FlatList data={editing ? [] : result?.items ?? []} keyExtractor={(item) => item.id}
         initialNumToRender={6} windowSize={3} style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: 24 }}
+        keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
+        renderScrollComponent={(props) => <KeyboardAwareScrollView {...props} />}
         ListHeaderComponent={<View style={{ gap: 12 }}>
               {label('Create separate booru/tag or subreddit searches, then select a source for each slideshow. Nothing is bulk-downloaded. Online videos play in the four native video quadrants.', true)}
           {api.storageError ? <>{label(api.storageError)}{button('Retry saved searches', () => void api.retryStorage())}</> : null}

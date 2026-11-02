@@ -1,7 +1,9 @@
 import { Feather } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import SessionMilestoneConfetti from '@/components/SessionMilestoneConfetti';
 import { useColors } from '@/hooks/useColors';
+import { experienceIntoLevel, levelForExperience, XP_PER_LEVEL } from '@/lib/player-rewards';
 import {
   elapsedViewingTime, formatViewingTime, localSessionDate, VIEWING_ACHIEVEMENT_MS,
   type ViewingSessionStore,
@@ -14,7 +16,11 @@ type Props = {
   error: string;
   isPlaying: boolean;
   celebration: number | null;
+  milestone: number | null;
+  xp: number;
+  congratsMessage: string;
   finishRecap: ViewingSessionStore['leaderboard'][number] | null;
+  onMilestoneDone(): void;
   onCelebrateDone(): void;
   onRecapDismiss(): void;
   onEndSession(): void | Promise<void>;
@@ -22,7 +28,8 @@ type Props = {
 };
 
 export default function ViewingSessionTimer({
-  store, visible, ready, error, isPlaying, celebration, finishRecap,
+  store, visible, ready, error, isPlaying, celebration, milestone, xp, congratsMessage, finishRecap,
+  onMilestoneDone,
   onCelebrateDone, onRecapDismiss, onEndSession, onRetry,
 }: Props) {
   const colors = useColors();
@@ -34,7 +41,7 @@ export default function ViewingSessionTimer({
     return () => clearInterval(tick);
   }, [store.active?.id, store.active?.resumedAtMs]);
 
-  if (!visible && !celebration) return null;
+  if (!visible && !celebration && !milestone) return null;
   const elapsed = store.active
     ? elapsedViewingTime(isPlaying ? store.active : { ...store.active, resumedAtMs: null }, now)
     : null;
@@ -42,9 +49,12 @@ export default function ViewingSessionTimer({
   const score = celebration ?? 0;
   const rankingVisible = leaderboardVisible && !celebration && !finishRecap;
   const recapRank = finishRecap ? store.leaderboard.findIndex((entry) => entry.id === finishRecap.id) + 1 : 0;
+  const level = levelForExperience(xp);
+  const levelProgress = experienceIntoLevel(xp) / XP_PER_LEVEL;
 
   return (
     <>
+      <SessionMilestoneConfetti milestoneMs={milestone} message={congratsMessage} onDone={onMilestoneDone} />
       {visible && (
         <Pressable
           accessibilityRole="button"
@@ -78,7 +88,7 @@ export default function ViewingSessionTimer({
                   {score >= 2 * VIEWING_ACHIEVEMENT_MS ? 'TWO-HOUR MILESTONE' : 'ONE-HOUR MILESTONE'}
                 </Text>
                 <Text accessibilityRole="header" style={[styles.celebrationTitle, { color: colors.foreground }]}>
-                  {score >= 2 * VIEWING_ACHIEVEMENT_MS ? 'Two hours! Incredible!' : 'One hour! You did it!'}
+                  {congratsMessage}
                 </Text>
                 <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
                   You played for {formatViewingTime(score)} and finished on {localSessionDate(finishRecap?.finishedAtMs ?? now)}.
@@ -139,6 +149,18 @@ export default function ViewingSessionTimer({
                     </Pressable>
                   </View>
                 )}
+                <View style={[styles.xpCard, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                  <View style={styles.scoreTop}>
+                    <Text style={[styles.rank, { color: colors.primary }]}>LEVEL {level}</Text>
+                    <Text style={[styles.xpValue, { color: colors.foreground }]}>{xp} XP</Text>
+                  </View>
+                  <View style={[styles.xpTrack, { backgroundColor: colors.muted }]}>
+                    <View style={[styles.xpFill, { width: `${Math.round(levelProgress * 100)}%`, backgroundColor: colors.primary }]} />
+                  </View>
+                  <Text style={[styles.date, { color: colors.mutedForeground }]}>
+                    {XP_PER_LEVEL - experienceIntoLevel(xp)} XP to level {level + 1} · earned from active playback
+                  </Text>
+                </View>
                 <ScrollView style={styles.rows} contentContainerStyle={styles.rowsContent}>
                   {store.active && (
                     <View style={[styles.activeCard, { borderColor: colors.primary }]}>
@@ -206,6 +228,10 @@ const styles = StyleSheet.create({
   rows: { flexShrink: 1 },
   rowsContent: { gap: 8, paddingVertical: 6 },
   activeCard: { padding: 14, borderWidth: 1, borderRadius: 14, marginBottom: 5 },
+  xpCard: { padding: 12, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, gap: 8, marginBottom: 6 },
+  xpValue: { fontSize: 13, fontWeight: '700' },
+  xpTrack: { height: 6, borderRadius: 4, overflow: 'hidden' },
+  xpFill: { height: '100%', borderRadius: 4 },
   scoreTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   rank: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   duration: { fontSize: 19, fontWeight: '800', fontVariant: ['tabular-nums'] },

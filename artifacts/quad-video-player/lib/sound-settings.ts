@@ -13,6 +13,12 @@ export const EQ_PRESETS = {
   Voice: [-3, -1, 4, 3, -2],
   Bright: [-2, 0, 1, 3, 5],
 };
+export const ADVANCED_EQ_PRESETS = {
+  Cinematic: [4, 2, 0, 2, 4],
+  'Warm vinyl': [3, 2, -1, -2, -4],
+  'Night drive': [2, 0, -1, 2, 4],
+  'Soft focus': [-2, 1, 3, 1, -2],
+};
 function bounded(value: unknown, fallback: number, min: number, max: number) {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
 }

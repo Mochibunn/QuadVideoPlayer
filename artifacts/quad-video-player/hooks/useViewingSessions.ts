@@ -2,10 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  emptyViewingSessions, finishViewingSession, parseViewingSessions, recoverViewingSessions,
-  VIEWING_ACHIEVEMENT_MS, type FinishedViewingSession,
-  VIEWING_SESSIONS_KEY, type ViewingSessionStore,
+  elapsedViewingTime, emptyViewingSessions, finishViewingSession, parseViewingSessions, recoverViewingSessions,
+  VIEWING_ACHIEVEMENT_MS, VIEWING_SESSIONS_KEY, type FinishedViewingSession, type ViewingSessionStore,
 } from '@/lib/viewing-sessions';
+import { experienceForPlayback, nextSessionMilestone, SESSION_MILESTONE_MS } from '@/lib/player-rewards';
 
 export function useViewingSessions(isPlaybackActive: boolean) {
   const [store, setStore] = useState(emptyViewingSessions);
@@ -14,9 +14,22 @@ export function useViewingSessions(isPlaybackActive: boolean) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [celebration, setCelebration] = useState<number | null>(null);
+  const [milestone, setMilestone] = useState<number | null>(null);
+  const [xp, setXp] = useState(0);
+  const xpRef = useRef(0);
+  const lastMilestone = useRef({ sessionId: '', elapsedMs: 0 });
   const [finishRecap, setFinishRecap] = useState<FinishedViewingSession | null>(null);
   const operations = useRef<Promise<void>>(Promise.resolve());
   const lastCheckpoint = useRef(0);
+
+  const syncXp = useCallback((current: ViewingSessionStore, now: number) => {
+    const activeMs = current.active ? elapsedViewingTime(current.active, now) : 0;
+    const nextXp = experienceForPlayback(current.totalPlaybackMs, activeMs);
+    if (nextXp !== xpRef.current) {
+      xpRef.current = nextXp;
+      setXp(nextXp);
+    }
+  }, []);
 
   const commit = useCallback(<Result,>(
     update: (current: ViewingSessionStore) => { store: ViewingSessionStore; result: Result },
@@ -31,6 +44,7 @@ export function useViewingSessions(isPlaybackActive: boolean) {
         setStore(next);
         setError('');
       }
+      syncXp(next, Date.now());
       return result;
     });
     operations.current = operation.then(
@@ -40,7 +54,7 @@ export function useViewingSessions(isPlaybackActive: boolean) {
       },
     );
     return operation;
-  }, []);
+  }, [syncXp]);
   const mutate = useCallback((update: (current: ViewingSessionStore) => ViewingSessionStore) =>
     commit((current) => ({ store: update(current), result: undefined })), [commit]);
 
@@ -55,6 +69,12 @@ export function useViewingSessions(isPlaybackActive: boolean) {
       }
       storeRef.current = current;
       setStore(current);
+      syncXp(current, Date.now());
+      lastMilestone.current = current.active ? {
+        sessionId: current.active.id,
+        elapsedMs: Math.floor(current.active.elapsedMs / SESSION_MILESTONE_MS) * SESSION_MILESTONE_MS,
+      } : { sessionId: '', elapsedMs: 0 };
+      setMilestone(null);
       setError('');
       loadedRef.current = true;
       setReady(true);
@@ -62,7 +82,7 @@ export function useViewingSessions(isPlaybackActive: boolean) {
       setError(reason instanceof Error ? reason.message : 'Playback history could not be read.');
       setReady(true);
     }
-  }, []);
+  }, [syncXp]);
 
   useEffect(() => { void reload(); }, [reload]);
 
@@ -96,6 +116,21 @@ export function useViewingSessions(isPlaybackActive: boolean) {
     const interval = setInterval(() => {
       const active = storeRef.current.active;
       const now = Date.now();
+      syncXp(storeRef.current, now);
+      if (active && active.resumedAtMs !== null) {
+        if (lastMilestone.current.sessionId !== active.id) {
+          lastMilestone.current = {
+            sessionId: active.id,
+            elapsedMs: Math.floor(active.elapsedMs / SESSION_MILESTONE_MS) * SESSION_MILESTONE_MS,
+          };
+        }
+        const elapsedMs = elapsedViewingTime(active, now);
+        const reached = nextSessionMilestone(elapsedMs, lastMilestone.current.elapsedMs);
+        if (reached !== null) {
+          lastMilestone.current = { sessionId: active.id, elapsedMs: reached };
+          setMilestone(reached);
+        }
+      }
       if (active?.resumedAtMs !== null && active &&
         now - Math.max(active.lastCheckpointMs, lastCheckpoint.current) >= 15_000) {
         lastCheckpoint.current = now;
@@ -104,7 +139,7 @@ export function useViewingSessions(isPlaybackActive: boolean) {
       }
     }, 2_000);
     return () => clearInterval(interval);
-  }, [error, isPlaybackActive, mutate, ready]);
+  }, [error, isPlaybackActive, mutate, ready, syncXp]);
 
   const finishSession = useCallback(async () => {
     const finished = await commit((current) => {
@@ -113,9 +148,11 @@ export function useViewingSessions(isPlaybackActive: boolean) {
     });
     if (finished) {
       setFinishRecap(finished);
+      setMilestone(null);
       if (finished.durationMs >= VIEWING_ACHIEVEMENT_MS) setCelebration(finished.durationMs);
     }
   }, [commit]);
 
-  return { store, ready, error, celebration, setCelebration, finishRecap, setFinishRecap, finishSession, retryStorage: reload };
+  return { store, ready, error, celebration, setCelebration, milestone, setMilestone, xp, finishRecap,
+    setFinishRecap, finishSession, retryStorage: reload };
 }
