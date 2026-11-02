@@ -32,6 +32,7 @@ import TouchSlider from '@/components/TouchSlider';
 import ControlsTimeoutSetting from '@/components/ControlsTimeoutSetting';
 import PoolVideoPreview from '@/components/PoolVideoPreview';
 import PlayerRewardsSettings from '@/components/PlayerRewardsSettings';
+import PlayerRpgDashboard from '@/components/PlayerRpgDashboard';
 import ScreenBorder from '@/components/ScreenBorder';
 import SoundEffectsSettings from '@/components/SoundEffectsSettings';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
@@ -41,6 +42,7 @@ import { useSessionRegistry } from '@/hooks/useSessionRegistry';
 import SessionControls from '@/components/SessionControls';
 import ViewingSessionTimer from '@/components/ViewingSessionTimer';
 import { useViewingSessions } from '@/hooks/useViewingSessions';
+import { usePlayerRpg } from '@/hooks/usePlayerRpg';
 import { seekPosition, type SessionSnapshot, type VideoSnapshot } from '@/lib/sessions';
 import { prepareVideoSlot, QUAD_BUFFER_OPTIONS } from '@/lib/player-startup';
 import { showCrashReport } from '@/components/CrashReportNotice';
@@ -749,9 +751,11 @@ export default function QuadVideoPlayerScreen() {
   const isPlaybackActive = hasVideos && globalPlaying && !pipClosed &&
     (appIsActive || inPip) && [...playingQuadrants].some((id) => id.startsWith(`${session}-`));
   const viewing = useViewingSessions(isPlaybackActive);
+  const playerRpg = usePlayerRpg(isPlaybackActive, viewing.xp, viewing.ready);
   const recordVideoStarted = useCallback((videoId: string) => {
     if (viewing.ready && viewing.store.active) void viewing.recordVideosWatched([videoId]);
-  }, [viewing.ready, viewing.store.active?.id, viewing.recordVideosWatched]);
+    playerRpg.recordVideosWatched([videoId]);
+  }, [playerRpg.recordVideosWatched, viewing.ready, viewing.store.active?.id, viewing.recordVideosWatched]);
   useEffect(() => {
     if (!viewing.ready || !viewing.store.active) return;
     const prefix = `${session}-`;
@@ -761,8 +765,11 @@ export default function QuadVideoPlayerScreen() {
       const id = Number.isInteger(slot) ? activeAssetsRef.current.get(slot)?.id : undefined;
       return id ? [id] : [];
     });
-    if (activeVideoIds.length) void viewing.recordVideosWatched(activeVideoIds);
-  }, [playingQuadrants, session, viewing.ready, viewing.store.active?.id, viewing.recordVideosWatched]);
+    if (activeVideoIds.length) {
+      void viewing.recordVideosWatched(activeVideoIds);
+      playerRpg.recordVideosWatched(activeVideoIds);
+    }
+  }, [playingQuadrants, playerRpg.recordVideosWatched, session, viewing.ready, viewing.store.active?.id, viewing.recordVideosWatched]);
   const playerRewards = usePlayerRewardsSettings();
   const congratulationsMessage = congratulationsFor(
     playerRewards.settings.congratsText,
@@ -1467,6 +1474,18 @@ export default function QuadVideoPlayerScreen() {
               xp={viewing.xp}
               ready={playerRewards.ready}
               error={playerRewards.error}
+            />
+            <PlayerRpgDashboard
+              state={playerRpg.state}
+              ready={playerRpg.ready}
+              error={playerRpg.error}
+              onRetry={() => void playerRpg.retry()}
+              onClaimQuest={playerRpg.claimQuest}
+              onUpgradeSkill={playerRpg.upgradeSkill}
+              onBuyItem={playerRpg.buyItem}
+              onEquipItem={playerRpg.equipItem}
+              onSetAdultFlavor={playerRpg.setAdultFlavor}
+              onRenameCompanion={playerRpg.renameCompanion}
             />
             <ActionButton icon="globe" label="Online media sources" onPress={() => {
               setSourcesReturn('settings'); setActivePanel('sources');
