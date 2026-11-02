@@ -18,7 +18,8 @@ if [[ ! -f android/gradlew ]]; then
 fi
 
 cd android
-./gradlew :expo-video:testDebugUnitTest :downloads-media:testDebugUnitTest :app:assembleRelease \
+./gradlew :expo-video:testDebugUnitTest :downloads-media:testDebugUnitTest \
+  :samsung-health-bridge:testDebugUnitTest :app:assembleRelease :wear:assembleRelease \
   -PreactNativeArchitectures=arm64-v8a \
   -Pandroid.enableMinifyInReleaseBuilds="${ANDROID_MINIFY:-false}" \
   -Pandroid.enableShrinkResourcesInReleaseBuilds="${ANDROID_MINIFY:-false}" \
@@ -27,7 +28,10 @@ cd android
 OUTPUT="$WORKSPACE/generated-artifacts/android"
 mkdir -p "$OUTPUT"
 cp app/build/outputs/apk/release/app-release.apk "$OUTPUT/quad-video-player-arm64.apk"
+cp wear/build/outputs/apk/release/wear-release.apk "$OUTPUT/quad-video-player-watch.apk"
 cd "$OUTPUT"
 sha256sum quad-video-player-arm64.apk > quad-video-player-arm64.apk.sha256
+sha256sum quad-video-player-watch.apk > quad-video-player-watch.apk.sha256
 echo "APK: $OUTPUT/quad-video-player-arm64.apk"
+echo "Watch APK: $OUTPUT/quad-video-player-watch.apk"
 echo "Signed with the development key; not intended for store distribution."

@@ -33,6 +33,7 @@ import ControlsTimeoutSetting from '@/components/ControlsTimeoutSetting';
 import PoolVideoPreview from '@/components/PoolVideoPreview';
 import PlayerRewardsSettings from '@/components/PlayerRewardsSettings';
 import PlayerRpgDashboard from '@/components/PlayerRpgDashboard';
+import HeartRateSettings from '@/components/HeartRateSettings';
 import ScreenBorder from '@/components/ScreenBorder';
 import SoundEffectsSettings from '@/components/SoundEffectsSettings';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
@@ -1487,6 +1488,7 @@ export default function QuadVideoPlayerScreen() {
               onSetAdultFlavor={playerRpg.setAdultFlavor}
               onRenameCompanion={playerRpg.renameCompanion}
             />
+            <HeartRateSettings />
             <ActionButton icon="globe" label="Online media sources" onPress={() => {
               setSourcesReturn('settings'); setActivePanel('sources');
             }} />

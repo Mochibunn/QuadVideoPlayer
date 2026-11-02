@@ -1,0 +1,17 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.mochi.quadvideoplayer'
+version = '1.0.0'
+
+android {
+  namespace 'com.mochi.quadvideoplayer.health'
+}
+
+dependencies {
+  implementation 'com.facebook.react:react-android'
+  implementation 'com.google.android.gms:play-services-wearable:19.0.0'
+  testImplementation 'junit:junit:4.13.2'
+}
