@@ -1,5 +1,5 @@
 export const PLAYER_RPG_KEY = 'quad.player.rpg.v1';
-export const PLAYER_RPG_VERSION = 2;
+export const PLAYER_RPG_VERSION = 3;
 export const STREAK_QUALIFY_MS = 10 * 60_000;
 export const DAILY_PLAYBACK_TARGET_MS = 15 * 60_000;
 export const DAILY_VIDEO_TARGET = 4;
@@ -16,6 +16,104 @@ export const streakRewards = [
 export type RpgSkillId = 'fortune' | 'bond' | 'bargain';
 export type GoonQuestClassId = 'guardian' | 'arcanist' | 'ranger' | 'rogue';
 export type RpgSkills = Record<RpgSkillId, number>;
+export type StoryQuestObjective = 'defeats' | 'spells' | 'dungeons' | 'videos';
+export type StoryQuest = {
+  id: string;
+  title: string;
+  description: string;
+  objective: StoryQuestObjective;
+  progress: number;
+  target: number;
+  rewardCoins: number;
+  claimed: boolean;
+  createdAt: number;
+};
+
+export const storyQuestObjectiveOptions: {
+  id: StoryQuestObjective;
+  label: string;
+  target: number;
+  rewardCoins: number;
+  unit: 'targets' | 'casts' | 'dungeons' | 'videos';
+}[] = [
+  { id: 'defeats', label: 'Defeat 4 enemies', target: 4, rewardCoins: 20, unit: 'targets' },
+  { id: 'spells', label: 'Cast 3 skills or spells', target: 3, rewardCoins: 20, unit: 'casts' },
+  { id: 'dungeons', label: 'Clear an image dungeon', target: 1, rewardCoins: 30, unit: 'dungeons' },
+  { id: 'videos', label: 'Watch 3 different videos', target: 3, rewardCoins: 20, unit: 'videos' },
+];
+
+const STORY_QUEST_LIMIT = 10;
+
+function cleanStoryText(value: unknown, maxLength: number): string {
+  return typeof value === 'string'
+    ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength)
+    : '';
+}
+
+export function createStoryQuest(
+  id: string,
+  objective: StoryQuestObjective,
+  title: string,
+  description: string,
+  createdAt = Date.now(),
+): StoryQuest | null {
+  const config = storyQuestObjectiveOptions.find((item) => item.id === objective);
+  const safeTitle = cleanStoryText(title, 64);
+  const safeDescription = cleanStoryText(description, 280);
+  if (!config || !/^story-[a-zA-Z0-9_-]{4,80}$/.test(id) || !safeTitle || !safeDescription) return null;
+  return {
+    id,
+    title: safeTitle,
+    description: safeDescription,
+    objective,
+    progress: 0,
+    target: config.target,
+    rewardCoins: config.rewardCoins,
+    claimed: false,
+    createdAt: Number.isSafeInteger(createdAt) && createdAt > 0 ? createdAt : Date.now(),
+  };
+}
+
+export function parseStoryQuests(value: unknown): StoryQuest[] {
+  if (!Array.isArray(value)) return [];
+  const quests: StoryQuest[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const data = item as Record<string, unknown>;
+    const config = storyQuestObjectiveOptions.find((option) => option.id === data.objective);
+    if (!config || typeof data.id !== 'string' || !/^story-[a-zA-Z0-9_-]{4,80}$/.test(data.id)) continue;
+    if (seen.has(data.id)) continue;
+    const quest = createStoryQuest(
+      data.id,
+      config.id,
+      cleanStoryText(data.title, 64),
+      cleanStoryText(data.description, 280),
+      typeof data.createdAt === 'number' ? data.createdAt : 0,
+    );
+    if (!quest) continue;
+    quest.progress = Math.min(quest.target, clampInteger(data.progress, 0, quest.target));
+    quest.claimed = data.claimed === true;
+    seen.add(quest.id);
+    quests.push(quest);
+    if (quests.length >= STORY_QUEST_LIMIT) break;
+  }
+  return quests;
+}
+
+export function progressStoryQuests(
+  quests: StoryQuest[],
+  progress: Partial<Record<StoryQuestObjective, number>>,
+): StoryQuest[] {
+  let changed = false;
+  const next = quests.map((quest) => {
+    const amount = clampInteger(progress[quest.objective], 0, 10_000);
+    if (!amount || quest.claimed || quest.progress >= quest.target) return quest;
+    changed = true;
+    return { ...quest, progress: Math.min(quest.target, quest.progress + amount) };
+  });
+  return changed ? next : quests;
+}
 export const goonQuestClasses: {
   id: GoonQuestClassId;
   name: string;
@@ -60,7 +158,7 @@ export const rpgShopItems: RpgShopItem[] = [
 ];
 
 export type PlayerRpgState = {
-  version: 2;
+  version: 3;
   dayKey: string;
   weekKey: string;
   todayPlaybackMs: number;
@@ -87,10 +185,11 @@ export type PlayerRpgState = {
   defeatedToday: number;
   spellsToday: number;
   dungeonsToday: number;
+  storyQuests: StoryQuest[];
 };
 
 export type RpgQuest = {
-  id: 'daily-focus' | 'daily-explorer' | 'daily-hunter' | 'daily-arcana' | 'daily-dungeon' | 'weekly-cadence';
+  id: string;
   title: string;
   adultTitle: string;
   description: string;
@@ -169,6 +268,7 @@ export function emptyPlayerRpgState(now = Date.now()): PlayerRpgState {
     defeatedToday: 0,
     spellsToday: 0,
     dungeonsToday: 0,
+    storyQuests: [],
   };
 }
 
@@ -202,7 +302,7 @@ export function parsePlayerRpg(raw: string | null, now = Date.now()): PlayerRpgS
     throw new Error('The RPG progress data is damaged.');
   }
   const data = parsed as Record<string, unknown>;
-  if (data.version !== 1 && data.version !== PLAYER_RPG_VERSION) {
+  if (data.version !== 1 && data.version !== 2 && data.version !== PLAYER_RPG_VERSION) {
     throw new Error('The RPG progress format is not supported.');
   }
   const today = localDayKey(now);
@@ -256,6 +356,7 @@ export function parsePlayerRpg(raw: string | null, now = Date.now()): PlayerRpgS
     defeatedToday: data.dayKey === today ? clampInteger(data.defeatedToday, 0) : 0,
     spellsToday: data.dayKey === today ? clampInteger(data.spellsToday, 0) : 0,
     dungeonsToday: data.dayKey === today ? clampInteger(data.dungeonsToday, 0) : 0,
+    storyQuests: parseStoryQuests(data.storyQuests),
   };
   if (equippedItemId && rpgShopItems.find((item) => item.id === equippedItemId)?.matureOnly &&
     !state.adultFlavorEnabled) {
@@ -311,8 +412,13 @@ export function recordRpgVideos(state: PlayerRpgState, ids: readonly string[], n
   for (const id of ids) {
     if (id && id.length <= 4096 && known.size < 2_000) known.add(id);
   }
-  if (known.size === current.todayVideoIds.length) return current;
-  return { ...current, todayVideoIds: [...known] };
+  const newlyAdded = known.size - current.todayVideoIds.length;
+  if (newlyAdded === 0) return current;
+  return {
+    ...current,
+    todayVideoIds: [...known],
+    storyQuests: progressStoryQuests(current.storyQuests, { videos: newlyAdded }),
+  };
 }
 
 export function recordRpgCombat(
@@ -332,7 +438,20 @@ export function recordRpgCombat(
     spellsToday: current.spellsToday + spells,
     dungeonsToday: current.dungeonsToday + dungeons,
     coins: current.coins + defeats * 2 + dungeons * 20,
+    storyQuests: progressStoryQuests(current.storyQuests, { defeats, spells, dungeons }),
   };
+}
+
+export function addRpgStoryQuest(state: PlayerRpgState, quest: StoryQuest): PlayerRpgState {
+  const parsed = parseStoryQuests([quest])[0];
+  if (!parsed || state.storyQuests.some((current) => current.id === parsed.id)) return state;
+  const remaining = [...state.storyQuests];
+  if (remaining.length >= STORY_QUEST_LIMIT) {
+    const oldestClaimed = remaining.findIndex((item) => item.claimed);
+    if (oldestClaimed < 0) return state;
+    remaining.splice(oldestClaimed, 1);
+  }
+  return { ...state, storyQuests: [...remaining, parsed] };
 }
 
 export function setGoonQuestClass(state: PlayerRpgState, classId: GoonQuestClassId): PlayerRpgState {
@@ -360,7 +479,7 @@ export function nextRpgStreakReward(state: PlayerRpgState, now = Date.now()) {
 
 export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[] {
   const current = advancePlayerRpgDate(state, now);
-  return [
+  const dailyQuests: RpgQuest[] = [
     {
       id: 'daily-focus',
       title: current.adultFlavorEnabled ? 'Gooner’s focus ritual' : 'Gooning focus ritual',
@@ -446,6 +565,22 @@ export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[
       weekly: true,
     },
   ];
+  const storyQuests = current.storyQuests.map((quest): RpgQuest => {
+    const objective = storyQuestObjectiveOptions.find((item) => item.id === quest.objective)!;
+    return {
+      id: quest.id,
+      title: quest.title,
+      adultTitle: quest.title,
+      description: quest.description,
+      progress: quest.progress,
+      target: quest.target,
+      unit: objective.unit,
+      rewardCoins: quest.rewardCoins,
+      claimed: quest.claimed,
+      weekly: false,
+    };
+  });
+  return [...dailyQuests, ...storyQuests];
 }
 
 export function canClaimRpgQuest(state: PlayerRpgState, questId: RpgQuest['id'], now = Date.now()): boolean {
@@ -459,6 +594,14 @@ export function claimRpgQuest(state: PlayerRpgState, questId: RpgQuest['id'], no
   const quest = getRpgQuests(current, now).find((item) => item.id === questId);
   if (!quest) return current;
   const reward = Math.floor(quest.rewardCoins * (1 + current.skills.fortune * 0.1));
+  if (current.storyQuests.some((item) => item.id === questId)) {
+    return {
+      ...current,
+      coins: current.coins + reward,
+      storyQuests: current.storyQuests.map((item) =>
+        item.id === questId ? { ...item, claimed: true } : item),
+    };
+  }
   return quest.weekly
     ? { ...current, coins: current.coins + reward, weeklyQuestClaimed: true }
     : { ...current, coins: current.coins + reward, claimedDailyQuestIds: [...current.claimedDailyQuestIds, questId] };

@@ -179,7 +179,7 @@ test('version one saves migrate into Goon Quest combat defaults', () => {
   delete legacy.dungeonsToday;
   legacy.version = 1;
   const migrated = rpg.parsePlayerRpg(JSON.stringify(legacy), now);
-  assert.equal(migrated.version, 2);
+  assert.equal(migrated.version, 3);
   assert.equal(migrated.classId, 'guardian');
   assert.equal(migrated.totalDefeated, 0);
   assert.equal(migrated.dungeonsToday, 0);

@@ -9,11 +9,12 @@ import { useColors } from '@/hooks/useColors';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
 import {
   getRpgQuests, goonQuestClasses, type GoonQuestClassId, type PlayerRpgState,
-  type RpgQuest,
+  type RpgQuest, type StoryQuest,
 } from '@/lib/player-rpg';
 import { BOSS_HEALTH_PER_SECOND, bossHealthForRemainingSeconds } from '@/lib/boss-fight';
 import { analyzeVideoBpm } from '@/lib/media-bpm';
 import type { SlideshowImage } from '@/lib/slideshow';
+import { shouldActivateCombatTap, type CombatControlScheme } from '@/lib/input-controls';
 
 type EnemyImage = Pick<SlideshowImage, 'uri' | 'name'> & { preview?: string };
 type DungeonVideo = { id: string; uri: string; name: string };
@@ -39,6 +40,13 @@ type Props = {
   onSelectClass: (id: GoonQuestClassId) => void;
   onCombatProgress: (progress: { defeats?: number; spells?: number; dungeons?: number }) => void;
   onClaimQuest: (id: RpgQuest['id']) => boolean;
+  onAddStoryQuest: (quest: StoryQuest) => boolean;
+  onGenerateStoryQuest: () => Promise<{ quest: StoryQuest; enemyLine: string } | null>;
+  onGenerateCharacterLine: (scene: string) => Promise<string | null>;
+  storytellerReady: boolean;
+  storytellerBusy: boolean;
+  enemyBanterEnabled: boolean;
+  controlScheme: CombatControlScheme;
   onManageImages: () => void;
   onManageSources: () => void;
   onDialogue: (message: string) => void;
@@ -75,7 +83,15 @@ function createWave(pool: EnemyImage[], wave: number, bpm: number | null): Enemy
   });
 }
 
-function BouncingTarget({ enemy, onTap }: { enemy: Enemy; onTap: () => void }) {
+function BouncingTarget({
+  enemy,
+  onTap,
+  controlScheme,
+}: {
+  enemy: Enemy;
+  onTap: () => void;
+  controlScheme: CombatControlScheme;
+}) {
   const colors = useColors();
   const drift = useRef(new Animated.Value(0)).current;
   const [failed, setFailed] = useState(false);
@@ -106,7 +122,11 @@ function BouncingTarget({ enemy, onTap }: { enemy: Enemy; onTap: () => void }) {
       ]}
     >
       <Pressable accessibilityRole="button" accessibilityLabel={`Tap ${enemy.name}, ${enemy.hp} health remaining`}
-        onPress={onTap} style={[styles.targetPressable, { borderColor: colors.primary }]}>
+        onPress={controlScheme === 'touch' ? onTap : undefined}
+        onPointerUp={controlScheme === 'spen' ? (event) => {
+          if (shouldActivateCombatTap(controlScheme, event.nativeEvent.pointerType)) onTap();
+        } : undefined}
+        style={[styles.targetPressable, { borderColor: colors.primary }]}>
         {!failed && <Image source={{ uri: enemy.uri }} contentFit="cover" style={styles.targetImage}
           onError={() => setFailed(true)} transition={0} />}
         <View style={[styles.hpPill, { backgroundColor: colors.secondary, borderColor: colors.primary }]}>
@@ -156,6 +176,8 @@ function QuestRow({
 
 export default function GoonQuestOverlay({
   visible, onClose, pool, state, onSelectClass, onCombatProgress, onClaimQuest, onManageImages, onManageSources, onDialogue,
+  onAddStoryQuest, onGenerateStoryQuest, onGenerateCharacterLine, storytellerReady, storytellerBusy,
+  enemyBanterEnabled, controlScheme,
   videos, videoIndex, videoProgress, videoIsPlaying, bossVideoEnded, onSelectVideo, onBeginBossVideo, onEndBossVideo,
   onBpmResult,
 }: Props) {
@@ -188,9 +210,12 @@ export default function GoonQuestOverlay({
   const [bossBpm, setBossBpm] = useState<number | null>(null);
   const [bossImage, setBossImage] = useState<EnemyImage | null>(null);
   const [bossMessage, setBossMessage] = useState('');
+  const [storyLine, setStoryLine] = useState('');
+  const [storyError, setStoryError] = useState('');
   const bossResultRef = useRef<BossResult>(null);
   const bossHpRef = useRef(0);
   const bossPulse = useRef(new Animated.Value(0)).current;
+  const enemyLineBusy = useRef(false);
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cooldownTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const transitionHandled = useRef(false);
@@ -491,6 +516,17 @@ export default function GoonQuestOverlay({
       onDialogue(adultMode
         ? `${target.name} vanishes in a flash of magic. Keep your hand moving; the den is still hungry.`
         : `${target.name} sent packing.`);
+      if (storytellerReady && enemyBanterEnabled && !enemyLineBusy.current) {
+        enemyLineBusy.current = true;
+        void onGenerateCharacterLine(`${target.name}, a defeated image enemy, reacts to the player's ${activeClass.name} attack.`)
+          .then((line) => {
+            if (line) {
+              setStoryLine(line);
+              onDialogue(line);
+            }
+          })
+          .finally(() => { enemyLineBusy.current = false; });
+      }
     } else if (message) {
       setDungeonMessage(message);
     }
@@ -499,6 +535,34 @@ export default function GoonQuestOverlay({
   const tapTarget = (enemyId: string) => {
     setCombo((value) => value + 1);
     hitEnemy(enemyId, 1);
+  };
+
+  const createAiQuest = async () => {
+    setStoryError('');
+    const generated = await onGenerateStoryQuest();
+    if (!generated) {
+      setStoryError('The model did not return a quest. Check its status in Storyteller AI settings.');
+      return;
+    }
+    if (!onAddStoryQuest(generated.quest)) {
+      setStoryError('Your quest journal is full. Claim a completed storyteller quest first.');
+      return;
+    }
+    setStoryLine(generated.enemyLine);
+    onDialogue(`${generated.quest.title} added to your guild ledger.`);
+  };
+
+  const askFamiliar = async () => {
+    setStoryError('');
+    const line = await onGenerateCharacterLine(
+      `The player is exploring the guild as a ${activeClass.name}. ${state.petName} gives a brief, encouraging line.`,
+    );
+    if (!line) {
+      setStoryError('The familiar could not answer. Check the local model status.');
+      return;
+    }
+    setStoryLine(line);
+    onDialogue(line);
   };
 
   const startCooldown = (kind: 'skill' | 'spell') => {
@@ -594,7 +658,12 @@ export default function GoonQuestOverlay({
                 },
               ]}>
                 <Pressable accessibilityRole="button" accessibilityLabel="Tap to attack the boss"
-                  disabled={!!bossResult} onPress={tapBoss} style={styles.bossPortraitButton}>
+                  disabled={!!bossResult}
+                  onPress={controlScheme === 'touch' ? tapBoss : undefined}
+                  onPointerUp={controlScheme === 'spen' ? (event) => {
+                    if (shouldActivateCombatTap(controlScheme, event.nativeEvent.pointerType)) tapBoss();
+                  } : undefined}
+                  style={styles.bossPortraitButton}>
                   {bossImage ? (
                     <Image source={{ uri: bossImage.preview ?? bossImage.uri }} contentFit="cover" style={styles.bossPortrait} />
                   ) : (
@@ -642,7 +711,11 @@ export default function GoonQuestOverlay({
                     {bossBpm ? `${bossBpm} BPM beat pulse · ` : ''}{bossMessage}
                   </Text>
                   <View style={styles.bossActionRow}>
-                    <Pressable accessibilityRole="button" onPress={tapBoss}
+                    <Pressable accessibilityRole="button" disabled={!!bossResult}
+                      onPress={controlScheme === 'touch' ? tapBoss : undefined}
+                      onPointerUp={controlScheme === 'spen' ? (event) => {
+                        if (shouldActivateCombatTap(controlScheme, event.nativeEvent.pointerType)) tapBoss();
+                      } : undefined}
                       style={[styles.bossAction, { borderColor: colors.primary, backgroundColor: colors.accent }]}>
                       <Feather name="target" size={15} color={colors.primary} />
                       <Text style={[styles.bossActionText, { color: colors.foreground }]}>Strike · combo {bossCombo}</Text>
@@ -742,6 +815,42 @@ export default function GoonQuestOverlay({
               </View>
               <Text style={[styles.muted, { color: colors.mutedForeground }]}>{quests.filter((quest) => !quest.claimed).length} to claim</Text>
             </View>
+            {storytellerReady && (
+              <View style={[styles.storyCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+                <View style={styles.storyCardHeading}>
+                  <Feather name="star" size={16} color={colors.primary} />
+                  <Text style={[styles.sectionKicker, { color: colors.primary }]}>PAWSTAR’S STORY FORGE</Text>
+                </View>
+                <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+                  Quests are written locally and use goals the game can track and reward.
+                </Text>
+                <View style={styles.storyActions}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Generate an AI quest"
+                    disabled={storytellerBusy} onPress={() => void createAiQuest()}
+                    style={[styles.storyAction, { backgroundColor: colors.primary, opacity: storytellerBusy ? 0.5 : 1 }]}>
+                    <Feather name="book-open" size={14} color={colors.primaryForeground} />
+                    <Text style={[styles.storyActionText, { color: colors.primaryForeground }]}>Dream a quest</Text>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Ask Pawstar for a line"
+                    disabled={storytellerBusy} onPress={() => void askFamiliar()}
+                    style={[styles.storyAction, { backgroundColor: colors.card, borderColor: colors.border, opacity: storytellerBusy ? 0.5 : 1 }]}>
+                    <Feather name="message-circle" size={14} color={colors.primary} />
+                    <Text style={[styles.storyActionText, { color: colors.foreground }]}>Ask Pawstar</Text>
+                  </Pressable>
+                </View>
+                {storytellerBusy && <ActivityIndicator size="small" color={colors.primary} />}
+                {storyLine ? (
+                  <View style={[styles.storyLineBubble, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+                    <Text style={[styles.storyLineText, { color: colors.foreground }]}>{storyLine}</Text>
+                  </View>
+                ) : null}
+                {storyError ? (
+                  <Text accessibilityRole="alert" style={[styles.storyError, { color: colors.destructive }]}>
+                    {storyError}
+                  </Text>
+                ) : null}
+              </View>
+            )}
             <View style={styles.questList}>
               {quests.map((quest) => (
                 <QuestRow key={quest.id} quest={quest} colors={colors}
@@ -759,6 +868,9 @@ export default function GoonQuestOverlay({
                 <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Choose a video stream</Text>
                 <Text style={[styles.muted, { color: colors.mutedForeground }]}>
                   Analyze the audio, enter a BPM, or tap along. Image enemies and the video boss use that tempo.
+                </Text>
+                <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+                  {controlScheme === 'spen' ? 'S Pen combat taps are active.' : 'Touch combat taps are active.'}
                 </Text>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.enemySourceRow}>
@@ -1001,7 +1113,8 @@ export default function GoonQuestOverlay({
                 <>
                   <View style={[styles.arena, { borderColor: colors.border, width: '100%', backgroundColor: colors.background }]}>
                     {enemies.filter((enemy) => enemy.hp > 0).map((enemy) => (
-                      <BouncingTarget key={enemy.id} enemy={enemy} onTap={() => tapTarget(enemy.id)} />
+                      <BouncingTarget key={enemy.id} enemy={enemy} onTap={() => tapTarget(enemy.id)}
+                        controlScheme={controlScheme} />
                     ))}
                     {!enemies.some((enemy) => enemy.hp > 0) && (
                       <View style={styles.waveNotice}>
@@ -1095,6 +1208,23 @@ const styles = StyleSheet.create({
   classRole: { fontSize: 10, lineHeight: 14 },
   classAbility: { fontSize: 9, fontWeight: '700' },
   questList: { gap: 7 },
+  storyCard: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 9, marginBottom: 12 },
+  storyCardHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  storyActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  storyAction: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: 11,
+    borderWidth: 1,
+    borderRadius: 8,
+  },
+  storyActionText: { fontSize: 11, fontWeight: '800' },
+  storyLineBubble: { borderWidth: 1, borderRadius: 9, padding: 10 },
+  storyLineText: { fontSize: 12, lineHeight: 18 },
+  storyError: { fontSize: 11, lineHeight: 16 },
   questRow: { borderWidth: 1, borderRadius: 14, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10 },
   questCopy: { flex: 1, minWidth: 0 },
   questTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },

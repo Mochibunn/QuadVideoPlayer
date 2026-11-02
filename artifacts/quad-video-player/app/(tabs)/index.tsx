@@ -37,6 +37,9 @@ import PlayerRewardsSettings from '@/components/PlayerRewardsSettings';
 import PlayerRpgDashboard from '@/components/PlayerRpgDashboard';
 import RpgTownHub from '@/components/RpgTownHub';
 import GoonQuestOverlay from '@/components/GoonQuestOverlay';
+import LocalStorySettings from '@/components/LocalStorySettings';
+import ReleaseNotesPanel from '@/components/ReleaseNotesPanel';
+import PixelFamiliar from '@/components/PixelFamiliar';
 import PlayExtrasSettings from '@/components/PlayExtrasSettings';
 import KeyJingleOverlay from '@/components/KeyJingleOverlay';
 import HeartRateSettings from '@/components/HeartRateSettings';
@@ -50,6 +53,7 @@ import SessionControls from '@/components/SessionControls';
 import ViewingSessionTimer from '@/components/ViewingSessionTimer';
 import { useViewingSessions } from '@/hooks/useViewingSessions';
 import { usePlayerRpg } from '@/hooks/usePlayerRpg';
+import { useLocalStoryModel } from '@/hooks/useLocalStoryModel';
 import { usePlayExtrasSettings } from '@/hooks/usePlayExtrasSettings';
 import { parseSession, seekPosition, SESSION_KEY, type SessionSnapshot, type VideoSnapshot } from '@/lib/sessions';
 import { prepareVideoSlot, QUAD_BUFFER_OPTIONS } from '@/lib/player-startup';
@@ -81,12 +85,26 @@ import {
   createGoonQuestBackup, MAX_BACKUP_CHARS, parseGoonQuestBackup,
 } from '@/lib/goon-quest-backup';
 import { PLAYER_RPG_KEY, type GoonQuestClassId } from '@/lib/player-rpg';
+import type { CombatControlScheme } from '@/lib/input-controls';
 import { PLAYER_REWARDS_KEY } from '@/lib/player-rewards';
 import { VIEWING_SESSIONS_KEY } from '@/lib/viewing-sessions';
 import { PLAY_EXTRAS_KEY } from '@/lib/play-extras';
 
 type ActivePanel = 'settings' | 'pool' | 'audio' | 'slideshow' | 'sources' | null;
 type VideoBpmReport = { bpm: number | null; confidence: number; error?: string };
+const SETTINGS_CATEGORIES = [
+  { id: 'playback', title: 'Playback', description: 'Video layout, volume modes, and control timing.', icon: 'play-circle' },
+  { id: 'controls', title: 'Controls & input', description: 'Choose touch or S Pen taps for combat targets.', icon: 'edit-3' },
+  { id: 'appearance', title: 'Appearance & sensory', description: 'OLED-black accent themes and calmer palettes.', icon: 'eye' },
+  { id: 'audio', title: 'Audio & voice', description: 'Effects, background sounds, keys, and spoken messages.', icon: 'volume-2' },
+  { id: 'progression', title: 'RPG & rewards', description: 'Quests, skills, borders, and progression settings.', icon: 'award' },
+  { id: 'story-ai', title: 'Storyteller AI', description: 'Import a local model and shape its character prompt.', icon: 'cpu' },
+  { id: 'heart-rate', title: 'Heart rate', description: 'Connect the watch, phone, and tablet.', icon: 'heart' },
+  { id: 'media', title: 'Media sources', description: 'Online searches and the image/GIF slideshow pool.', icon: 'image' },
+  { id: 'data', title: 'Backup & diagnostics', description: 'Transfer progress and inspect crash reports.', icon: 'archive' },
+  { id: 'patch-notes', title: 'Patch notes', description: 'Read the quirky names and changes in each update.', icon: 'book-open' },
+] as const;
+type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number]['id'];
 
 function formatVideoClock(seconds: number): string {
   const wholeSeconds = Math.max(0, Math.floor(seconds));
@@ -99,6 +117,7 @@ function formatVideoClock(seconds: number): string {
 }
 
 const THEME_STORAGE_KEY = 'quad-video-player.theme';
+const COMBAT_CONTROL_SCHEME_KEY = 'goon-quest.combat-control-scheme.v1';
 const NORMALIZE_STORAGE_KEY = 'quad-video-player.normalize';
 const SYNC_STORAGE_KEY = 'quad-video-player.sync';
 const VIDEO_FILL_STORAGE_KEY = 'quad-video-player.video-fill';
@@ -732,6 +751,7 @@ function VideoTile({
 
 export default function QuadVideoPlayerScreen() {
   const { slideshow, captureSlideshow, restoreSlideshow } = useSlideshow();
+  const localStory = useLocalStoryModel();
   const online = useOnlineSources();
   const [sourcesReturn, setSourcesReturn] = useState<'settings' | 'slideshow'>('settings');
   const [slideshowReturn, setSlideshowReturn] = useState<'settings' | null>('settings');
@@ -740,6 +760,8 @@ export default function QuadVideoPlayerScreen() {
   const [sessionBusy, setSessionBusy] = useState(false);
   const [restoredStreams, setRestoredStreams] = useState<VideoSnapshot[] | null>(null);
   const [themeId, setThemeId] = useState<ThemeId>('amethyst');
+  const [controlScheme, setControlScheme] = useState<CombatControlScheme>('touch');
+  const [controlSchemeLoaded, setControlSchemeLoaded] = useState(false);
   const colors = getThemeColors(themeId);
   const [themeLoaded, setThemeLoaded] = useState(false);
   const [normalizeEnabled, setNormalizeEnabled] = useState(false);
@@ -751,6 +773,12 @@ export default function QuadVideoPlayerScreen() {
   const [sharedVolume, setSharedVolume] = useState(START_VOLUME);
   const [backgroundTrackCount, setBackgroundTrackCount] = useState(0);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | null>(null);
+  const selectedSettingsCategory = SETTINGS_CATEGORIES.find((category) => category.id === settingsCategory);
+  const closeSettings = () => {
+    setSettingsCategory(null);
+    setActivePanel(null);
+  };
   const [questVisible, setQuestVisible] = useState(false);
   const [townHubVisible, setTownHubVisible] = useState(false);
   const [questSourcesReturn, setQuestSourcesReturn] = useState(false);
@@ -780,6 +808,27 @@ export default function QuadVideoPlayerScreen() {
   const insets = useSafeAreaInsets();
   const hasVideos = activeVideos.length > 0;
   const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(COMBAT_CONTROL_SCHEME_KEY)
+      .then((stored) => {
+        if (!cancelled) setControlScheme(stored === 'spen' ? 'spen' : 'touch');
+      })
+      .catch(() => {
+        if (!cancelled) setControlScheme('touch');
+      })
+      .finally(() => {
+        if (!cancelled) setControlSchemeLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+  const updateControlScheme = useCallback((useSpen: boolean) => {
+    const next: CombatControlScheme = useSpen ? 'spen' : 'touch';
+    setControlScheme(next);
+    void AsyncStorage.setItem(COMBAT_CONTROL_SCHEME_KEY, next).catch(() => {
+      Alert.alert('Setting not saved', 'The combat control choice could not be saved on this device.');
+    });
+  }, []);
   const reportQuadrantPlayback = useCallback((playbackId: string, playing: boolean, videoUri?: string) => {
     if (playing && videoUri) {
       const lastPlayedAt = Date.now();
@@ -901,6 +950,10 @@ export default function QuadVideoPlayerScreen() {
     viewing.milestone ?? viewing.celebration ?? 0,
   );
   const playExtras = usePlayExtrasSettings();
+  const generateStoryQuest = useCallback(
+    () => localStory.generateStoryQuest(playerRpg.state),
+    [localStory.generateStoryQuest, playerRpg.state],
+  );
   const lastSpokenCelebration = useRef<string | null>(null);
   const speakDialogue = useCallback((message: string) => {
     if (!playExtras.ready || !playExtras.settings.speakDialogue || !message.trim()) return;
@@ -1408,20 +1461,15 @@ export default function QuadVideoPlayerScreen() {
         ] : styles.browserToolbar}>
         <View pointerEvents="box-none" style={[styles.topBar, { borderBottomColor: colors.border }]}>
           <View pointerEvents="none" style={styles.brandBlock}>
-            <View style={styles.brandMark}>
-              <View style={[styles.brandSquare, { backgroundColor: colors.primary }]} />
-              <View style={[styles.brandSquare, { backgroundColor: colors.accent }]} />
-              <View style={[styles.brandSquare, { backgroundColor: colors.accent }]} />
-              <View style={[styles.brandSquare, { backgroundColor: colors.primary }]} />
-            </View>
+            <PixelFamiliar size={44} motion={false} label="Goon Quest pixel familiar" />
             <View>
               <Text style={[styles.brandName, { color: colors.foreground }]}>
                 GOON QUEST
               </Text>
               <Text style={[styles.brandMeta, { color: colors.mutedForeground }]}>
                 {pool.length > 0
-                  ? `${pool.length} ${pool.length === 1 ? 'video' : 'videos'} · ${sourceLabel}`
-                  : 'FOUR INDEPENDENT STREAMS'}
+                  ? `${pool.length} ${pool.length === 1 ? 'clip' : 'clips'} in your den · ${sourceLabel}`
+                  : 'PIXEL FANTASY · FAMILIARS · QUESTS'}
                 {backgroundTrackCount > 0 ? ` · ${backgroundTrackCount} audio` : ''}
               </Text>
             </View>
@@ -1530,7 +1578,10 @@ export default function QuadVideoPlayerScreen() {
               compact
               icon="settings"
               label="Settings"
-              onPress={() => setActivePanel('settings')}
+              onPress={() => {
+                setSettingsCategory(null);
+                setActivePanel('settings');
+              }}
             />
           </View>
         </View>
@@ -1585,24 +1636,15 @@ export default function QuadVideoPlayerScreen() {
               colors={[colors.accent, colors.card]}
               style={styles.emptyMark}
             >
-              <View style={styles.emptyGrid}>
-                {[0, 1, 2, 3].map((item) => (
-                  <View
-                    key={item}
-                    style={[
-                      styles.emptySquare,
-                      { backgroundColor: item === 0 || item === 3 ? colors.primary : colors.muted },
-                    ]}
-                  />
-                ))}
-              </View>
+              <PixelFamiliar size={124} motion />
             </LinearGradient>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              Four views. One quest.
+              Your next little legend starts here.
             </Text>
             <Text style={[styles.emptyDescription, { color: colors.mutedForeground }]}>
-              Pick a video folder or select multiple files. Four clips start at
-              random, then each stream independently chooses its next video.
+              Choose the clips for your den, then take on quests while the streams
+              play independently. Add a bouncing slideshow and background audio
+              whenever you want to make the guild feel like yours.
               {'\n'}MP4, WebM, MOV, MKV and other common containers.
               {'\n'}Codec support depends on your Android device.
             </Text>
@@ -1630,7 +1672,7 @@ export default function QuadVideoPlayerScreen() {
               </View>
             )}
             <Text style={[styles.supportNote, { color: colors.mutedForeground }]}>
-              Landscape tablet playback · independent play, skip and volume controls
+              Wide-tablet friendly · pixel quests · your own clip collection
             </Text>
           </View>
         )}
@@ -1692,7 +1734,10 @@ export default function QuadVideoPlayerScreen() {
         visible={activePanel === 'settings'}
         transparent
         animationType="fade"
-        onRequestClose={() => setActivePanel(null)}
+        onRequestClose={() => {
+          if (settingsCategory !== null) setSettingsCategory(null);
+          else closeSettings();
+        }}
       >
         <View style={styles.modalBackdrop}>
           <View
@@ -1702,18 +1747,30 @@ export default function QuadVideoPlayerScreen() {
             ]}
           >
             <View style={styles.modalHeader}>
-              <View style={styles.settingCopy}>
+              <View style={styles.settingsHeading}>
+                {settingsCategory !== null && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Back to settings categories"
+                    onPress={() => setSettingsCategory(null)}
+                    style={styles.settingsBackButton}
+                  >
+                    <Feather name="chevron-left" size={21} color={colors.foreground} />
+                  </Pressable>
+                )}
+                <View style={styles.settingCopy}>
                 <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-                  Settings
+                  {selectedSettingsCategory?.title ?? 'Settings'}
                 </Text>
                 <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
-                  Audio controls and OLED-black accent themes.
+                  {selectedSettingsCategory?.description ?? 'Choose a category to find each setting quickly.'}
                 </Text>
+                </View>
               </View>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Close settings"
-                onPress={() => setActivePanel(null)}
+                onPress={closeSettings}
                 style={styles.modalClose}
               >
                 <Feather name="x" size={20} color={colors.foreground} />
@@ -1725,160 +1782,231 @@ export default function QuadVideoPlayerScreen() {
               bottomOffset={24}
               showsVerticalScrollIndicator
             >
-            <View
-              style={[
-                styles.settingRow,
-                { borderColor: colors.border, backgroundColor: colors.secondary },
-              ]}
-            >
-              <View style={styles.settingCopy}>
-                <Text style={[styles.settingTitle, { color: colors.foreground }]}>
-                  Normalize volume
-                </Text>
-                <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
-                  {normalizeEnabled
-                    ? (syncEnabled ? 'ON · Shared volume sliders are active.' : 'ON · Live loudness processing is active.')
-                    : 'OFF · Original audio with independent volume sliders.'}
-                </Text>
-              </View>
-              <SettingSwitch
-                label="Normalize volume"
-                value={normalizeEnabled}
-                onValueChange={setNormalizeEnabled}
-                disabled={Platform.OS !== 'android'}
-              />
-            </View>
-            {normalizeEnabled && (
-              <View
-                style={[
-                  styles.settingRow,
-                  styles.syncSettingRow,
-                  { borderColor: colors.border, backgroundColor: colors.secondary },
-                ]}
-              >
-                <View style={styles.settingCopy}>
-                  <Text style={[styles.settingTitle, { color: colors.foreground }]}>
-                    Sync
-                  </Text>
-                  <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
-                    {syncEnabled
-                      ? 'ON · One shared slider level for all videos.'
-                      : 'OFF · True per-video loudness normalization.'}
-                  </Text>
-                </View>
-                <SettingSwitch
-                  label="Sync video volume sliders"
-                  value={syncEnabled}
-                  onValueChange={setSyncEnabled}
-                />
-              </View>
-            )}
-            <View style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
-              <View style={styles.settingCopy}>
-                <Text style={[styles.settingTitle, { color: colors.foreground }]}>Fill video quarters</Text>
-                <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
-                  {fillVideos
-                    ? 'Fill · Covers each quarter, cropping edges as needed.'
-                    : 'Fit · Shows the whole video with black bars as needed.'}
-                </Text>
-              </View>
-              <SettingSwitch label="Fill video quarters" value={fillVideos} onValueChange={setFillVideos} />
-            </View>
-            <ControlsTimeoutSetting
-              value={controlsHideSeconds}
-              onChange={setControlsHideSeconds}
-              disabled={!playbackSettingsLoaded}
-            />
-            <View style={[styles.backupCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-              <Text style={[styles.settingTitle, { color: colors.foreground }]}>Backup and transfer</Text>
-              <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
-                Export progress and the saved session as JSON. Media files are not copied; Android access may need reconnecting after transfer.
-              </Text>
-              <View style={styles.backupActions}>
-                <ActionButton icon="download" label="Export JSON" onPress={() => void exportGoonQuestBackup()}
-                  disabled={!themeLoaded || !playbackSettingsLoaded || !watchHistoryLoaded || !viewing.ready ||
-                    !playerRpg.ready || !playerRewards.ready || !playExtras.ready || !soundLoaded} />
-                <ActionButton icon="upload" label="Import JSON" onPress={() => void importGoonQuestBackup()}
-                  disabled={!themeLoaded || !playbackSettingsLoaded || !watchHistoryLoaded || !viewing.ready ||
-                    !playerRpg.ready || !playerRewards.ready || !playExtras.ready || !soundLoaded} />
-              </View>
-            </View>
-            <SoundEffectsSettings xp={viewing.xp} allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked} />
-            <PlayExtrasSettings
-              settings={playExtras.settings}
-              update={playExtras.update}
-              ready={playExtras.ready}
-            />
-            <PlayerRewardsSettings
-              settings={playerRewards.settings}
-              update={playerRewards.update}
-              xp={viewing.xp}
-              ready={playerRewards.ready}
-              error={playerRewards.error}
-            />
-            <PlayerRpgDashboard
-              state={playerRpg.state}
-              ready={playerRpg.ready}
-              error={playerRpg.error}
-              onRetry={() => void playerRpg.retry()}
-              onClaimQuest={playerRpg.claimQuest}
-              onUpgradeSkill={playerRpg.upgradeSkill}
-              onBuyItem={playerRpg.buyItem}
-              onEquipItem={playerRpg.equipItem}
-              onSetAdultFlavor={playerRpg.setAdultFlavor}
-              onRenameCompanion={playerRpg.renameCompanion}
-            />
-            <HeartRateSettings />
-            <ActionButton icon="globe" label="Online media sources" onPress={() => {
-              setSourcesReturn('settings'); setActivePanel('sources');
-            }} />
-            <ActionButton icon="image" label={`Image / GIF slideshow (${slideshow.pool.length})`}
-              onPress={() => { setSlideshowReturn('settings'); setActivePanel('slideshow'); }} />
-            <ActionButton icon="alert-circle" label="Last crash report" onPress={() => void showCrashReport()} />
-            <Text style={[styles.themeSectionTitle, { color: colors.mutedForeground }]}>
-              Accent themes
-            </Text>
-            <View style={styles.themeGrid}>
-              {themePresets.map((theme) => {
-                const isSelected = theme.id === themeId;
-                const themeUnlocked = isThemeUnlocked(theme.id, viewing.xp, playerRewards.settings.allRewardsUnlocked);
-                const selectionDisabled = !themeUnlocked && !isSelected;
-                return (
+            {settingsCategory === null ? (
+              <View style={styles.settingsCategoryList}>
+                {SETTINGS_CATEGORIES.map((category) => (
                   <Pressable
-                    key={theme.id}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: isSelected, disabled: selectionDisabled }}
-                    accessibilityLabel={`${theme.name} theme`}
-                    disabled={selectionDisabled}
-                    onPress={() => setThemeId(theme.id)}
-                    style={[
-                      styles.themeOption,
+                    key={category.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${category.title}. ${category.description}`}
+                    onPress={() => setSettingsCategory(category.id)}
+                    style={({ pressed }) => [
+                      styles.settingsCategoryCard,
                       {
                         backgroundColor: colors.secondary,
-                        borderColor: isSelected ? colors.primary : colors.border,
-                        opacity: selectionDisabled ? 0.55 : 1,
+                        borderColor: colors.border,
+                        opacity: pressed ? 0.78 : 1,
                       },
                     ]}
                   >
-                    <View style={[styles.themeSwatch, { backgroundColor: theme.primary }]} />
-                    <View style={styles.themeText}>
-                      <Text numberOfLines={1} style={[styles.themeName, { color: colors.foreground }]}>
-                        {theme.name}
-                      </Text>
-                      {selectionDisabled && (
-                        <Text style={[styles.themeUnlock, { color: colors.mutedForeground }]}>
-                          Level {themeUnlockLevels[theme.id] ?? '?'}
-                        </Text>
-                      )}
+                    <View style={[styles.settingsCategoryIcon, { backgroundColor: colors.accent }]}>
+                      <Feather name={category.icon} size={18} color={colors.primary} />
                     </View>
-                    {selectionDisabled && <Feather name="lock" size={13} color={colors.mutedForeground} />}
-                    {isSelected && (
-                      <Feather name="check" size={15} color={colors.primary} />
-                    )}
+                    <View style={styles.settingCopy}>
+                      <Text style={[styles.settingsCategoryTitle, { color: colors.foreground }]}>
+                        {category.title}
+                      </Text>
+                      <Text style={[styles.settingsCategoryDescription, { color: colors.mutedForeground }]}>
+                        {category.description}
+                      </Text>
+                    </View>
+                    <Feather name="chevron-right" size={17} color={colors.mutedForeground} />
                   </Pressable>
-                );
-              })}
-            </View>
+                ))}
+              </View>
+            ) : (
+              <>
+                {settingsCategory === 'controls' && (
+                  <View style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                    <View style={styles.settingCopy}>
+                      <Text style={[styles.settingTitle, { color: colors.foreground }]}>S Pen combat taps</Text>
+                      <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
+                        {controlScheme === 'spen'
+                          ? 'ON · Use the S Pen to tap dungeon enemies and boss targets. Game menus remain touch-enabled.'
+                          : 'OFF · Use finger taps to attack dungeon enemies and boss targets.'}
+                      </Text>
+                    </View>
+                    <SettingSwitch label="S Pen combat taps" value={controlScheme === 'spen'}
+                      onValueChange={updateControlScheme} disabled={!controlSchemeLoaded} />
+                  </View>
+                )}
+                {settingsCategory === 'playback' && (
+                  <>
+                    <View style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                      <View style={styles.settingCopy}>
+                        <Text style={[styles.settingTitle, { color: colors.foreground }]}>Normalize volume</Text>
+                        <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
+                          {normalizeEnabled
+                            ? (syncEnabled ? 'ON · Shared volume sliders are active.' : 'ON · Live loudness processing is active.')
+                            : 'OFF · Original audio with independent volume sliders.'}
+                        </Text>
+                      </View>
+                      <SettingSwitch label="Normalize volume" value={normalizeEnabled}
+                        onValueChange={setNormalizeEnabled} disabled={Platform.OS !== 'android'} />
+                    </View>
+                    {normalizeEnabled && (
+                      <View style={[styles.settingRow, styles.syncSettingRow,
+                        { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                        <View style={styles.settingCopy}>
+                          <Text style={[styles.settingTitle, { color: colors.foreground }]}>Sync</Text>
+                          <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
+                            {syncEnabled
+                              ? 'ON · One shared slider level for all videos.'
+                              : 'OFF · True per-video loudness normalization.'}
+                          </Text>
+                        </View>
+                        <SettingSwitch label="Sync video volume sliders" value={syncEnabled}
+                          onValueChange={setSyncEnabled} />
+                      </View>
+                    )}
+                    <View style={[styles.settingRow, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                      <View style={styles.settingCopy}>
+                        <Text style={[styles.settingTitle, { color: colors.foreground }]}>Fill video quarters</Text>
+                        <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
+                          {fillVideos
+                            ? 'Fill · Covers each quarter, cropping edges as needed.'
+                            : 'Fit · Shows the whole video with black bars as needed.'}
+                        </Text>
+                      </View>
+                      <SettingSwitch label="Fill video quarters" value={fillVideos} onValueChange={setFillVideos} />
+                    </View>
+                    <ControlsTimeoutSetting value={controlsHideSeconds} onChange={setControlsHideSeconds}
+                      disabled={!playbackSettingsLoaded} />
+                  </>
+                )}
+                {settingsCategory === 'appearance' && (
+                  <>
+                    <Text style={[styles.themeSectionTitle, { color: colors.mutedForeground }]}>
+                      OLED-black accent themes
+                    </Text>
+                    <Text style={[styles.themeDescription, { color: colors.mutedForeground }]}>
+                      Each choice changes accent colors only. Trans Pride uses the flag palette; Spectrum Calm
+                      uses infinity-inspired colors without puzzle-piece imagery; Stim Garden uses soft, low-glare accents.
+                    </Text>
+                    <View style={styles.themeGrid}>
+                      {themePresets.map((theme) => {
+                        const isSelected = theme.id === themeId;
+                        const themeUnlocked = isThemeUnlocked(theme.id, viewing.xp,
+                          playerRewards.settings.allRewardsUnlocked);
+                        const selectionDisabled = !themeUnlocked && !isSelected;
+                        const swatches = 'swatches' in theme ? theme.swatches : [theme.primary];
+                        return (
+                          <Pressable key={theme.id} accessibilityRole="radio"
+                            accessibilityState={{ selected: isSelected, disabled: selectionDisabled }}
+                            accessibilityLabel={`${theme.name} theme${'description' in theme ? `, ${theme.description}` : ''}`}
+                            disabled={selectionDisabled} onPress={() => setThemeId(theme.id)}
+                            style={[
+                              styles.themeOption,
+                              {
+                                backgroundColor: colors.secondary,
+                                borderColor: isSelected ? colors.primary : colors.border,
+                                opacity: selectionDisabled ? 0.55 : 1,
+                              },
+                            ]}
+                          >
+                            <View style={styles.themeSwatch}>
+                              {swatches.map((swatch, index) => (
+                                <View key={`${theme.id}-${index}`}
+                                  style={[styles.themeSwatchStripe, { backgroundColor: swatch }]} />
+                              ))}
+                            </View>
+                            <View style={styles.themeText}>
+                              <Text numberOfLines={1} style={[styles.themeName, { color: colors.foreground }]}>
+                                {theme.name}
+                              </Text>
+                              {'description' in theme && (
+                                <Text numberOfLines={2} style={[styles.themeDescription, { color: colors.mutedForeground }]}>
+                                  {theme.description}
+                                </Text>
+                              )}
+                              {selectionDisabled && (
+                                <Text style={[styles.themeUnlock, { color: colors.mutedForeground }]}>
+                                  Level {themeUnlockLevels[theme.id] ?? '?'}
+                                </Text>
+                              )}
+                            </View>
+                            {selectionDisabled && <Feather name="lock" size={13} color={colors.mutedForeground} />}
+                            {isSelected && <Feather name="check" size={15} color={colors.primary} />}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
+                {settingsCategory === 'audio' && (
+                  <>
+                    <SoundEffectsSettings xp={viewing.xp}
+                      allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked} />
+                    <PlayExtrasSettings settings={playExtras.settings} update={playExtras.update}
+                      ready={playExtras.ready} />
+                  </>
+                )}
+                {settingsCategory === 'progression' && (
+                  <>
+                    <PlayerRewardsSettings settings={playerRewards.settings} update={playerRewards.update}
+                      xp={viewing.xp} ready={playerRewards.ready} error={playerRewards.error} />
+                    <PlayerRpgDashboard state={playerRpg.state} ready={playerRpg.ready}
+                      error={playerRpg.error} onRetry={() => void playerRpg.retry()}
+                      onClaimQuest={playerRpg.claimQuest} onUpgradeSkill={playerRpg.upgradeSkill}
+                      onBuyItem={playerRpg.buyItem} onEquipItem={playerRpg.equipItem}
+                      onSetAdultFlavor={playerRpg.setAdultFlavor}
+                      onRenameCompanion={playerRpg.renameCompanion} />
+                  </>
+                )}
+                {settingsCategory === 'story-ai' && (
+                  <LocalStorySettings
+                    preferences={localStory.preferences}
+                    ready={localStory.preferencesReady}
+                    modelLoaded={localStory.modelLoaded}
+                    busy={localStory.busy}
+                    loadProgress={localStory.loadProgress}
+                    error={localStory.error}
+                    testResult={localStory.testResult}
+                    onImport={() => void localStory.importModel()}
+                    onLoad={() => void localStory.loadModel()}
+                    onUnload={() => void localStory.unloadModel()}
+                    onRemove={localStory.removeModel}
+                    onPromptChange={localStory.updatePrompt}
+                    onEnemyBanterChange={localStory.setEnemyBanterEnabled}
+                    onTest={() => void localStory.testPrompt()}
+                  />
+                )}
+                {settingsCategory === 'heart-rate' && <HeartRateSettings />}
+                {settingsCategory === 'media' && (
+                  <>
+                    <ActionButton icon="globe" label="Online media sources" onPress={() => {
+                      setSourcesReturn('settings');
+                      setActivePanel('sources');
+                    }} />
+                    <ActionButton icon="image" label={`Image / GIF slideshow (${slideshow.pool.length})`}
+                      onPress={() => {
+                        setSlideshowReturn('settings');
+                        setActivePanel('slideshow');
+                      }} />
+                  </>
+                )}
+                {settingsCategory === 'data' && (
+                  <>
+                    <View style={[styles.backupCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+                      <Text style={[styles.settingTitle, { color: colors.foreground }]}>Backup and transfer</Text>
+                      <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
+                        Export progress and the saved session as JSON. Media files are not copied; Android access may need reconnecting after transfer.
+                      </Text>
+                      <View style={styles.backupActions}>
+                        <ActionButton icon="download" label="Export JSON" onPress={() => void exportGoonQuestBackup()}
+                          disabled={!themeLoaded || !playbackSettingsLoaded || !watchHistoryLoaded || !viewing.ready ||
+                            !playerRpg.ready || !playerRewards.ready || !playExtras.ready || !soundLoaded} />
+                        <ActionButton icon="upload" label="Import JSON" onPress={() => void importGoonQuestBackup()}
+                          disabled={!themeLoaded || !playbackSettingsLoaded || !watchHistoryLoaded || !viewing.ready ||
+                            !playerRpg.ready || !playerRewards.ready || !playExtras.ready || !soundLoaded} />
+                      </View>
+                    </View>
+                    <ActionButton icon="alert-circle" label="Last crash report" onPress={() => void showCrashReport()} />
+                  </>
+                )}
+                {settingsCategory === 'patch-notes' && <ReleaseNotesPanel />}
+              </>
+            )}
             </KeyboardAwareScrollViewCompat>
           </View>
         </View>
@@ -2013,6 +2141,13 @@ export default function QuadVideoPlayerScreen() {
         onSelectClass={playerRpg.setClass}
         onCombatProgress={playerRpg.recordCombat}
         onClaimQuest={playerRpg.claimQuest}
+        onAddStoryQuest={playerRpg.addStoryQuest}
+        onGenerateStoryQuest={generateStoryQuest}
+        onGenerateCharacterLine={localStory.generateCharacterLine}
+        storytellerReady={localStory.modelLoaded}
+        storytellerBusy={localStory.busy === 'generating'}
+        enemyBanterEnabled={localStory.preferences.enemyBanterEnabled}
+        controlScheme={controlScheme}
         onManageImages={() => {
           setQuestVisible(false);
           setSlideshowReturn(null);
@@ -2246,6 +2381,8 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 20, fontWeight: '700' },
   modalSubtitle: { fontSize: 12, lineHeight: 18, marginTop: 4, maxWidth: 560 },
+  settingsHeading: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  settingsBackButton: { width: 34, height: 42, alignItems: 'center', justifyContent: 'center' },
   modalClose: {
     width: 42,
     height: 42,
@@ -2254,6 +2391,25 @@ const styles = StyleSheet.create({
   },
   settingsScroll: { flexShrink: 1, minHeight: 0 },
   settingsContent: { paddingBottom: 12 },
+  settingsCategoryList: { gap: 9 },
+  settingsCategoryCard: {
+    minHeight: 70,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 11,
+    borderWidth: 1,
+    borderRadius: 12,
+  },
+  settingsCategoryIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsCategoryTitle: { fontSize: 14, fontWeight: '600' },
+  settingsCategoryDescription: { fontSize: 11, lineHeight: 15, marginTop: 3 },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2269,7 +2425,8 @@ const styles = StyleSheet.create({
   settingCopy: { flex: 1 },
   settingTitle: { fontSize: 14, fontWeight: '600' },
   settingDescription: { fontSize: 12, lineHeight: 18, marginTop: 3 },
-  themeSectionTitle: { fontSize: 12, fontWeight: '600', marginTop: 6, marginBottom: 10 },
+  themeSectionTitle: { fontSize: 12, fontWeight: '600', marginTop: 6, marginBottom: 6 },
+  themeDescription: { fontSize: 10, lineHeight: 15, marginBottom: 10 },
   themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingBottom: 2 },
   themeOption: {
     width: '31%',
@@ -2281,7 +2438,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
   },
-  themeSwatch: { width: 18, height: 18, borderRadius: 9 },
+  themeSwatch: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    overflow: 'hidden',
+    flexDirection: 'row',
+  },
+  themeSwatchStripe: { flex: 1 },
   themeText: { flex: 1 },
   themeName: { fontSize: 13, fontWeight: '600' },
   themeUnlock: { fontSize: 9, marginTop: 1 },

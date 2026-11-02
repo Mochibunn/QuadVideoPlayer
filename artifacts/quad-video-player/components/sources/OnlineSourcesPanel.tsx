@@ -122,7 +122,7 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
               <View style={styles.wrap}>{(['hot', 'new', 'top'] as const).map((sort) =>
                 <React.Fragment key={sort}>{button(`${editing.sort === sort ? '✓ ' : ''}${sort === 'top' ? 'Top this week' : sort}`,
                   () => setEditing({ ...editing, sort }))}</React.Fragment>)}</View>
-              {label('Reddit sources require the linked account above and Reddit’s approval. GIF files go to slideshows; video-based animations and videos go to the video player.', true)}
+              {label('Reddit sources require the linked account above and Reddit’s approval. GIF files go to slideshows; video-based animations and videos go to your clip pool.', true)}
             </> : <>
               {input('Tags', 'tags', 'fox landscape -animated')}
               {input('Tags to avoid', 'excludeTags', 'watermark low_res young')}

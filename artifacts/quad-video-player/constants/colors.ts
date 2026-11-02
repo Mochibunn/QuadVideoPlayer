@@ -30,6 +30,33 @@ export const themePresets = [
   { id: 'arctic', name: 'Arctic', primary: '#8ebbd6', accent: '#1d2b35', accentForeground: '#dff3ff' },
   { id: 'apricot', name: 'Apricot', primary: '#dcb776', accent: '#332a1b', accentForeground: '#fff0d0' },
   { id: 'olive-mist', name: 'Olive Mist', primary: '#a6b780', accent: '#282f1d', accentForeground: '#edf5d7' },
+  {
+    id: 'trans-pride',
+    name: 'Trans Pride',
+    primary: '#5bcefa',
+    accent: '#14252d',
+    accentForeground: '#f5a9b8',
+    swatches: ['#5bcefa', '#f5a9b8', '#ffffff', '#f5a9b8', '#5bcefa'],
+    description: 'Trans flag colors on OLED black.',
+  },
+  {
+    id: 'spectrum-calm',
+    name: 'Spectrum Calm',
+    primary: '#9a91d5',
+    accent: '#242138',
+    accentForeground: '#f1d984',
+    swatches: ['#e56b6f', '#ee9e53', '#f1d984', '#7fc8a2', '#67a9d9', '#9a91d5'],
+    description: 'Infinity-inspired spectrum accents.',
+  },
+  {
+    id: 'stim-garden',
+    name: 'Stim Garden',
+    primary: '#80c6b0',
+    accent: '#192c2a',
+    accentForeground: '#e8b8d0',
+    swatches: ['#80c6b0', '#a9b8e8', '#e8b8d0'],
+    description: 'Soft, sensory-friendly colors.',
+  },
 ] as const;
 
 export type ThemeId = (typeof themePresets)[number]['id'];

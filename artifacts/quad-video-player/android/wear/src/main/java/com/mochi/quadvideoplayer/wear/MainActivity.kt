@@ -21,6 +21,7 @@ import android.widget.TextView
 class MainActivity : Activity() {
   private lateinit var statusText: TextView
   private lateinit var trackingButton: Button
+  private lateinit var permissionHelpText: TextView
   private var stateReceiverRegistered = false
 
   private val stateReceiver = object : BroadcastReceiver() {
@@ -55,6 +56,11 @@ class MainActivity : Activity() {
     super.onStop()
   }
 
+  override fun onResume() {
+    super.onResume()
+    renderTrackingState()
+  }
+
   private fun buildScreen() {
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -70,16 +76,28 @@ class MainActivity : Activity() {
       setPadding(8, 8, 8, 14)
     }
     trackingButton = Button(this).apply {
-      text = "Start"
+      text = "Start tracking"
       setOnClickListener {
         if (HeartRateTrackingState.active) stopTracking() else requestPermissionsAndStart()
       }
+    }
+    permissionHelpText = TextView(this).apply {
+      text = "Android only shows a permission prompt when access is missing. Tap here to review app permissions."
+      textSize = 11f
+      gravity = Gravity.CENTER
+      setTextColor(android.graphics.Color.rgb(170, 170, 180))
+      setPadding(8, 14, 8, 4)
+      contentDescription = "Review Goon Quest Link app permissions"
+      setOnClickListener { openAppPermissionSettings() }
     }
     root.addView(statusText, LinearLayout.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
     root.addView(trackingButton, LinearLayout.LayoutParams(
       ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+    ))
+    root.addView(permissionHelpText, LinearLayout.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
     setContentView(root)
   }
@@ -93,23 +111,41 @@ class MainActivity : Activity() {
       checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
     }
     if (missing.isNotEmpty()) {
+      statusText.text = "Requesting heart-rate sensor access…"
       requestPermissions(missing.toTypedArray(), REQUEST_SENSOR_PERMISSIONS)
       return
     }
+    statusText.text = "Access is already allowed. Connecting to the watch sensor…"
     requestBackgroundPermissionOrStart()
   }
 
   private fun requestBackgroundPermissionOrStart() {
-    val permission = when {
-      Build.VERSION.SDK_INT >= 36 -> PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
-      Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> Manifest.permission.BODY_SENSORS_BACKGROUND
-      else -> null
-    }
+    val permission = backgroundSensorPermission()
     if (permission == null || checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
       requestNotificationPermissionOrStart()
       return
     }
+    statusText.text = "Allow background sensor access to keep readings active when this screen is hidden."
     requestPermissions(arrayOf(permission), REQUEST_BACKGROUND_PERMISSION)
+  }
+
+  private fun backgroundSensorPermission(): String? = when {
+    Build.VERSION.SDK_INT >= 36 -> PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> Manifest.permission.BODY_SENSORS_BACKGROUND
+    else -> null
+  }
+
+  private fun hasForegroundSensorAccess(): Boolean {
+    val bodySensorsGranted =
+      checkSelfPermission(Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED
+    val heartRateGranted = Build.VERSION.SDK_INT < 36 ||
+      checkSelfPermission(PERMISSION_READ_HEART_RATE) == PackageManager.PERMISSION_GRANTED
+    return bodySensorsGranted && heartRateGranted
+  }
+
+  private fun hasBackgroundSensorAccess(): Boolean {
+    val permission = backgroundSensorPermission() ?: return true
+    return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
   }
 
   private fun requestNotificationPermissionOrStart() {
@@ -145,8 +181,20 @@ class MainActivity : Activity() {
 
   private fun renderTrackingState() {
     if (!::statusText.isInitialized) return
-    statusText.text = HeartRateTrackingState.status
-    trackingButton.text = if (HeartRateTrackingState.active) "Stop" else "Start"
+    statusText.text = when {
+      HeartRateTrackingState.active -> HeartRateTrackingState.status
+      !hasForegroundSensorAccess() -> "Heart-rate access is not allowed yet. Tap Start to request it."
+      !hasBackgroundSensorAccess() -> "Heart-rate access is allowed. Tap Start to enable background access."
+      else -> "Heart-rate access is already allowed. Tap Start to connect; no extra prompt is expected."
+    }
+    trackingButton.text = if (HeartRateTrackingState.active) "Stop tracking" else "Start tracking"
+  }
+
+  private fun openAppPermissionSettings() {
+    startActivity(
+      Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        .setData(Uri.parse("package:$packageName")),
+    )
   }
 
   override fun onRequestPermissionsResult(
@@ -157,7 +205,7 @@ class MainActivity : Activity() {
     super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     when (requestCode) {
       REQUEST_SENSOR_PERMISSIONS -> {
-        if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+        if (hasForegroundSensorAccess()) {
           requestBackgroundPermissionOrStart()
         } else {
           HeartRateTrackingState.status = "Allow heart-rate sensor access, then tap Start."
@@ -165,7 +213,7 @@ class MainActivity : Activity() {
         }
       }
       REQUEST_BACKGROUND_PERMISSION -> {
-        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+        if (hasBackgroundSensorAccess()) {
           requestNotificationPermissionOrStart()
         } else {
           HeartRateTrackingState.status = "Background sensor access is needed to keep readings going."

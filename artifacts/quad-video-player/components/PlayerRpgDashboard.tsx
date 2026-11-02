@@ -61,7 +61,7 @@ export default function PlayerRpgDashboard({
           <Text style={[styles.kicker, { color: colors.primary }]}>MOONLIT GUILD</Text>
           <Text style={[styles.title, { color: colors.foreground }]}>Your campaign</Text>
           <Text style={[styles.caption, { color: colors.mutedForeground }]}>
-            Keep the loop rolling. Your ledger stays on this device.
+            Your guild ledger stays on this device.
           </Text>
         </View>
         <View style={[styles.coinPill, { backgroundColor: colors.accent }]}>

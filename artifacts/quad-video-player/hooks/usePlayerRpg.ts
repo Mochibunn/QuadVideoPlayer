@@ -4,8 +4,9 @@ import { levelForExperience } from '@/lib/player-rewards';
 import {
   addRpgPlaybackTime, awardRpgSkillPoints, canClaimRpgQuest, claimRpgQuest,
   emptyPlayerRpgState, equipRpgItem, parsePlayerRpg, purchaseRpgItem,
-  recordRpgCombat, recordRpgVideos, renameRpgCompanion, setAdultRewardFlavor, setGoonQuestClass, upgradeRpgSkill,
-  PLAYER_RPG_KEY, type GoonQuestClassId, type PlayerRpgState, type RpgQuest, type RpgSkillId,
+  addRpgStoryQuest, recordRpgCombat, recordRpgVideos, renameRpgCompanion,
+  setAdultRewardFlavor, setGoonQuestClass, upgradeRpgSkill,
+  PLAYER_RPG_KEY, type GoonQuestClassId, type PlayerRpgState, type RpgQuest, type RpgSkillId, type StoryQuest,
 } from '@/lib/player-rpg';
 
 export function usePlayerRpg(isPlaybackActive: boolean, xp: number, xpReady: boolean) {
@@ -113,6 +114,15 @@ export function usePlayerRpg(isPlaybackActive: boolean, xp: number, xpReady: boo
   const renameCompanion = useCallback((name: string) => {
     commit((current) => renameRpgCompanion(current, name));
   }, [commit]);
+  const addStoryQuest = useCallback((quest: StoryQuest) => {
+    let added = false;
+    commit((current) => {
+      const next = addRpgStoryQuest(current, quest);
+      added = next !== current;
+      return next;
+    });
+    return added;
+  }, [commit]);
 
   return {
     state,
@@ -129,5 +139,6 @@ export function usePlayerRpg(isPlaybackActive: boolean, xp: number, xpReady: boo
     equipItem,
     setAdultFlavor,
     renameCompanion,
+    addStoryQuest,
   };
 }

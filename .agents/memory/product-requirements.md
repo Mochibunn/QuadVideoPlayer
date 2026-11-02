@@ -178,3 +178,33 @@ a bounded native gain avoids an unbounded volume control.
 
 **How to apply:** Keep track gain independent and persistent, preserve the
 ordinary 0–100% range, and make the clipping tradeoff clear.
+
+The user wants optional transgender-pride and autism/stimming-themed accent
+palettes alongside the existing OLED-black themes.
+
+**Why:** The user explicitly requested these additional visual options.
+
+**How to apply:** Keep these palettes optional and immediately available, preserve
+GameCubed as the default, and use respectful trans-flag and neurodiversity
+infinity-inspired colors rather than treating identity themes as progression
+rewards.
+
+Every Goon Quest app update needs a playful, activity-specific release codename
+and an in-game patch-notes menu.
+
+**Why:** The user explicitly asked each incremental update to have a quirky name
+and its changes available inside the game.
+
+**How to apply:** When updating the app version, add a matching release-note entry
+and keep the patch-notes screen accessible from the settings menu.
+
+Local storyteller models must be imported by the user as GGUF files and run on
+the device. On the MediaTek tablet, do not claim Qualcomm-only GPU/NPU
+acceleration.
+
+**Why:** The user asked for a local model on MediaTek hardware; the available
+React Native runtime documents acceleration for Qualcomm backends, not this
+device.
+
+**How to apply:** Keep model files out of the APK and network, be explicit about
+CPU performance and memory costs, and use only verified acceleration paths.

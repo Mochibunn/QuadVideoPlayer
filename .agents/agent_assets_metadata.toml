@@ -42,3 +42,17 @@ mtime_ms = 1793635949755
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/ec63e844-500d-43dd-9cd0-15ae669e6d26/6d341240-8e2f-4e78-9e61-50c545b0b0a7"
 storage_version_token = "1793639158823323"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "wseU9fgYsD07VTzkqw7pH"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.13.3.apk"
+type = "unspecified"
+title = "Goon Quest Link 1.13.3 — Watch APK"
+description = "Sideload update for the Samsung Galaxy Watch companion. Package com.mochi.quadvideoplayer, version 1.13.3 (28)."
+logical_id = "aa6e18bf-421b-476b-be49-20ed1ab2f985"
+content_hash = "sha256:2730ca16223a5fc1e216d87cfa6858b5c60f14dbeb7ebbdc4a327d0253d5f8f1"
+size = 4210358
+mtime_ms = 1793643548381
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/aa6e18bf-421b-476b-be49-20ed1ab2f985/4def2c8b-3458-4155-9add-9edbff1cd296"
+storage_version_token = "1793643745304192"
+content_type = "application/octet-stream"

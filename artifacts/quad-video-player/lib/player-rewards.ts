@@ -41,6 +41,9 @@ export const themeUnlockLevels: Record<string, number> = {
   arctic: 6,
   apricot: 6,
   'olive-mist': 6,
+  'trans-pride': 1,
+  'spectrum-calm': 1,
+  'stim-garden': 1,
 };
 
 export const rewardMilestones = [

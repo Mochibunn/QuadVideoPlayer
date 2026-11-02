@@ -153,6 +153,12 @@ Settings keeps the surrounding surfaces OLED-black and saves the chosen accent.
 The default is `#6b5cb1`, with the requested silver, green, red, and yellow plus
 blue, rose, sage, and lilac alternatives.
 
+Settings is organized into Playback, Appearance & sensory, Audio & voice, RPG &
+rewards, Heart rate, Media sources, and Backup & diagnostics. Trans Pride,
+Spectrum Calm, and Stim Garden are optional, level-one palettes; all retain
+OLED-black surfaces. Spectrum Calm uses infinity-inspired colors rather than
+puzzle-piece imagery.
+
 With **Normalize volume** off, each stream has its own slider. Turning it on
 reveals **Sync**:
 
@@ -201,9 +207,8 @@ After closing a panel or returning to the app, a fresh idle interval starts.
 Showing or hiding controls never remounts the video views or restarts streams.
 
 The default purple accent is named **GameCubed**; its saved identifier is kept
-unchanged so existing selections survive updates. Eight additional pastel
-accents retain OLED-black surfaces. The entire settings body scrolls beneath a
-fixed close button.
+unchanged so existing selections survive updates. The settings category content
+scrolls beneath a fixed header and close button.
 
 **Fill video quarters** is saved between launches: off means **Fit** (show the
 whole video, black bars if needed); on means **Fill** (cover the quarter and
@@ -213,6 +218,14 @@ respective tile, including in Fill mode.
 
 The native launch screen transitions into a short four-tile welcome animation.
 Reduced-motion accessibility settings use a static, shorter welcome instead.
+
+## Watch heart-rate access
+
+Android does not repeat a heart-rate permission prompt when the permission is
+already granted. In that case, **Start tracking** connects directly and the
+watch status changes to a connection or sensor message. The **App permissions**
+link opens Android settings if access needs to be reviewed or changed. Keep the
+ongoing tracking notification active for background readings.
 
 The Android processor is carried in the pnpm patch for `expo-video`. It requires
 a newly built standalone APK; Expo Go does not include it. The Android build

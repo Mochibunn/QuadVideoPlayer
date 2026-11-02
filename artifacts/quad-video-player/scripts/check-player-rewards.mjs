@@ -35,6 +35,9 @@ test('levels advance every ten XP and border rewards unlock in order', () => {
   assert.equal(model.isBorderUnlocked('prism', 39), false);
   assert.equal(model.isBorderUnlocked('aurora', 50), true);
   assert.equal(model.isThemeUnlocked('amethyst', 0), true);
+  assert.equal(model.isThemeUnlocked('trans-pride', 0), true);
+  assert.equal(model.isThemeUnlocked('spectrum-calm', 0), true);
+  assert.equal(model.isThemeUnlocked('stim-garden', 0), true);
   assert.equal(model.isThemeUnlocked('silver', 9), false);
   assert.equal(model.isThemeUnlocked('silver', 10), true);
   assert.equal(model.isThemeUnlocked('olive-mist', 50), true);

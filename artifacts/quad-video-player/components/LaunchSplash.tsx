@@ -1,20 +1,23 @@
-import { Feather } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
-import { AccessibilityInfo, Animated, StyleSheet, Text, View } from 'react-native';
-import { getThemeColors, themePresets } from '@/constants/colors';
+import {
+  AccessibilityInfo,
+  Animated,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { getThemeColors } from '@/constants/colors';
+import PixelFamiliar from '@/components/PixelFamiliar';
 
 const colors = getThemeColors('amethyst');
-const tiles = [
-  { icon: 'play', color: colors.primary },
-  { icon: 'shuffle', color: themePresets[10].primary },
-  { icon: 'music', color: themePresets[12].primary },
-  { icon: 'repeat', color: themePresets[4].primary },
-] as const;
 
-/** A short native welcome animation; no video player or network needed. */
+/** A short native welcome animation; no network or game state is required. */
 export default function LaunchSplash({ onFinish }: { onFinish: () => void }) {
   const opacity = useRef(new Animated.Value(1)).current;
-  const entrances = useRef(tiles.map(() => new Animated.Value(0))).current;
+  const entrance = useRef(new Animated.Value(0)).current;
+  const { width, height } = useWindowDimensions();
+  const familiarSize = Math.min(176, width * 0.38, height * 0.3);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,18 +26,18 @@ export default function LaunchSplash({ onFinish }: { onFinish: () => void }) {
     AccessibilityInfo.isReduceMotionEnabled().catch(() => false).then((reduceMotion) => {
       if (cancelled) return;
       if (reduceMotion) {
-        entrances.forEach((value) => value.setValue(1));
+        entrance.setValue(1);
         reducedMotionTimer = setTimeout(onFinish, 500);
         return;
       }
       animation = Animated.sequence([
-        Animated.stagger(95, entrances.map((value) => Animated.spring(value, {
+        Animated.spring(entrance, {
           toValue: 1,
           friction: 6,
-          tension: 110,
+          tension: 105,
           useNativeDriver: true,
-        }))),
-        Animated.delay(350),
+        }),
+        Animated.delay(420),
         Animated.timing(opacity, { toValue: 0, duration: 240, useNativeDriver: true }),
       ]);
       animation.start(({ finished }) => {
@@ -46,38 +49,31 @@ export default function LaunchSplash({ onFinish }: { onFinish: () => void }) {
       animation?.stop();
       if (reducedMotionTimer) clearTimeout(reducedMotionTimer);
     };
-  }, [entrances, onFinish, opacity]);
+  }, [entrance, onFinish, opacity]);
 
   return (
     <Animated.View
-      accessibilityLabel="Goon Quest. A moonlit guild for four-stream adventures."
+      accessibilityLabel="Goon Quest. A moonlit quest with a friendly pixel familiar."
       accessibilityViewIsModal
       style={[styles.overlay, { opacity }]}
     >
-      <View style={styles.mark}>
-        {tiles.map((tile, index) => (
-          <Animated.View
-            key={tile.icon}
-            style={[
-              styles.tile,
-              {
-                backgroundColor: tile.color,
-                opacity: entrances[index],
-                transform: [
-                  { translateY: entrances[index].interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) },
-                  { scale: entrances[index].interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) },
-                  { rotate: entrances[index].interpolate({ inputRange: [0, 1], outputRange: [index % 2 ? '18deg' : '-18deg', '0deg'] }) },
-                ],
-              },
-            ]}
-          >
-            <Feather name={tile.icon} size={29} color={colors.background} />
-          </Animated.View>
-        ))}
-      </View>
-      <Text style={styles.eyebrow}>MOON UP. EARS AT THE READY.</Text>
+      <Animated.View
+        style={[
+          styles.mascot,
+          {
+            opacity: entrance,
+            transform: [
+              { translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) },
+              { scale: entrance.interpolate({ inputRange: [0, 1], outputRange: [0.76, 1] }) },
+            ],
+          },
+        ]}
+      >
+        <PixelFamiliar size={familiarSize} />
+      </Animated.View>
+      <Text style={styles.eyebrow}>YOUR QUEST BEGINS UNDER THE MOON</Text>
       <Text style={styles.title}>GOON QUEST</Text>
-      <Text style={styles.subtitle}>Find your class. Keep the loop rolling.</Text>
+      <Text style={styles.subtitle}>Meet your familiar. Find your kind of magic.</Text>
     </Animated.View>
   );
 }
@@ -89,10 +85,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 100,
+    paddingHorizontal: 22,
   },
-  mark: { width: 164, height: 164, flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 29 },
-  tile: { width: 77, height: 77, borderRadius: 23, justifyContent: 'center', alignItems: 'center' },
-  eyebrow: { color: colors.primary, fontSize: 9, fontWeight: '800', letterSpacing: 2.1, marginBottom: 11 },
-  title: { color: colors.foreground, fontSize: 25, fontWeight: '900', letterSpacing: 2.4, textAlign: 'center' },
-  subtitle: { color: colors.mutedForeground, fontSize: 13, marginTop: 11 },
+  mascot: { alignItems: 'center', justifyContent: 'center', marginBottom: 26 },
+  eyebrow: {
+    color: colors.primary,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 2.1,
+    marginBottom: 11,
+    textAlign: 'center',
+  },
+  title: {
+    color: colors.foreground,
+    fontSize: 25,
+    fontWeight: '900',
+    letterSpacing: 2.4,
+    textAlign: 'center',
+  },
+  subtitle: {
+    color: colors.mutedForeground,
+    fontSize: 13,
+    marginTop: 11,
+    textAlign: 'center',
+  },
 });
