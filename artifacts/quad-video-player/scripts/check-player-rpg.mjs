@@ -45,11 +45,17 @@ test('classes, quests, and mature cosmetics use the furry fantasy Goon Quest the
     'Slytail Trickster',
   ]);
   assert.equal(rpg.goonQuestClasses.find(({ id }) => id === 'rogue').spell, 'Goonstorm');
-  assert.match(rpg.getRpgQuests(state, now).find(({ id }) => id === 'daily-focus').title, /Gooning/);
-  assert.match(rpg.getRpgQuests(state, now).find(({ id }) => id === 'daily-hunter').title, /Bouncing beast/);
+  const defaultQuests = rpg.getRpgQuests(state, now);
+  assert.match(defaultQuests.find(({ id }) => id === 'daily-focus').title, /Gooning/);
+  assert.match(defaultQuests.find(({ id }) => id === 'daily-hunter').title, /Bouncing beast/);
+  assert.doesNotMatch(defaultQuests.find(({ id }) => id === 'daily-focus').description, /Masturbate/);
+  const adultQuests = rpg.getRpgQuests(rpg.setAdultRewardFlavor(state, true), now);
+  assert.match(adultQuests.find(({ id }) => id === 'daily-focus').description, /Masturbate/);
+  assert.match(adultQuests.find(({ id }) => id === 'daily-arcana').description, /edging/);
+  assert.match(adultQuests.find(({ id }) => id === 'daily-dungeon').description, /before you come/);
   assert.equal(
     rpg.rpgShopItems.find(({ id }) => id === 'after-dark-charm').name,
-    'Gooner’s Velvet Charm',
+    'Gooner’s Velvet Collar',
   );
 });
 

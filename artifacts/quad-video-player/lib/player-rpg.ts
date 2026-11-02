@@ -51,8 +51,8 @@ export const rpgShopItems: RpgShopItem[] = [
   { id: 'moon-charm', name: 'Moonpaw Collar', description: 'A velvet charm for private, late-night den rituals.', cost: 65, icon: 'moon' },
   {
     id: 'after-dark-charm',
-    name: 'Gooner’s Velvet Charm',
-    description: 'A teasing after-dark accessory for a den champion.',
+    name: 'Gooner’s Velvet Collar',
+    description: 'A velvet collar for an adult beastkin partner who enjoys consensual teasing and edging through a private goon session.',
     cost: 90,
     icon: 'heart',
     matureOnly: true,
@@ -365,7 +365,9 @@ export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[
       id: 'daily-focus',
       title: current.adultFlavorEnabled ? 'Gooner’s focus ritual' : 'Gooning focus ritual',
       adultTitle: 'Gooner’s focus ritual',
-      description: 'Keep your den session going for 15 active minutes today.',
+      description: current.adultFlavorEnabled
+        ? 'Masturbate through a 15-minute goon session; edge yourself without pausing the den.'
+        : 'Keep your den session going for 15 active minutes today.',
       progress: Math.min(15, Math.floor(current.todayPlaybackMs / 60_000)),
       target: 15,
       unit: 'min',
@@ -377,7 +379,9 @@ export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[
       id: 'daily-explorer',
       title: current.adultFlavorEnabled ? 'Private den collection' : 'Paw-print collection',
       adultTitle: 'Private den collection',
-      description: 'Play 4 different videos to keep the den collection fresh today.',
+      description: current.adultFlavorEnabled
+        ? 'Queue 4 adult clips, then use your private collection to get yourself off.'
+        : 'Play 4 different videos to keep the den collection fresh today.',
       progress: Math.min(DAILY_VIDEO_TARGET, current.todayVideoIds.length),
       target: DAILY_VIDEO_TARGET,
       unit: 'videos',
@@ -389,7 +393,9 @@ export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[
       id: 'daily-hunter',
       title: current.adultFlavorEnabled ? 'Bouncing prey' : 'Bouncing beast hunt',
       adultTitle: 'Bouncing prey',
-      description: 'Tap 5 bouncing image targets in your den today.',
+      description: current.adultFlavorEnabled
+        ? 'Tap 5 bouncing adult pinups while stroking; keep the teasing game going between hits.'
+        : 'Tap 5 bouncing image targets in your den today.',
       progress: Math.min(5, current.defeatedToday),
       target: 5,
       unit: 'targets',
@@ -401,7 +407,9 @@ export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[
       id: 'daily-arcana',
       title: current.adultFlavorEnabled ? 'After-dark Gooncraft' : 'Gooncraft practice',
       adultTitle: 'After-dark Gooncraft',
-      description: 'Cast 3 class skills or spells to keep your focus charged.',
+      description: current.adultFlavorEnabled
+        ? 'Cast 3 class skills while edging; hold your climax until the last spell lands.'
+        : 'Cast 3 class skills or spells to keep your focus charged.',
       progress: Math.min(3, current.spellsToday),
       target: 3,
       unit: 'casts',
@@ -413,7 +421,9 @@ export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[
       id: 'daily-dungeon',
       title: current.adultFlavorEnabled ? 'Velvet Den Delve' : 'Moonfang den delve',
       adultTitle: 'Velvet Den Delve',
-      description: 'Clear one image dungeon and handle the whole horde today.',
+      description: current.adultFlavorEnabled
+        ? 'Clear all three image-dungeon waves before you come; no skipping the finale.'
+        : 'Clear one image dungeon and handle the whole horde today.',
       progress: Math.min(1, current.dungeonsToday),
       target: 1,
       unit: 'dungeons',
@@ -425,7 +435,9 @@ export function getRpgQuests(state: PlayerRpgState, now = Date.now()): RpgQuest[
       id: 'weekly-cadence',
       title: current.adultFlavorEnabled ? 'After-hours den regular' : 'Moonlit Gooner',
       adultTitle: 'After-hours den regular',
-      description: `Keep the den streak going on ${WEEKLY_ACTIVE_DAY_TARGET} days this week.`,
+      description: current.adultFlavorEnabled
+        ? `Keep your private goon sessions going on ${WEEKLY_ACTIVE_DAY_TARGET} different days this week.`
+        : `Keep the den streak going on ${WEEKLY_ACTIVE_DAY_TARGET} days this week.`,
       progress: Math.min(WEEKLY_ACTIVE_DAY_TARGET, weeklyActiveDayCount(current, now)),
       target: WEEKLY_ACTIVE_DAY_TARGET,
       unit: 'days',

@@ -8,10 +8,10 @@ export const PUZZLED_TEXTURE_SCALE_MAX = 2.5;
 export const PLAYER_REWARDS_KEY = 'quad.player.rewards.v1';
 
 export const DEFAULT_CONGRATS_TEXT = [
-  'Ten more minutes in the loop. Nice work!',
-  'You are keeping the momentum going.',
-  'Another milestone reached. Keep it rolling!',
-  'Your focus is paying off.',
+  'Ten more minutes of stroking. Keep edging; your goon session is only getting hotter.',
+  'Still hard, still focused, still going. The den can wait for your finish.',
+  'Another milestone down. Keep your hand moving until you decide it is time to come.',
+  'That long, filthy session is paying off. Take your reward and keep going.',
 ].join('\n');
 
 export const borderOptions = [

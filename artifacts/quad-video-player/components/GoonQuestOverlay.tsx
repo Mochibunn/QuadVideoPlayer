@@ -148,6 +148,7 @@ export default function GoonQuestOverlay({
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cooldownTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const transitionHandled = useRef(false);
+  const adultMode = state.adultFlavorEnabled;
   const activeClass = goonQuestClasses.find((item) => item.id === state.classId) ?? goonQuestClasses[0];
   const quests = getRpgQuests(state);
 
@@ -158,15 +159,21 @@ export default function GoonQuestOverlay({
 
   useEffect(() => {
     if (!visible) return;
-        onDialogue(`The guild board is open. ${activeClass.name}, choose a moonlit run or claim your spoils.`);
-  }, [activeClass.name, onDialogue, visible]);
+    onDialogue(adultMode
+      ? `The after-dark guild is open. ${activeClass.name}, pick a clip, start stroking, and keep your goon session going.`
+      : `The guild board is open. ${activeClass.name}, choose a moonlit run or claim your spoils.`);
+  }, [activeClass.name, adultMode, onDialogue, visible]);
 
   useEffect(() => {
     if (!inDungeon || !enemies.length || enemies.some((enemy) => enemy.hp > 0) || transitionHandled.current) return;
     transitionHandled.current = true;
     if (wave < DUNGEON_WAVES) {
-      setDungeonMessage(`Wave ${wave} quieted. The next chamber opens.`);
-      onDialogue(`Wave ${wave} quieted. Ready yourself for the next chamber.`);
+      setDungeonMessage(adultMode
+        ? `Wave ${wave} down. Keep edging; the next adult pinups are coming.`
+        : `Wave ${wave} quieted. The next chamber opens.`);
+      onDialogue(adultMode
+        ? `Wave ${wave} down. Keep stroking and stay on the edge; the next adult pinups are coming.`
+        : `Wave ${wave} quieted. Ready yourself for the next chamber.`);
       transitionTimer.current = setTimeout(() => {
         const nextWave = wave + 1;
         setWave(nextWave);
@@ -175,12 +182,16 @@ export default function GoonQuestOverlay({
         transitionHandled.current = false;
       }, 900);
     } else {
-      setDungeonMessage('Den cleared. +20 coins');
+      setDungeonMessage(adultMode
+        ? 'Three waves down. You kept your hand moving and saved the finish for after the final target. +20 coins'
+        : 'Den cleared. +20 coins');
       setInDungeon(false);
       onCombatProgress({ dungeons: 1 });
-      onDialogue('Den cleared. The restless portraits are quiet, and the guild purse is yours.');
+      onDialogue(adultMode
+        ? 'You cleared the horde without breaking your rhythm. Now you can let yourself come and collect the guild reward.'
+        : 'Den cleared. The restless portraits are quiet, and the guild purse is yours.');
     }
-  }, [enemies, inDungeon, onCombatProgress, onDialogue, pool, wave]);
+  }, [adultMode, enemies, inDungeon, onCombatProgress, onDialogue, pool, wave]);
 
   const startDungeon = () => {
     if (!pool.length) return;
@@ -191,7 +202,9 @@ export default function GoonQuestOverlay({
     setEnemies(createWave(pool, 1));
     setInDungeon(true);
     setDungeonMessage('');
-    onDialogue('The moonlit den stirs. Tap each portrait before it bounds away.');
+    onDialogue(adultMode
+      ? 'Three waves of adult pinups are bouncing through the den. Keep stroking, edge between taps, and finish the horde before you finish yourself.'
+      : 'The moonlit den stirs. Tap each portrait before it bounds away.');
   };
 
   const hitEnemy = (enemyId: string, damage: number, message?: string) => {
@@ -204,8 +217,12 @@ export default function GoonQuestOverlay({
     setEnemies(next);
     if (defeated) {
       onCombatProgress({ defeats: defeated });
-      setDungeonMessage(`${target.name} sent packing. +2 coins`);
-      onDialogue(`${target.name} sent packing.`);
+      setDungeonMessage(adultMode
+        ? `${target.name} vanishes in a flash of magic. +2 coins`
+        : `${target.name} sent packing. +2 coins`);
+      onDialogue(adultMode
+        ? `${target.name} vanishes in a flash of magic. Keep your hand moving; the den is still hungry.`
+        : `${target.name} sent packing.`);
     } else if (message) {
       setDungeonMessage(message);
     }
@@ -233,7 +250,9 @@ export default function GoonQuestOverlay({
     startCooldown('skill');
     onCombatProgress({ spells: 1 });
     hitEnemy(target.id, activeClass.skillDamage, `${activeClass.skill}!`);
-    onDialogue(`${activeClass.name} uses ${activeClass.skill}.`);
+    onDialogue(adultMode
+      ? `${activeClass.name} unleashes ${activeClass.skill}. The heat spikes; keep edging until the den says you're done.`
+      : `${activeClass.name} uses ${activeClass.skill}.`);
   };
 
   const useSpell = () => {
@@ -252,7 +271,9 @@ export default function GoonQuestOverlay({
     } else {
       hitEnemy(living[0].id, activeClass.spellDamage, `${activeClass.spell}!`);
     }
-    onDialogue(`${activeClass.name} casts ${activeClass.spell}.`);
+    onDialogue(adultMode
+      ? `${activeClass.name} casts ${activeClass.spell}. Hold your climax through the spell and keep stroking.`
+      : `${activeClass.name} casts ${activeClass.spell}.`);
   };
 
   const close = () => {
@@ -335,7 +356,9 @@ export default function GoonQuestOverlay({
               {quests.map((quest) => (
                 <QuestRow key={quest.id} quest={quest} colors={colors}
                   onClaim={() => {
-                    if (onClaimQuest(quest.id)) onDialogue(`${quest.title} claimed. ${quest.rewardCoins} coins added.`);
+                    if (onClaimQuest(quest.id)) onDialogue(adultMode
+                      ? `${quest.title} claimed. ${quest.rewardCoins} coins added. Keep stroking; the next round is waiting.`
+                      : `${quest.title} claimed. ${quest.rewardCoins} coins added.`);
                   }} />
               ))}
             </View>

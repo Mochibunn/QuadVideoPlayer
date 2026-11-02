@@ -45,8 +45,8 @@ export default function PlayerRpgDashboard({
       return;
     }
     Alert.alert(
-      'After Dark rewards',
-      'This reveals adult-themed cosmetic names and descriptions. It adds no explicit images or media. Confirm that you are 18 or older.',
+      'After Dark mode',
+      'This enables explicit 18+ quest descriptions, in-session dialogue, and adult cosmetic names. It adds no images or video. Confirm that you are 18 or older.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'I am 18+', onPress: () => onSetAdultFlavor(true) },
@@ -261,11 +261,11 @@ export default function PlayerRpgDashboard({
           <View style={styles.skillCopy}>
             <Text style={[styles.questTitle, { color: colors.foreground }]}>After-dark guild ledger</Text>
             <Text style={[styles.caption, { color: colors.mutedForeground }]}>
-              Optional 18+ names and descriptions for cosmetic rewards only.
+              Explicit 18+ quest copy and dungeon dialogue, plus adult-only cosmetics.
             </Text>
           </View>
           <SettingSwitch
-            label="Show adult-themed RPG rewards"
+            label="Enable explicit After Dark content"
             value={state.adultFlavorEnabled}
             disabled={disabled}
             onValueChange={toggleAdultFlavor}

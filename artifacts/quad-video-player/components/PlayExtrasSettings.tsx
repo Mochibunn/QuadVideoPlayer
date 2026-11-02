@@ -35,7 +35,7 @@ export default function PlayExtrasSettings({ settings, update, ready }: Props) {
         <View style={styles.copy}>
           <Text style={[styles.title, { color: colors.foreground }]}>Speak quest dialogue</Text>
           <Text style={[styles.description, { color: colors.mutedForeground }]}>
-            Hear brief class calls and den updates.
+            Hear class calls and den updates; explicit 18+ lines require After Dark mode.
           </Text>
         </View>
         <SettingSwitch label="Speak quest dialogue" value={settings.speakDialogue}
