@@ -14,3 +14,17 @@ mtime_ms = 1793584405568
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/0348c3da-2687-407c-836d-19d730530766/278abc93-a91f-40d9-a84b-a603f1b643e5"
 storage_version_token = "1793584438377840"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "_aQ9r4Tnk1svCpAWdbdk3"
+uri = "file://generated-artifacts/android/goon-quest-arm64.apk"
+type = "unspecified"
+title = "Goon Quest Android APK"
+description = "Arm64 APK, version 1.13.1 (version code 26), for Android sideloading."
+logical_id = "320dad07-eb03-40cb-9f9c-5e4f984c754a"
+content_hash = "sha256:656048c932259627700641d5eb166242ad2ec8b924e34499bc2785d76787a3c6"
+size = 51855046
+mtime_ms = 1793615262917
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/320dad07-eb03-40cb-9f9c-5e4f984c754a/29518feb-b6dd-4e77-97b6-f6493c940c8d"
+storage_version_token = "1793615312517651"
+content_type = "application/octet-stream"
