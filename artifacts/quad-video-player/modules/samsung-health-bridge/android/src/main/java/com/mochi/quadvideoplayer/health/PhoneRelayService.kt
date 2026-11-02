@@ -34,7 +34,7 @@ class PhoneRelayService : Service() {
     relayThread = Thread(::serveBluetooth, "qvp-heart-rate-relay").also { it.start() }
   }
 
-  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
+  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
   @SuppressLint("MissingPermission")
   private fun serveBluetooth() {

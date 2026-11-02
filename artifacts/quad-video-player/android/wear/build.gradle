@@ -1,0 +1,48 @@
+plugins {
+  id 'com.android.application'
+  id 'org.jetbrains.kotlin.android'
+}
+
+android {
+  namespace 'com.mochi.quadvideoplayer.wear'
+  compileSdk 37
+
+  defaultConfig {
+    // Keep the same application ID so Wearable Data Layer can pair the
+    // watch app with Quad Video Player on the phone.
+    applicationId 'com.mochi.quadvideoplayer'
+    minSdk 30
+    targetSdk 35
+    versionCode 27
+    versionName '1.13.2'
+  }
+
+  signingConfigs {
+    debug {
+      storeFile file('../app/debug.keystore')
+      storePassword 'android'
+      keyAlias 'androiddebugkey'
+      keyPassword 'android'
+    }
+  }
+
+  buildTypes {
+    release {
+      signingConfig signingConfigs.debug
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  kotlinOptions {
+    jvmTarget = '17'
+  }
+}
+
+dependencies {
+  implementation files('libs/samsung-health-sensor-api-1.4.1.aar')
+  implementation 'com.google.android.gms:play-services-wearable:19.0.0'
+}

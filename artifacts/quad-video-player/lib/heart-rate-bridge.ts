@@ -32,7 +32,7 @@ export function getSamsungHealthBridge(): SamsungHealthBridgeNative {
 export function isHeartRateFresh(
   state: HeartRateBridgeState,
   now = Date.now(),
-  maxAgeMs = 15_000,
+  maxAgeMs = 30_000,
 ): boolean {
   return typeof state.bpm === 'number' &&
     typeof state.receivedAtMs === 'number' &&
