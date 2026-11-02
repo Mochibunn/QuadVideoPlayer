@@ -25,8 +25,10 @@ installing SDK packages.
 Output:
 
 ```text
-generated-artifacts/android/quad-video-player-arm64.apk
-generated-artifacts/android/quad-video-player-arm64.apk.sha256
+generated-artifacts/android/goon-quest-arm64.apk
+generated-artifacts/android/goon-quest-arm64.apk.sha256
+generated-artifacts/android/goon-quest-watch.apk
+generated-artifacts/android/goon-quest-watch.apk.sha256
 ```
 
 Build tools, Gradle caches, generated native files, and APKs are ignored by Git.
@@ -37,7 +39,7 @@ Keep app configuration in `app.json`; generated Android files can be regenerated
 1. Transfer the APK to the tablet.
 2. Open it in the tablet's file manager.
 3. If prompted, allow that file manager to install unknown apps, then install.
-4. Open **Quad Video Player** and choose local video files or a folder.
+4. Open **Goon Quest** and choose local video files or a folder.
 5. You can revoke the file manager's install permission afterward.
 
 This personal sideload build uses Expo's **development signing key**, even

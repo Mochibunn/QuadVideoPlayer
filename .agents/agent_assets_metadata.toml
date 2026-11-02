@@ -33,14 +33,14 @@ content_type = "application/octet-stream"
 id = "X3nkVAiDTKLLw4uD_NF6n"
 uri = "file://generated-artifacts/android/goon-quest-watch.apk"
 type = "unspecified"
-title = "Goon Quest Link Galaxy Watch APK"
-description = "Version 1.13.2 companion APK for Galaxy Watch. Update your existing install to preserve app data."
+title = "Goon Quest Link 1.14.0 — Wear OS APK"
+description = "Version 1.14.0 (29), package com.mochi.quadvideoplayer. Signed for personal sideloading."
 logical_id = "ec63e844-500d-43dd-9cd0-15ae669e6d26"
-content_hash = "sha256:eb2e294eca0664512d9e8869cbac4ba49c52b00c1dd86f62d0f84e19f961f51c"
-size = 4208602
-mtime_ms = 1793635949755
-storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/ec63e844-500d-43dd-9cd0-15ae669e6d26/6d341240-8e2f-4e78-9e61-50c545b0b0a7"
-storage_version_token = "1793639158823323"
+content_hash = "sha256:796dedce7b6a793828098f316e62ef5165293314288f77898f3d265f60d67816"
+size = 4210358
+mtime_ms = 1793649942814
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/ec63e844-500d-43dd-9cd0-15ae669e6d26/6733b502-9c90-4ce1-9f86-1b80192854ae"
+storage_version_token = "1793650078706813"
 content_type = "application/octet-stream"
 
 [[outputs]]
@@ -55,4 +55,18 @@ size = 4210358
 mtime_ms = 1793643548381
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/aa6e18bf-421b-476b-be49-20ed1ab2f985/4def2c8b-3458-4155-9add-9edbff1cd296"
 storage_version_token = "1793643745304192"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "3Wf1bWl3bPTm66UXTwVc6"
+uri = "file://generated-artifacts/android/goon-quest-arm64-download.zip"
+type = "unspecified"
+title = "Goon Quest 1.14.0 — tablet APK download"
+description = "Extract the archive to get goon-quest-arm64.apk. Arm64 tablet build, signed for personal sideloading. SHA-256 of archive: b1535e7e8d7d9eec68364d9a19736c99a047835416acc23a8bad451a5168729d."
+logical_id = "00275ea6-53b5-451b-b2c8-b6d40dbfc4ac"
+content_hash = "sha256:b1535e7e8d7d9eec68364d9a19736c99a047835416acc23a8bad451a5168729d"
+size = 60989490
+mtime_ms = 1793650052913
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/00275ea6-53b5-451b-b2c8-b6d40dbfc4ac/4c5dd2dc-fa0c-4b1f-a29d-89552e7338aa"
+storage_version_token = "1793650069667903"
 content_type = "application/octet-stream"

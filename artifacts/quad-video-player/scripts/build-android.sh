@@ -16,6 +16,7 @@ cd "$APP_DIR"
 if [[ ! -f android/gradlew ]]; then
   pnpm exec expo prebuild --platform android --no-install
 fi
+bash "$APP_DIR/scripts/sync-android-branding.sh"
 
 cd android
 ./gradlew :expo-video:testDebugUnitTest :downloads-media:testDebugUnitTest \

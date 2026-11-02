@@ -9,6 +9,12 @@ For an Android release, verify the final APK's application ID, version code/name
 
 **How to apply:** Inspect each packaged APK separately. Keep phone and watch versions aligned, verify each manifest identity and signature, and checksum the exact files being shared.
 
+Replit asset cards reject files larger than 100 MiB, but compressible APKs can be delivered in a ZIP archive.
+
+**Why:** The app APK can exceed the asset upload limit even when the APK itself is valid.
+
+**How to apply:** Keep the original APK in generated-artifacts, create and integrity-check a compressed ZIP, and tell the user to extract the APK before installing.
+
 The Android SDK may be installed under `.local/android-sdk` while `ANDROID_HOME` and `ANDROID_SDK_ROOT` are unset.
 
 **Why:** A native rebuild can fail during Gradle configuration even though the SDK and required platforms are already installed.
