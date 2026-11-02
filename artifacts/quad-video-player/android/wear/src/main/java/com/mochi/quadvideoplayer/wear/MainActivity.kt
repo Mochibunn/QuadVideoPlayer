@@ -12,10 +12,12 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 
 class MainActivity : Activity() {
@@ -90,6 +92,12 @@ class MainActivity : Activity() {
       contentDescription = "Review Goon Quest Link app permissions"
       setOnClickListener { openAppPermissionSettings() }
     }
+    root.addView(TextView(this).apply {
+      text = "Link 1.14.1\nSensor Sprout Rescue"
+      textSize = 12f
+      gravity = Gravity.CENTER
+      setTextColor(android.graphics.Color.rgb(185, 173, 240))
+    })
     root.addView(statusText, LinearLayout.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
@@ -99,14 +107,13 @@ class MainActivity : Activity() {
     root.addView(permissionHelpText, LinearLayout.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
-    setContentView(root)
+    setContentView(ScrollView(this).apply { addView(root) })
   }
 
   private fun requestPermissionsAndStart() {
-    val required = mutableListOf(Manifest.permission.BODY_SENSORS)
-    if (Build.VERSION.SDK_INT >= 36) {
-      required.add(PERMISSION_READ_HEART_RATE)
-    }
+    val required = listOf(
+      SensorPermissionPolicy.foreground(Build.VERSION.SDK_INT, applicationInfo.targetSdkVersion),
+    )
     val missing = required.filter {
       checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
     }
@@ -129,18 +136,13 @@ class MainActivity : Activity() {
     requestPermissions(arrayOf(permission), REQUEST_BACKGROUND_PERMISSION)
   }
 
-  private fun backgroundSensorPermission(): String? = when {
-    Build.VERSION.SDK_INT >= 36 -> PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
-    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> Manifest.permission.BODY_SENSORS_BACKGROUND
-    else -> null
-  }
+  private fun backgroundSensorPermission(): String? =
+    SensorPermissionPolicy.background(Build.VERSION.SDK_INT, applicationInfo.targetSdkVersion)
 
   private fun hasForegroundSensorAccess(): Boolean {
-    val bodySensorsGranted =
-      checkSelfPermission(Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED
-    val heartRateGranted = Build.VERSION.SDK_INT < 36 ||
-      checkSelfPermission(PERMISSION_READ_HEART_RATE) == PackageManager.PERMISSION_GRANTED
-    return bodySensorsGranted && heartRateGranted
+    val permission =
+      SensorPermissionPolicy.foreground(Build.VERSION.SDK_INT, applicationInfo.targetSdkVersion)
+    return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
   }
 
   private fun hasBackgroundSensorAccess(): Boolean {
@@ -165,10 +167,18 @@ class MainActivity : Activity() {
   private fun startTrackingService() {
     val intent = Intent(this, HeartRateTrackingService::class.java)
       .setAction(HeartRateTrackingService.ACTION_START)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      startForegroundService(intent)
-    } else {
-      startService(intent)
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        startForegroundService(intent)
+      } else {
+        startService(intent)
+      }
+    } catch (exception: Exception) {
+      Log.e("GoonQuestHeartRate", "Could not launch tracking service", exception)
+      HeartRateTrackingState.active = false
+      HeartRateTrackingState.status =
+        "Could not start: ${exception.javaClass.simpleName}: ${exception.message ?: "unknown error"}"
+      renderTrackingState()
     }
   }
 
@@ -183,11 +193,17 @@ class MainActivity : Activity() {
     if (!::statusText.isInitialized) return
     statusText.text = when {
       HeartRateTrackingState.active -> HeartRateTrackingState.status
+      HeartRateTrackingState.status != "Heart rate is off" -> HeartRateTrackingState.status
       !hasForegroundSensorAccess() -> "Heart-rate access is not allowed yet. Tap Start to request it."
       !hasBackgroundSensorAccess() -> "Heart-rate access is allowed. Tap Start to enable background access."
       else -> "Heart-rate access is already allowed. Tap Start to connect; no extra prompt is expected."
     }
     trackingButton.text = if (HeartRateTrackingState.active) "Stop tracking" else "Start tracking"
+    permissionHelpText.text =
+      "Sensor: ${if (hasForegroundSensorAccess()) "allowed" else "not allowed"} · " +
+      "Background: ${if (hasBackgroundSensorAccess()) "allowed" else "not allowed"}\n" +
+      "Android API ${Build.VERSION.SDK_INT} · target ${applicationInfo.targetSdkVersion}\n" +
+      "Tap here to review app permissions."
   }
 
   private fun openAppPermissionSettings() {
@@ -246,8 +262,5 @@ class MainActivity : Activity() {
     private const val REQUEST_SENSOR_PERMISSIONS = 7101
     private const val REQUEST_BACKGROUND_PERMISSION = 7102
     private const val REQUEST_NOTIFICATION_PERMISSION = 7103
-    private const val PERMISSION_READ_HEART_RATE = "android.permission.READ_HEART_RATE"
-    private const val PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND =
-      "android.permission.READ_HEALTH_DATA_IN_BACKGROUND"
   }
 }

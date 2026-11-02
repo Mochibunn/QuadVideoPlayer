@@ -70,3 +70,17 @@ mtime_ms = 1793650052913
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/00275ea6-53b5-451b-b2c8-b6d40dbfc4ac/4c5dd2dc-fa0c-4b1f-a29d-89552e7338aa"
 storage_version_token = "1793650069667903"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "T0uCky8rfUjhLnYA23lL6"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.14.1.apk"
+type = "unspecified"
+title = "Goon Quest Link 1.14.1 — Sensor Sprout Rescue"
+description = "Watch-only startup permission repair. Install as an update over Goon Quest Link on your watch; keep the existing tablet/phone app. Five permission tests passed; APK version and development signature verified."
+logical_id = "4a207f0c-ee1c-4fa1-8a58-8dd789c53c21"
+content_hash = "sha256:25bc5c1063466078096dc89f0b0924668d16ba78d35d369264ef05d15714c555"
+size = 4212730
+mtime_ms = 1793651222629
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/4a207f0c-ee1c-4fa1-8a58-8dd789c53c21/fb54cecd-16ee-47df-9395-c7e484156645"
+storage_version_token = "1793651234495179"
+content_type = "application/octet-stream"

@@ -8,6 +8,19 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.14.1',
+    title: 'Sensor Sprout Rescue',
+    date: 'November 2, 2026',
+    summary: 'A watch companion repair for heart-rate tracking startup.',
+    changes: [
+      'The watch checks sensor permissions using both its Android version and the app target version.',
+      'Android 16 watches no longer require nonexistent extra permissions before tracking can start.',
+      'Startup failures and Samsung sensor error codes remain visible instead of being replaced with generic permission advice.',
+      'The watch status screen scrolls and shows the companion version plus current permission states.',
+      'This watch-only update works with the existing 1.14.0 tablet APK.',
+    ],
+  },
+  {
     version: '1.14.0',
     title: 'Paws, Pixels & Prompt Potions',
     date: 'November 2, 2026',

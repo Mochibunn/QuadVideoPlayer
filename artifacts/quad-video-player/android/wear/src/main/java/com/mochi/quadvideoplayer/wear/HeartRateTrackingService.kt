@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import com.google.android.gms.wearable.Wearable
 import com.samsung.android.service.health.tracking.ConnectionListener
 import com.samsung.android.service.health.tracking.HealthTracker
@@ -67,7 +68,13 @@ class HeartRateTrackingService : Service() {
 
     override fun onConnectionFailed(exception: HealthTrackerException) {
       handler.post {
-        if (trackingRequested) scheduleReconnect("Sensor service unavailable; retrying…")
+        if (trackingRequested) {
+          Log.e("GoonQuestHeartRate", "Samsung sensor connection failed", exception)
+          scheduleReconnect(
+            "Samsung connection error ${exception.errorCode}: " +
+              "${exception.message ?: "service unavailable"}. Retrying…",
+          )
+        }
       }
     }
   }
@@ -93,13 +100,21 @@ class HeartRateTrackingService : Service() {
       return START_NOT_STICKY
     }
 
-    startAsForegroundService()
-    HeartRateTrackingState.active = true
     if (!hasSensorPermission()) {
-      stopTracking(clearSavedRequest = true)
-      publishStatus("Allow heart-rate sensor access, then start tracking again.")
+      failTracking("Allow heart-rate sensor access, then start tracking again.")
       return START_NOT_STICKY
     }
+    try {
+      startAsForegroundService()
+    } catch (exception: Exception) {
+      Log.e("GoonQuestHeartRate", "Health foreground service could not start", exception)
+      failTracking(
+        "Tracking could not start: ${exception.javaClass.simpleName}: " +
+          "${exception.message ?: "unknown error"}",
+      )
+      return START_NOT_STICKY
+    }
+    HeartRateTrackingState.active = true
 
     publishStatus("Connecting to the watch sensor…")
     connectToSensor()
@@ -109,11 +124,9 @@ class HeartRateTrackingService : Service() {
   }
 
   private fun hasSensorPermission(): Boolean {
-    val bodySensorsGranted =
-      checkSelfPermission(android.Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED
-    val heartRateGranted = Build.VERSION.SDK_INT < 36 ||
-      checkSelfPermission(PERMISSION_READ_HEART_RATE) == PackageManager.PERMISSION_GRANTED
-    return bodySensorsGranted && heartRateGranted
+    val permission =
+      SensorPermissionPolicy.foreground(Build.VERSION.SDK_INT, applicationInfo.targetSdkVersion)
+    return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
   }
 
   private fun connectToSensor() {
@@ -123,8 +136,9 @@ class HeartRateTrackingService : Service() {
       sensorService = HealthTrackingService(connectionListener, this).also {
         it.connectService()
       }
-    } catch (_: Exception) {
-      scheduleReconnect("Could not connect to the watch sensor; retrying…")
+    } catch (exception: Exception) {
+      Log.e("GoonQuestHeartRate", "Samsung sensor connection threw", exception)
+      scheduleReconnect("Sensor connection failed: ${exception.javaClass.simpleName}. Retrying…")
     }
   }
 
@@ -133,8 +147,7 @@ class HeartRateTrackingService : Service() {
     val service = sensorService ?: return
     val supported = service.trackingCapability?.supportHealthTrackerTypes.orEmpty()
     if (!supported.contains(HealthTrackerType.HEART_RATE_CONTINUOUS)) {
-      stopTracking(clearSavedRequest = true)
-      publishStatus("Continuous heart rate is unavailable on this watch.")
+      failTracking("Continuous heart rate is unavailable on this watch.")
       return
     }
 
@@ -166,7 +179,9 @@ class HeartRateTrackingService : Service() {
           handler.post {
             if (!trackingRequested) return@post
             if (error == HealthTracker.TrackerError.SDK_POLICY_ERROR) {
-              publishStatus("Samsung denied sensor access. Check sensor developer mode.")
+              failTracking("Samsung SDK_POLICY_ERROR: check Samsung Health Sensor Service developer mode on the watch.")
+            } else if (error == HealthTracker.TrackerError.PERMISSION_ERROR) {
+              failTracking("Samsung PERMISSION_ERROR: heart-rate access was rejected by the sensor service.")
             } else {
               scheduleReconnect("Heart-rate sensor paused; reconnecting…")
             }
@@ -174,8 +189,9 @@ class HeartRateTrackingService : Service() {
         }
       })
       publishStatus("Sensor connected. Waiting for a reading…")
-    } catch (_: Exception) {
-      scheduleReconnect("Could not start heart-rate tracking; retrying…")
+    } catch (exception: Exception) {
+      Log.e("GoonQuestHeartRate", "Could not register heart-rate tracker", exception)
+      scheduleReconnect("Tracker start failed: ${exception.javaClass.simpleName}. Retrying…")
     }
   }
 
@@ -226,6 +242,11 @@ class HeartRateTrackingService : Service() {
       }
   }
 
+  private fun failTracking(message: String) {
+    stopTracking(clearSavedRequest = true)
+    publishStatus(message)
+  }
+
   private fun stopTracking(clearSavedRequest: Boolean) {
     trackingRequested = false
     reconnectPending = false
@@ -253,7 +274,7 @@ class HeartRateTrackingService : Service() {
         .putExtra(EXTRA_STATUS, message)
         .putExtra(EXTRA_ACTIVE, trackingRequested),
     )
-    if (updateNotification) updateNotificationIfNeeded(message, force = true)
+    if (updateNotification && trackingRequested) updateNotificationIfNeeded(message, force = true)
   }
 
   private fun updateNotificationIfNeeded(message: String, force: Boolean = false) {
@@ -363,6 +384,5 @@ class HeartRateTrackingService : Service() {
     private const val INITIAL_RECONNECT_DELAY_MS = 2_000L
     private const val MAX_RECONNECT_DELAY_MS = 60_000L
     private const val MAX_RECONNECT_ATTEMPTS = 6
-    private const val PERMISSION_READ_HEART_RATE = "android.permission.READ_HEART_RATE"
   }
 }

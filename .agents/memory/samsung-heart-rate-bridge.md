@@ -14,3 +14,9 @@ Android does not show another runtime permission prompt once heart-rate access i
 **Why:** The user observed that the watch permission was already allowed while tapping Start produced no permission dialog.
 
 **How to apply:** Explain that Start connects directly when access is granted, show foreground/background permission state, and provide a direct route to app permissions for review.
+
+Sensor permission migration depends on the app's target API as well as the watch OS. An app targeting API 35 still uses BODY_SENSORS on an Android 16 watch; granular health permissions apply when targeting API 36+.
+
+**Why:** Requiring both legacy access and incorrectly named new permissions blocked Start even after the user revoked and reallowed sensor access. Samsung's permission guide confirms the target-SDK distinction.
+
+**How to apply:** Use the same permission policy in the Activity and foreground service. New permissions use the android.permission.health namespace. Do not ask users to keep resetting a grant when a target-version mismatch is the cause.

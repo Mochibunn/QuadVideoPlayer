@@ -13,8 +13,8 @@ android {
     applicationId 'com.mochi.quadvideoplayer'
     minSdk 30
     targetSdk 35
-    versionCode 29
-    versionName '1.14.0'
+    versionCode 30
+    versionName '1.14.1'
   }
 
   signingConfigs {
@@ -43,6 +43,7 @@ android {
 }
 
 dependencies {
+  testImplementation 'junit:junit:4.13.2'
   implementation files('libs/samsung-health-sensor-api-1.4.1.aar')
   implementation 'com.google.android.gms:play-services-wearable:19.0.0'
 }

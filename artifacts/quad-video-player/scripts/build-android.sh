@@ -20,7 +20,8 @@ bash "$APP_DIR/scripts/sync-android-branding.sh"
 
 cd android
 ./gradlew :expo-video:testDebugUnitTest :downloads-media:testDebugUnitTest \
-  :workspace-samsung-health-bridge:testDebugUnitTest :app:assembleRelease :wear:assembleRelease \
+  :workspace-samsung-health-bridge:testDebugUnitTest :wear:testDebugUnitTest \
+  :app:assembleRelease :wear:assembleRelease \
   -PreactNativeArchitectures=arm64-v8a \
   -Pandroid.enableMinifyInReleaseBuilds="${ANDROID_MINIFY:-false}" \
   -Pandroid.enableShrinkResourcesInReleaseBuilds="${ANDROID_MINIFY:-false}" \

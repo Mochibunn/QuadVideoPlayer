@@ -229,6 +229,14 @@ watch status changes to a connection or sensor message. The **App permissions**
 link opens Android settings if access needs to be reviewed or changed. Keep the
 ongoing tracking notification active for background readings.
 
+The watch-only **1.14.1 — Sensor Sprout Rescue** patch works with the existing
+1.14.0 tablet/phone APK. Its permission checks use both the watch OS version and
+the app target SDK: builds targeting API 35 use `BODY_SENSORS` even on Android 16.
+Builds targeting API 36+ use the `android.permission.health` permissions instead.
+The watch screen displays permission states, OS/target API, and any startup or
+Samsung SDK failure rather than replacing errors with generic permission advice.
+Install this companion as an update on the watch; no tablet reinstall is needed.
+
 The Android processor is carried in the pnpm patch for `expo-video`. It requires
 a newly built standalone APK; Expo Go does not include it. The Android build
 runs synthetic-signal unit tests before packaging. The package's Android
