@@ -1,5 +1,4 @@
 import { Feather } from '@expo/vector-icons';
-import Slider from '@react-native-community/slider';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
 import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -9,6 +8,7 @@ import { pickMediaFiles } from '@/lib/media-picker';
 import { addSlideshow, filterSlideshowPool, isSlideshowImage, nextSlideshowIndex, type SlideshowInstance } from '@/lib/slideshow';
 import SettingSwitch from '../SettingSwitch';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
+import TouchSlider from '../TouchSlider';
 
 export default function SlideshowPanel({ visible, onClose, onManageSources }: {
   visible: boolean; onClose(): void; onManageSources(): void;
@@ -60,10 +60,11 @@ export default function SlideshowPanel({ visible, onClose, onManageSources }: {
     min: number, max: number, step: number, value: number, suffix: string) => (
     <View style={styles.control} key={key}>
       <View style={styles.row}>{text(label)}{text(`${Math.round(value)}${suffix}`)}</View>
-      <Slider value={value} minimumValue={min} maximumValue={max} step={step} disabled={picking}
+      <TouchSlider style={{ width: '100%', height: 44 }}
+        value={value} minimumValue={min} maximumValue={max} step={step} disabled={picking}
         accessibilityLabel={label} accessibilityValue={{ min, max, now: value }}
         minimumTrackTintColor={colors.primary} maximumTrackTintColor={colors.muted} thumbTintColor={colors.primary}
-        onValueChange={(next) => update({ [key]: key === 'opacity' ? next / 100 : next })} />
+        onSlidingComplete={(next) => update({ [key]: key === 'opacity' ? next / 100 : next })} />
     </View>
   );
   return (

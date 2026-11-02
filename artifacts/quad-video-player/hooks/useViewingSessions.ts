@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  elapsedViewingTime, emptyViewingSessions, finishViewingSession, parseViewingSessions, recoverViewingSessions,
+  elapsedViewingTime, emptyViewingSessions, finishViewingSession, parseViewingSessions,
+  recordWatchedVideos as applyWatchedVideos, recoverViewingSessions,
   VIEWING_ACHIEVEMENT_MS, VIEWING_SESSIONS_KEY, type FinishedViewingSession, type ViewingSessionStore,
 } from '@/lib/viewing-sessions';
 import { experienceForPlayback, nextSessionMilestone, SESSION_MILESTONE_MS } from '@/lib/player-rewards';
@@ -94,7 +95,8 @@ export function useViewingSessions(isPlaybackActive: boolean) {
       lastCheckpoint.current = now;
       return { ...current, active: current.active
         ? { ...current.active, resumedAtMs: now, lastCheckpointMs: now }
-        : { id: Crypto.randomUUID(), startedAtMs: now, elapsedMs: 0, resumedAtMs: now, lastCheckpointMs: now } };
+        : { id: Crypto.randomUUID(), startedAtMs: now, elapsedMs: 0, resumedAtMs: now,
+          lastCheckpointMs: now, watchedVideoIds: [] } };
     });
   }, [error, isPlaybackActive, mutate, ready]);
 
@@ -153,6 +155,9 @@ export function useViewingSessions(isPlaybackActive: boolean) {
     }
   }, [commit]);
 
+  const recordVideosWatched = useCallback((ids: readonly string[]) =>
+    mutate((current) => applyWatchedVideos(current, ids)), [mutate]);
+
   return { store, ready, error, celebration, setCelebration, milestone, setMilestone, xp, finishRecap,
-    setFinishRecap, finishSession, retryStorage: reload };
+    setFinishRecap, finishSession, recordVideosWatched, retryStorage: reload };
 }

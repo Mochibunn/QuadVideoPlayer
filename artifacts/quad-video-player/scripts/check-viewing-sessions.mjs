@@ -36,6 +36,16 @@ test('ending a session adds its total once, keeps date and rank, and clears acti
   assert.equal(result.store.active, null);
   assert.equal(model.finishViewingSession(result.store, 23_000).completed, null);
 });
+test('tracks unique watched videos across saves and stores their count in the leaderboard', () => {
+  const initial = model.parseViewingSessions(JSON.stringify(running(10_000, 3_000, 15_000, 15_000)));
+  const tracked = model.recordWatchedVideos(initial, ['video-a', 'video-b', 'video-a']);
+  assert.deepEqual(tracked.active.watchedVideoIds, ['video-a', 'video-b']);
+  const restored = model.parseViewingSessions(JSON.stringify(tracked));
+  assert.deepEqual(restored.active.watchedVideoIds, ['video-a', 'video-b']);
+  const finished = model.finishViewingSession(restored, 22_000);
+  assert.equal(finished.completed.watchedVideoCount, 2);
+  assert.equal(finished.store.leaderboard[0].watchedVideoCount, 2);
+});
 test('celebration threshold is exactly one hour and duration stays readable beyond it', () => {
   assert.equal(model.VIEWING_ACHIEVEMENT_MS, 3_600_000);
   assert.equal(model.formatViewingTime(3_599_999), '59:59');
@@ -53,7 +63,8 @@ test('history is sorted by best score, preserves device-local date stamps, and c
   assert.ok(model.localSessionDate(parsed.leaderboard[0].startedAtMs));
   const nextScore = parsed.leaderboard.length
     ? { ...parsed, active: { id: 'next-score', startedAtMs: sessions[0].startedAtMs,
-      elapsedMs: 0, resumedAtMs: sessions[0].startedAtMs, lastCheckpointMs: sessions[0].startedAtMs } }
+      elapsedMs: 0, resumedAtMs: sessions[0].startedAtMs, lastCheckpointMs: sessions[0].startedAtMs,
+      watchedVideoIds: [] } }
     : parsed;
   assert.equal(model.finishViewingSession(nextScore, sessions[0].startedAtMs + 2000).store.leaderboard.length, 100);
 });

@@ -1,4 +1,3 @@
-import Slider from '@react-native-community/slider';
 import React from 'react';
 import { Feather } from '@expo/vector-icons';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -9,6 +8,7 @@ import {
 } from '@/lib/sound-settings';
 import { ADVANCED_EQ_UNLOCK_LEVEL, levelForExperience } from '@/lib/player-rewards';
 import SettingSwitch from './SettingSwitch';
+import TouchSlider from './TouchSlider';
 
 export default function SoundEffectsSettings({
   xp,
@@ -56,10 +56,11 @@ export default function SoundEffectsSettings({
         ] as const).map(({ key, label: title, min, max, step, value, suffix }) =>
           <View key={key}>
             <View style={styles.row}>{label(title)}{label(`${Math.round(value)}${suffix}`)}</View>
-            <Slider value={value} minimumValue={min} maximumValue={max} step={step} disabled={disabled}
+            <TouchSlider style={{ width: '100%', height: 44 }}
+              value={value} minimumValue={min} maximumValue={max} step={step} disabled={disabled}
               accessibilityLabel={title} accessibilityValue={{ min, max, now: value }}
               minimumTrackTintColor={colors.primary} maximumTrackTintColor={colors.muted} thumbTintColor={colors.primary}
-              onValueChange={(next) => setSound((s) => ({
+              onSlidingComplete={(next) => setSound((s) => ({
                 ...s, [key]: key === 'reverbDecay' ? next / 100 : next,
               }))} />
           </View>)}
@@ -88,11 +89,12 @@ export default function SoundEffectsSettings({
         {['60 Hz · Bass', '230 Hz · Warmth', '910 Hz · Mids', '3.6 kHz · Presence', '14 kHz · Air'].map((text, index) =>
           <View key={text}>
             <View style={styles.row}>{label(text)}{label(`${sound.bands[index] > 0 ? '+' : ''}${sound.bands[index]} dB`)}</View>
-            <Slider minimumValue={-12} maximumValue={12} step={1} value={sound.bands[index]}
+            <TouchSlider style={{ width: '100%', height: 44 }}
+              minimumValue={-12} maximumValue={12} step={1} value={sound.bands[index]}
               disabled={disabled} accessibilityLabel={`${text} equalizer gain`}
               accessibilityValue={{ min: -12, max: 12, now: sound.bands[index], text: `${sound.bands[index]} decibels` }}
               minimumTrackTintColor={colors.primary} maximumTrackTintColor={colors.muted} thumbTintColor={colors.primary}
-              onValueChange={(value) => setSound((s) => ({ ...s, bands: s.bands.map((band, i) => i === index ? value : band) }))} />
+              onSlidingComplete={(value) => setSound((s) => ({ ...s, bands: s.bands.map((band, i) => i === index ? value : band) }))} />
           </View>)}
       </>}
       <Pressable accessibilityRole="button" disabled={disabled}

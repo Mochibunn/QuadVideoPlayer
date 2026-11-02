@@ -1,14 +1,15 @@
-import Slider from '@react-native-community/slider';
 import { Feather } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import SettingSwitch from '@/components/SettingSwitch';
+import TouchSlider from '@/components/TouchSlider';
 import { useColors } from '@/hooks/useColors';
 import {
   ANIMATED_BORDER_LEVEL, borderOptions, experienceIntoLevel, experienceUntilNextLevel, nextRewardMilestone,
-  isBorderUnlocked, levelForExperience, XP_PER_LEVEL,
+  isBorderUnlocked, levelForExperience, PUZZLED_TEXTURE_SCALE_MAX, PUZZLED_TEXTURE_SCALE_MIN, XP_PER_LEVEL,
   type BorderDirection, type BorderStyleId, type PlayerRewardsSettings,
 } from '@/lib/player-rewards';
+import { playerRankTitle } from '@/lib/player-achievements';
 
 const directionOptions: { id: BorderDirection; icon: keyof typeof Feather.glyphMap; label: string }[] = [
   { id: 'left', icon: 'arrow-left', label: 'Left' },
@@ -47,7 +48,10 @@ export default function PlayerRewardsSettings({
         Earn 1 XP per active playback minute. Every 10 XP raises your level.
       </Text>
       <View style={styles.levelHeading}>
-        <Text style={[styles.level, { color: colors.primary }]}>LEVEL {level}</Text>
+        <View>
+          <Text style={[styles.level, { color: colors.primary }]}>LEVEL {level}</Text>
+          <Text style={[styles.rankTitle, { color: colors.mutedForeground }]}>{playerRankTitle(level)}</Text>
+        </View>
         <Text style={[styles.xp, { color: colors.foreground }]}>{xp} XP · {experienceUntilNextLevel(xp)} to next level</Text>
       </View>
       <View style={[styles.progressTrack, { backgroundColor: colors.muted }]}>
@@ -87,10 +91,10 @@ export default function PlayerRewardsSettings({
 
       <View style={styles.settingRow}>
         <View style={styles.settingCopy}>
-          <Text style={[styles.label, { color: colors.foreground }]}>Screen border</Text>
-          <Text style={[styles.description, { color: colors.mutedForeground }]}>Frame the active player screen.</Text>
+          <Text style={[styles.label, { color: colors.foreground }]}>Quarter frames</Text>
+          <Text style={[styles.description, { color: colors.mutedForeground }]}>Frame each video quadrant separately.</Text>
         </View>
-        <SettingSwitch label="Show screen border" value={settings.borderEnabled} disabled={disabled}
+        <SettingSwitch label="Show quarter frames" value={settings.borderEnabled} disabled={disabled}
           onValueChange={(borderEnabled) => update({ borderEnabled })} />
       </View>
 
@@ -126,6 +130,32 @@ export default function PlayerRewardsSettings({
           );
         })}
       </View>
+
+      {settings.borderStyle === 'puzzled' && (
+        <View style={styles.textureSetting}>
+          <View style={styles.levelHeading}>
+            <View style={styles.settingCopy}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Puzzle texture scale</Text>
+              <Text style={[styles.description, { color: colors.mutedForeground }]}>Change the size of the repeating puzzle pieces.</Text>
+            </View>
+            <Text style={[styles.optionMeta, { color: colors.primary }]}>{Math.round(settings.textureScale * 100)}%</Text>
+          </View>
+          <TouchSlider
+            style={{ width: '100%', height: 44 }}
+            accessibilityLabel="Puzzle texture scale"
+            accessibilityValue={{ min: 50, max: 250, now: Math.round(settings.textureScale * 100) }}
+            minimumValue={PUZZLED_TEXTURE_SCALE_MIN}
+            maximumValue={PUZZLED_TEXTURE_SCALE_MAX}
+            step={0.1}
+            value={settings.textureScale}
+            disabled={disabled}
+            onSlidingComplete={(textureScale) => update({ textureScale })}
+            minimumTrackTintColor={colors.primary}
+            maximumTrackTintColor={colors.mutedForeground}
+            thumbTintColor={colors.primary}
+          />
+        </View>
+      )}
 
       <View style={styles.settingRow}>
         <View style={styles.settingCopy}>
@@ -167,12 +197,13 @@ export default function PlayerRewardsSettings({
             <Text style={[styles.label, { color: colors.foreground }]}>Scroll speed</Text>
             <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>{settings.scrollSpeed}/10</Text>
           </View>
-          <Slider
+          <TouchSlider
+            style={{ width: '100%', height: 44 }}
             accessibilityLabel="Border scroll speed"
             accessibilityValue={{ min: 1, max: 10, now: settings.scrollSpeed }}
             minimumValue={1} maximumValue={10} step={1} value={settings.scrollSpeed}
             disabled={directionDisabled}
-            onValueChange={(scrollSpeed) => update({ scrollSpeed })}
+            onSlidingComplete={(scrollSpeed) => update({ scrollSpeed })}
             minimumTrackTintColor={colors.primary} maximumTrackTintColor={colors.mutedForeground}
             thumbTintColor={colors.primary}
           />
@@ -210,6 +241,7 @@ const styles = StyleSheet.create({
   description: { fontSize: 12, lineHeight: 18 },
   levelHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   level: { fontSize: 12, fontWeight: '800', letterSpacing: 0.8 },
+  rankTitle: { fontSize: 10, fontWeight: '700', marginTop: 2 },
   xp: { fontSize: 12, fontWeight: '600', textAlign: 'right' },
   progressTrack: { height: 7, borderRadius: 6, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 6 },
@@ -229,6 +261,7 @@ const styles = StyleSheet.create({
   optionText: { flex: 1, gap: 2 },
   optionName: { fontSize: 12, fontWeight: '700' },
   optionMeta: { fontSize: 10 },
+  textureSetting: { gap: 4 },
   directionRow: { flexDirection: 'row', gap: 7 },
   directionButton: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8,
     borderRadius: 9, borderWidth: 1 },

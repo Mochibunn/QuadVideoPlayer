@@ -61,14 +61,17 @@ test('congratulations messages rotate by milestone and use a safe fallback', () 
 test('saved settings are validated and scroll speed is clamped', () => {
   const value = model.parsePlayerRewards(JSON.stringify({
     borderEnabled: true, borderStyle: 'puzzled', scrollBorder: true,
-    scrollDirection: 'down', scrollSpeed: 99, congratsText: 'Hello',
+    scrollDirection: 'down', scrollSpeed: 99, textureScale: 3.4, congratsText: 'Hello',
   }));
   assert.equal(value.borderEnabled, true);
   assert.equal(value.borderStyle, 'puzzled');
   assert.equal(value.scrollDirection, 'down');
   assert.equal(value.scrollSpeed, 10);
+  assert.equal(value.textureScale, 2.5);
   assert.equal(value.congratsText, 'Hello');
   assert.equal(model.parsePlayerRewards(null).borderStyle, 'gamecubed');
+  assert.equal(model.parsePlayerRewards(null).textureScale, 1);
+  assert.equal(model.parsePlayerRewards(JSON.stringify({ textureScale: 0.1 })).textureScale, 0.5);
   assert.equal(model.parsePlayerRewards(JSON.stringify({ allRewardsUnlocked: true })).allRewardsUnlocked, true);
 });
 

@@ -1,9 +1,11 @@
 import { Feather } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SessionMilestoneConfetti from '@/components/SessionMilestoneConfetti';
 import { useColors } from '@/hooks/useColors';
 import { experienceIntoLevel, levelForExperience, XP_PER_LEVEL } from '@/lib/player-rewards';
+import { evaluatePlayerAchievements, playerRankTitle } from '@/lib/player-achievements';
 import {
   elapsedViewingTime, formatViewingTime, localSessionDate, VIEWING_ACHIEVEMENT_MS,
   type ViewingSessionStore,
@@ -11,6 +13,7 @@ import {
 
 type Props = {
   store: ViewingSessionStore;
+  totalVideoCount: number;
   visible: boolean;
   ready: boolean;
   error: string;
@@ -28,18 +31,43 @@ type Props = {
 };
 
 export default function ViewingSessionTimer({
-  store, visible, ready, error, isPlaying, celebration, milestone, xp, congratsMessage, finishRecap,
+  store, totalVideoCount, visible, ready, error, isPlaying, celebration, milestone, xp, congratsMessage, finishRecap,
   onMilestoneDone,
   onCelebrateDone, onRecapDismiss, onEndSession, onRetry,
 }: Props) {
   const colors = useColors();
   const [now, setNow] = useState(Date.now());
   const [leaderboardVisible, setLeaderboardVisible] = useState(false);
+  const [timerMove, setTimerMove] = useState(0);
+  const [timerSize, setTimerSize] = useState({ width: 0, height: 0 });
+  const timerOffset = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   useEffect(() => {
     if (!store.active?.resumedAtMs) return;
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(tick);
   }, [store.active?.id, store.active?.resumedAtMs]);
+  useEffect(() => {
+    if (!visible) return;
+    const interval = setInterval(() => setTimerMove((current) => (current + 1) % 4), 60_000);
+    return () => clearInterval(interval);
+  }, [visible]);
+  const availableX = Math.max(0, width - timerSize.width - insets.left - insets.right - 28);
+  const availableY = Math.max(0, height - timerSize.height - insets.top - insets.bottom - 28);
+  const timerPositions = [
+    { x: 0, y: 0 },
+    { x: -availableX, y: -availableY },
+    { x: -availableX, y: 0 },
+    { x: 0, y: -availableY },
+  ];
+  useEffect(() => {
+    const animation = Animated.timing(timerOffset, {
+      toValue: timerPositions[timerMove], duration: 520, useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [availableX, availableY, timerMove, timerOffset]);
 
   if (!visible && !celebration && !milestone) return null;
   const elapsed = store.active
@@ -51,25 +79,45 @@ export default function ViewingSessionTimer({
   const recapRank = finishRecap ? store.leaderboard.findIndex((entry) => entry.id === finishRecap.id) + 1 : 0;
   const level = levelForExperience(xp);
   const levelProgress = experienceIntoLevel(xp) / XP_PER_LEVEL;
+  const achievements = evaluatePlayerAchievements({
+    completedSessions: store.leaderboard.length,
+    totalPlaybackMs: store.totalPlaybackMs + (store.active ? elapsed ?? 0 : 0),
+    bestSessionMs: Math.max(0, ...store.leaderboard.map((entry) => entry.durationMs)),
+    xp,
+  });
+  const unlockedAchievements = achievements.filter((achievement) => achievement.unlocked).length;
 
   return (
     <>
       <SessionMilestoneConfetti milestoneMs={milestone} message={congratsMessage} onDone={onMilestoneDone} />
       {visible && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={store.active?.resumedAtMs
-            ? `Playback timer ${formatViewingTime(elapsed ?? 0)}. Open personal leaderboard.`
-            : `Open playback leaderboard${best ? `. Best ${formatViewingTime(best.durationMs)}` : ''}.`}
-          onPress={() => setLeaderboardVisible(true)}
-          style={[styles.floating, { backgroundColor: 'rgba(10,10,13,0.90)', borderColor: colors.primary }]}
+        <Animated.View
+          onLayout={(event) => {
+            const { width: measuredWidth, height: measuredHeight } = event.nativeEvent.layout;
+            setTimerSize((current) => current.width === measuredWidth && current.height === measuredHeight
+              ? current : { width: measuredWidth, height: measuredHeight });
+          }}
+          style={[
+            styles.floatingPosition,
+            { bottom: insets.bottom + 14, right: insets.right + 14 },
+            { transform: [{ translateX: timerOffset.x }, { translateY: timerOffset.y }] },
+          ]}
         >
-          <Feather name={store.active?.resumedAtMs ? 'clock' : 'award'} size={16} color={colors.primary} />
-          <Text numberOfLines={1} style={[styles.floatingText, { color: colors.foreground }]}>
-            {store.active?.resumedAtMs ? formatViewingTime(elapsed ?? 0)
-              : best ? `${formatViewingTime(best.durationMs)} · ${formatViewingTime(store.totalPlaybackMs)} total` : 'Play timer'}
-          </Text>
-        </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={store.active?.resumedAtMs
+              ? `Playback timer ${formatViewingTime(elapsed ?? 0)}. Open personal leaderboard.`
+              : `Open playback leaderboard${best ? `. Best ${formatViewingTime(best.durationMs)}` : ''}.`}
+            onPress={() => setLeaderboardVisible(true)}
+            style={[styles.floating, { backgroundColor: 'rgba(10,10,13,0.90)', borderColor: colors.primary }]}
+          >
+            <Feather name={store.active?.resumedAtMs ? 'clock' : 'award'} size={16} color={colors.primary} />
+            <Text numberOfLines={1} style={[styles.floatingText, { color: colors.foreground }]}>
+              {store.active?.resumedAtMs ? formatViewingTime(elapsed ?? 0)
+                : best ? `${formatViewingTime(best.durationMs)} · ${formatViewingTime(store.totalPlaybackMs)} total` : 'Play timer'}
+            </Text>
+          </Pressable>
+        </Animated.View>
       )}
       <Modal visible={!!celebration || !!finishRecap || rankingVisible} transparent animationType="fade" onRequestClose={() => {
         if (celebration) { onCelebrateDone(); onRecapDismiss(); }
@@ -117,6 +165,8 @@ export default function ViewingSessionTimer({
                 <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
                   {recapRank ? `Leaderboard place: #${recapRank}.` : 'Session saved to your all-time total.'}
                   {'\n'}Finished {localSessionDate(finishRecap.finishedAtMs)}
+                  {'\n'}Unique videos watched: {finishRecap.watchedVideoCount}
+                  {'\n'}Videos in pool: {totalVideoCount}
                   {'\n'}All-time playback: {formatViewingTime(store.totalPlaybackMs)}
                 </Text>
                 <Pressable accessibilityRole="button" onPress={() => {
@@ -151,7 +201,10 @@ export default function ViewingSessionTimer({
                 )}
                 <View style={[styles.xpCard, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
                   <View style={styles.scoreTop}>
-                    <Text style={[styles.rank, { color: colors.primary }]}>LEVEL {level}</Text>
+                    <View>
+                      <Text style={[styles.rank, { color: colors.primary }]}>LEVEL {level}</Text>
+                      <Text style={[styles.rankTitle, { color: colors.mutedForeground }]}>{playerRankTitle(level)}</Text>
+                    </View>
                     <Text style={[styles.xpValue, { color: colors.foreground }]}>{xp} XP</Text>
                   </View>
                   <View style={[styles.xpTrack, { backgroundColor: colors.muted }]}>
@@ -171,6 +224,9 @@ export default function ViewingSessionTimer({
                       <Text style={[styles.date, { color: colors.mutedForeground }]}>
                         Started {localSessionDate(store.active.startedAtMs)} · time stops while paused
                       </Text>
+                      <Text style={[styles.date, { color: colors.mutedForeground }]}>
+                        {store.active.watchedVideoIds.length} unique videos watched · {totalVideoCount} in pool
+                      </Text>
                       {!isPlaying && (
                         <Pressable accessibilityRole="button" onPress={() => void onEndSession()}
                           style={[styles.endButton, { borderColor: colors.border }]}>
@@ -184,6 +240,55 @@ export default function ViewingSessionTimer({
                     <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>All-time playback</Text>
                     <Text style={[styles.total, { color: colors.foreground }]}>{formatViewingTime(store.totalPlaybackMs)}</Text>
                   </View>
+                  <View style={styles.totalRow}>
+                    <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>Videos in pool</Text>
+                    <Text style={[styles.total, { color: colors.foreground }]}>{totalVideoCount}</Text>
+                  </View>
+                  <View style={styles.achievementSection}>
+                    <View style={styles.achievementHeading}>
+                      <Text style={[styles.totalLabel, { color: colors.foreground }]}>Achievement case</Text>
+                      <Text style={[styles.achievementCount, { color: colors.primary }]}>
+                        {unlockedAchievements}/{achievements.length} unlocked
+                      </Text>
+                    </View>
+                    <View style={styles.achievementGrid}>
+                      {achievements.map((achievement) => {
+                        const progressText = achievement.metric === 'totalPlaybackMs' || achievement.metric === 'bestSessionMs'
+                          ? `${formatViewingTime(achievement.progress)} / ${formatViewingTime(achievement.target)}`
+                          : achievement.metric === 'xp'
+                            ? `${Math.floor(achievement.progress)} / ${achievement.target} XP`
+                            : `${Math.floor(achievement.progress)} / ${achievement.target} sessions`;
+                        return (
+                          <View key={achievement.id} style={[
+                            styles.achievementCard,
+                            { borderColor: achievement.unlocked ? colors.primary : colors.border,
+                              backgroundColor: achievement.unlocked ? `${colors.primary}18` : colors.secondary },
+                          ]}>
+                            <View style={styles.achievementCardHeading}>
+                              <Feather
+                                name={achievement.icon as keyof typeof Feather.glyphMap}
+                                size={17}
+                                color={achievement.unlocked ? colors.primary : colors.mutedForeground}
+                              />
+                              <Text numberOfLines={1} style={[styles.achievementName, { color: colors.foreground }]}>
+                                {achievement.name}
+                              </Text>
+                              {achievement.unlocked && <Feather name="check-circle" size={15} color={colors.primary} />}
+                            </View>
+                            <Text style={[styles.achievementDescription, { color: colors.mutedForeground }]}>
+                              {achievement.description}
+                            </Text>
+                            <View style={[styles.achievementTrack, { backgroundColor: colors.muted }]}>
+                              <View style={[styles.achievementFill, { width: `${Math.round(achievement.ratio * 100)}%`, backgroundColor: colors.primary }]} />
+                            </View>
+                            <Text style={[styles.achievementProgress, { color: achievement.unlocked ? colors.primary : colors.mutedForeground }]}>
+                              {achievement.unlocked ? 'UNLOCKED' : progressText}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
                   {!store.leaderboard.length ? (
                     <Text style={[styles.empty, { color: colors.mutedForeground }]}>Finish a session to set your first score.</Text>
                   ) : store.leaderboard.map((entry, index) => (
@@ -193,7 +298,10 @@ export default function ViewingSessionTimer({
                       </Text>
                       <View style={styles.scoreInfo}>
                         <Text style={[styles.duration, { color: colors.foreground }]}>{formatViewingTime(entry.durationMs)}</Text>
-                        <Text style={[styles.date, { color: colors.mutedForeground }]}>{localSessionDate(entry.finishedAtMs)}</Text>
+                        <Text style={[styles.date, { color: colors.mutedForeground }]}>
+                          {entry.watchedVideoCount > 0 ? `${entry.watchedVideoCount} unique videos · ` : ''}
+                          {localSessionDate(entry.finishedAtMs)}
+                        </Text>
                       </View>
                       {entry.durationMs >= VIEWING_ACHIEVEMENT_MS && <Feather name="award" size={20} color="#ffd248" />}
                     </View>
@@ -213,8 +321,9 @@ export default function ViewingSessionTimer({
 }
 
 const styles = StyleSheet.create({
+  floatingPosition: { position: 'absolute', zIndex: 30 },
   floating: {
-    position: 'absolute', zIndex: 30, bottom: 14, right: 14, minHeight: 42, maxWidth: '85%',
+    minHeight: 42, maxWidth: '85%',
     flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 14, borderRadius: 24, borderWidth: 1,
   },
   floatingText: { fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'], maxWidth: 310 },
@@ -230,6 +339,7 @@ const styles = StyleSheet.create({
   activeCard: { padding: 14, borderWidth: 1, borderRadius: 14, marginBottom: 5 },
   xpCard: { padding: 12, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, gap: 8, marginBottom: 6 },
   xpValue: { fontSize: 13, fontWeight: '700' },
+  rankTitle: { fontSize: 10, fontWeight: '700', marginTop: 2 },
   xpTrack: { height: 6, borderRadius: 4, overflow: 'hidden' },
   xpFill: { height: '100%', borderRadius: 4 },
   scoreTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
@@ -240,6 +350,17 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
   totalLabel: { fontSize: 14, fontWeight: '600' },
   total: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  achievementSection: { gap: 9, paddingVertical: 8 },
+  achievementHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  achievementCount: { fontSize: 11, fontWeight: '800' },
+  achievementGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
+  achievementCard: { width: '48%', minHeight: 118, borderWidth: 1, borderRadius: 12, padding: 10, gap: 6 },
+  achievementCardHeading: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  achievementName: { flex: 1, fontSize: 12, fontWeight: '800' },
+  achievementDescription: { minHeight: 30, fontSize: 10, lineHeight: 14 },
+  achievementTrack: { height: 5, borderRadius: 4, overflow: 'hidden', marginTop: 'auto' },
+  achievementFill: { height: '100%', borderRadius: 4 },
+  achievementProgress: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
   scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12 },
   rankNumber: { width: 30, fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
   scoreInfo: { flex: 1 },

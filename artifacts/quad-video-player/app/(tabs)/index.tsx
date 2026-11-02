@@ -28,6 +28,7 @@ import { useAutoHideControls } from '@/hooks/useAutoHideControls';
 import BackgroundAudioMixer from '@/components/audio/BackgroundAudioMixer';
 import SettingSwitch from '@/components/SettingSwitch';
 import FadingControls from '@/components/FadingControls';
+import TouchSlider from '@/components/TouchSlider';
 import ControlsTimeoutSetting from '@/components/ControlsTimeoutSetting';
 import PoolVideoPreview from '@/components/PoolVideoPreview';
 import PlayerRewardsSettings from '@/components/PlayerRewardsSettings';
@@ -68,6 +69,16 @@ import {
 } from '@/constants/colors';
 
 type ActivePanel = 'settings' | 'pool' | 'audio' | 'slideshow' | 'sources' | null;
+
+function formatVideoClock(seconds: number): string {
+  const wholeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(wholeSeconds / 3600);
+  const minutes = Math.floor((wholeSeconds % 3600) / 60);
+  const remainder = wholeSeconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+    : `${minutes}:${String(remainder).padStart(2, '0')}`;
+}
 
 const THEME_STORAGE_KEY = 'quad-video-player.theme';
 const NORMALIZE_STORAGE_KEY = 'quad-video-player.normalize';
@@ -189,6 +200,7 @@ function VideoTile({
   initialSnapshot,
   playbackId,
   onPlaybackStateChange,
+  onVideoStarted,
   getNextVideo,
   onAssetChange,
 }: {
@@ -206,6 +218,7 @@ function VideoTile({
   initialSnapshot?: VideoSnapshot;
   playbackId: string;
   onPlaybackStateChange: (playbackId: string, playing: boolean, videoUri?: string) => void;
+  onVideoStarted: (videoId: string) => void;
   getNextVideo: (slot: number, currentId: string) => VideoAsset | undefined;
   onAssetChange: (slot: number, next: VideoAsset) => void;
 }) {
@@ -218,7 +231,10 @@ function VideoTile({
   const volume = linkedVolume ? sharedVolume : individualVolume;
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
-  const [volumeTrackWidth, setVolumeTrackWidth] = useState(0);
+  const [volumeTrackRect, setVolumeTrackRect] = useState({ x: 0, width: 0 });
+  const volumeTrackRef = useRef<React.ComponentRef<typeof View>>(null);
+  const [playbackProgress, setPlaybackProgress] = useState({ currentTime: 0, duration: 0 });
+  const [seekingTime, setSeekingTime] = useState<number | null>(null);
   const currentAssetRef = useRef(asset);
   currentAssetRef.current = currentAsset;
   const registry = useSessionRegistry();
@@ -234,11 +250,20 @@ function VideoTile({
   const player = useVideoPlayer(null, (videoPlayer) => {
     videoPlayer.bufferOptions = QUAD_BUFFER_OPTIONS;
     videoPlayer.loop = false;
+    videoPlayer.timeUpdateEventInterval = 1;
     videoPlayer.volume = linkedVolume ? sharedVolume : (initialSnapshot?.volume ?? START_VOLUME);
     videoPlayer.muted = initialSnapshot?.muted ?? false;
     videoPlayer.audioMixingMode = 'mixWithOthers';
     videoPlayer.keepScreenOnWhilePlaying = true;
   });
+  const updatePlaybackProgress = useCallback((currentTime: number) => {
+    const duration = player.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    setPlaybackProgress({
+      currentTime: Math.max(0, Math.min(duration, Number.isFinite(currentTime) ? currentTime : 0)),
+      duration,
+    });
+  }, [player]);
   usePlayerSoundEffects(player);
   useEffect(() => prepareVideoSlot(
     player, asset.uri, index,
@@ -255,10 +280,12 @@ function VideoTile({
     if (pendingPosition.current === null) return;
     player.currentTime = seekPosition(pendingPosition.current, player.duration);
     pendingPosition.current = null;
+    updatePlaybackProgress(player.currentTime);
     if (restorePlaying.current) player.play();
     else player.pause();
-  }, [globalPlaying, player]);
+  }, [globalPlaying, player, updatePlaybackProgress]);
   useEventListener(player, 'sourceLoad', restorePosition);
+  useEventListener(player, 'timeUpdate', ({ currentTime }) => updatePlaybackProgress(currentTime));
   useEffect(() => {
     if (player.status === 'readyToPlay') restorePosition();
   }, [player, restorePosition]);
@@ -283,6 +310,8 @@ function VideoTile({
       changingSource.current = true;
       nextSourcePlaying.current = shouldResume;
       restorePlaying.current = shouldResume;
+      setPlaybackProgress({ currentTime: 0, duration: 0 });
+      setSeekingTime(null);
       currentAssetRef.current = next;
       onAssetChange(index, next);
       setCurrentAsset(next);
@@ -307,6 +336,7 @@ function VideoTile({
 
   useEventListener(player, 'playingChange', ({ isPlaying: playing }) => {
     setIsPlaying(playing);
+    if (playing) onVideoStarted(currentAssetRef.current.id);
     onPlaybackStateChange(playbackId, playing, playing ? currentAssetRef.current.uri : undefined);
   });
   useEffect(() => () => onPlaybackStateChange(playbackId, false), [onPlaybackStateChange, playbackId]);
@@ -319,6 +349,7 @@ function VideoTile({
       sourcePrepared.current = true;
       changingSource.current = false;
       setErrorMessage('');
+      updatePlaybackProgress(player.currentTime);
       restorePosition();
     }
   });
@@ -380,14 +411,27 @@ function VideoTile({
     [linkedVolume, onSharedVolumeChange],
   );
 
+  const measureVolumeTrack = useCallback(() => {
+    volumeTrackRef.current?.measureInWindow((x, _y, width) => {
+      setVolumeTrackRect((current) => current.x === x && current.width === width ? current : { x, width });
+    });
+  }, []);
   const setVolumeFromTouch = useCallback(
-    (locationX: number, width: number) => {
+    (pageX: number) => {
+      const { x, width } = volumeTrackRect;
       if (width <= 0) return;
-      const nextVolume = Math.min(1, Math.max(0, locationX / width));
+      const nextVolume = Math.min(1, Math.max(0, (pageX - x) / width));
       commitVolume(nextVolume);
     },
-    [commitVolume],
+    [commitVolume, volumeTrackRect],
   );
+  const seekTo = useCallback((position: number) => {
+    if (!Number.isFinite(player.duration) || player.duration <= 0) return;
+    const currentTime = seekPosition(position, player.duration);
+    player.currentTime = currentTime;
+    setPlaybackProgress({ currentTime, duration: player.duration });
+    setSeekingTime(null);
+  }, [player]);
 
   const toggleTilePlayback = () => {
     if (player.playing) {
@@ -504,6 +548,7 @@ function VideoTile({
           paddingRight: 8 + (index % 2 === 1 ? insets.right : 0),
         },
       ]}>
+        <View style={styles.tileControlRow}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${isPlaying ? 'Pause' : 'Play'} stream ${index + 1}`}
@@ -552,24 +597,18 @@ function VideoTile({
               commitVolume(Math.max(0, volume - 0.05));
             }
           }}
-          onLayout={(event) => setVolumeTrackWidth(event.nativeEvent.layout.width)}
           onStartShouldSetResponder={() => true}
           onMoveShouldSetResponder={() => true}
           onResponderGrant={(event) =>
-            setVolumeFromTouch(
-              event.nativeEvent.locationX,
-              volumeTrackWidth,
-            )
+            setVolumeFromTouch(event.nativeEvent.pageX)
           }
           onResponderMove={(event) =>
-            setVolumeFromTouch(
-              event.nativeEvent.locationX,
-              volumeTrackWidth,
-            )
+            setVolumeFromTouch(event.nativeEvent.pageX)
           }
           style={styles.volumeTrackHitbox}
         >
-          <View style={[styles.volumeTrack, { backgroundColor: colors.muted }]}>
+          <View ref={volumeTrackRef} onLayout={measureVolumeTrack}
+            style={[styles.volumeTrack, { backgroundColor: colors.muted }]}>
             <View
               style={[
                 styles.volumeFill,
@@ -581,6 +620,35 @@ function VideoTile({
         <Text style={[styles.volumePercent, { color: colors.mutedForeground }]}>
           {Math.round(volume * 100)}
         </Text>
+        </View>
+        <View style={styles.seekBarRow}>
+          <Text style={[styles.seekTime, { color: colors.mutedForeground }]}>
+            {formatVideoClock(seekingTime ?? playbackProgress.currentTime)}
+          </Text>
+          <TouchSlider
+            style={styles.seekSlider}
+            accessibilityLabel={`Seek stream ${index + 1}`}
+            accessibilityValue={{
+              min: 0,
+              max: playbackProgress.duration,
+              now: seekingTime ?? playbackProgress.currentTime,
+            }}
+            minimumValue={0}
+            maximumValue={playbackProgress.duration > 0 ? playbackProgress.duration : 1}
+            step={1}
+            value={seekingTime ?? playbackProgress.currentTime}
+            disabled={!Number.isFinite(playbackProgress.duration) || playbackProgress.duration <= 0 || isLoading}
+            onSlidingStart={() => setSeekingTime(playbackProgress.currentTime)}
+            onDraftValueChange={(value) => setSeekingTime(value)}
+            onSlidingComplete={seekTo}
+            minimumTrackTintColor={colors.primary}
+            maximumTrackTintColor={colors.muted}
+            thumbTintColor={colors.primary}
+          />
+          <Text style={[styles.seekTime, { color: colors.mutedForeground }]}>
+            {formatVideoClock(playbackProgress.duration)}
+          </Text>
+        </View>
       </FadingControls>
     </View>
   );
@@ -681,6 +749,20 @@ export default function QuadVideoPlayerScreen() {
   const isPlaybackActive = hasVideos && globalPlaying && !pipClosed &&
     (appIsActive || inPip) && [...playingQuadrants].some((id) => id.startsWith(`${session}-`));
   const viewing = useViewingSessions(isPlaybackActive);
+  const recordVideoStarted = useCallback((videoId: string) => {
+    if (viewing.ready && viewing.store.active) void viewing.recordVideosWatched([videoId]);
+  }, [viewing.ready, viewing.store.active?.id, viewing.recordVideosWatched]);
+  useEffect(() => {
+    if (!viewing.ready || !viewing.store.active) return;
+    const prefix = `${session}-`;
+    const activeVideoIds = [...playingQuadrants].flatMap((playbackId) => {
+      if (!playbackId.startsWith(prefix)) return [];
+      const slot = Number(playbackId.slice(prefix.length));
+      const id = Number.isInteger(slot) ? activeAssetsRef.current.get(slot)?.id : undefined;
+      return id ? [id] : [];
+    });
+    if (activeVideoIds.length) void viewing.recordVideosWatched(activeVideoIds);
+  }, [playingQuadrants, session, viewing.ready, viewing.store.active?.id, viewing.recordVideosWatched]);
   const playerRewards = usePlayerRewardsSettings();
   const congratulationsMessage = congratulationsFor(
     playerRewards.settings.congratsText,
@@ -1174,6 +1256,7 @@ export default function QuadVideoPlayerScreen() {
                   index={index}
                   playbackId={playbackId}
                   onPlaybackStateChange={reportQuadrantPlayback}
+                  onVideoStarted={recordVideoStarted}
                   getNextVideo={getNextVideoForQuadrant}
                   onAssetChange={onAssetChange}
                   globalPlaying={globalPlaying}
@@ -1249,6 +1332,7 @@ export default function QuadVideoPlayerScreen() {
         <SlideshowOverlay active={hasVideos && !pipClosed} />
         <ViewingSessionTimer
           store={viewing.store}
+          totalVideoCount={pool.length}
           visible={hasVideos || !!viewing.store.active || viewing.store.leaderboard.length > 0 || viewing.store.totalPlaybackMs > 0 || !!viewing.error}
           ready={viewing.ready}
           error={viewing.error}
@@ -1270,6 +1354,7 @@ export default function QuadVideoPlayerScreen() {
           scroll={playerRewards.settings.scrollBorder}
           direction={playerRewards.settings.scrollDirection}
           speed={playerRewards.settings.scrollSpeed}
+          textureScale={playerRewards.settings.textureScale}
           xp={viewing.xp}
           allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked}
         />
@@ -1649,13 +1734,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 2,
-    minHeight: 52,
+    minHeight: 88,
     paddingTop: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 1,
     paddingHorizontal: 8,
   },
+  tileControlRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  seekBarRow: { height: 32, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 3 },
+  seekTime: { width: 42, fontSize: 9, fontVariant: ['tabular-nums'], textAlign: 'center' },
+  seekSlider: { flex: 1, height: 34 },
   iconControl: {
     width: 44,
     height: 44,

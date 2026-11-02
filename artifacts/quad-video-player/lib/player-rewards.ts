@@ -3,6 +3,8 @@ export const XP_PER_LEVEL = 10;
 export const SESSION_MILESTONE_MS = 10 * 60_000;
 export const ANIMATED_BORDER_LEVEL = 4;
 export const ADVANCED_EQ_UNLOCK_LEVEL = 5;
+export const PUZZLED_TEXTURE_SCALE_MIN = 0.5;
+export const PUZZLED_TEXTURE_SCALE_MAX = 2.5;
 export const PLAYER_REWARDS_KEY = 'quad.player.rewards.v1';
 
 export const DEFAULT_CONGRATS_TEXT = [
@@ -57,6 +59,7 @@ export type PlayerRewardsSettings = {
   scrollBorder: boolean;
   scrollDirection: BorderDirection;
   scrollSpeed: number;
+  textureScale: number;
   congratsText: string;
   allRewardsUnlocked: boolean;
 };
@@ -67,6 +70,7 @@ export const DEFAULT_PLAYER_REWARDS: PlayerRewardsSettings = {
   scrollBorder: false,
   scrollDirection: 'right',
   scrollSpeed: 3,
+  textureScale: 1,
   congratsText: DEFAULT_CONGRATS_TEXT,
   allRewardsUnlocked: false,
 };
@@ -138,12 +142,15 @@ export function parsePlayerRewards(raw: string | null): PlayerRewardsSettings {
     ? value.borderStyle as BorderStyleId : DEFAULT_PLAYER_REWARDS.borderStyle;
   const speed = typeof value.scrollSpeed === 'number' && Number.isFinite(value.scrollSpeed)
     ? Math.max(1, Math.min(10, value.scrollSpeed)) : DEFAULT_PLAYER_REWARDS.scrollSpeed;
+  const textureScale = typeof value.textureScale === 'number' && Number.isFinite(value.textureScale)
+    ? Math.round(Math.max(PUZZLED_TEXTURE_SCALE_MIN, Math.min(PUZZLED_TEXTURE_SCALE_MAX, value.textureScale)) * 10) / 10
+    : DEFAULT_PLAYER_REWARDS.textureScale;
   const congratsText = typeof value.congratsText === 'string'
     ? value.congratsText.slice(0, 1_000) : DEFAULT_PLAYER_REWARDS.congratsText;
   return {
     borderEnabled: typeof value.borderEnabled === 'boolean' ? value.borderEnabled : DEFAULT_PLAYER_REWARDS.borderEnabled,
     borderStyle, scrollBorder: typeof value.scrollBorder === 'boolean' ? value.scrollBorder : DEFAULT_PLAYER_REWARDS.scrollBorder,
-    scrollDirection: direction, scrollSpeed: speed, congratsText,
+    scrollDirection: direction, scrollSpeed: speed, textureScale, congratsText,
     allRewardsUnlocked: value.allRewardsUnlocked === true,
   };
 }

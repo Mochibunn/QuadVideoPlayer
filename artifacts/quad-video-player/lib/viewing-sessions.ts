@@ -4,8 +4,11 @@ export const VIEWING_RECOVERY_WINDOW_MS = 15_000;
 export const VIEWING_SESSION_LIMIT = 100;
 export type ActiveViewingSession = {
   id: string; startedAtMs: number; elapsedMs: number; resumedAtMs: number | null; lastCheckpointMs: number;
+  watchedVideoIds: string[];
 };
-export type FinishedViewingSession = { id: string; startedAtMs: number; finishedAtMs: number; durationMs: number };
+export type FinishedViewingSession = {
+  id: string; startedAtMs: number; finishedAtMs: number; durationMs: number; watchedVideoCount: number;
+};
 export type ViewingSessionStore = {
   version: 1; totalPlaybackMs: number; leaderboard: FinishedViewingSession[]; active: ActiveViewingSession | null;
 };
@@ -34,6 +37,14 @@ function identifier(value: unknown): string {
   }
   return value;
 }
+function videoIdentifiers(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > 20_000 ||
+    value.some((item) => typeof item !== 'string' || item.length === 0 || item.length > 4096)) {
+    throw new Error('The playback history contains invalid video statistics.');
+  }
+  return [...new Set(value as string[])];
+}
 function sortLeaderboard(entries: FinishedViewingSession[]): FinishedViewingSession[] {
   return [...entries].sort((a, b) => b.durationMs - a.durationMs || b.finishedAtMs - a.finishedAtMs || a.id.localeCompare(b.id))
     .slice(0, VIEWING_SESSION_LIMIT);
@@ -49,7 +60,8 @@ export function parseViewingSessions(raw: string | null): ViewingSessionStore {
     const startedAtMs = timestamp(row.startedAtMs);
     const finishedAtMs = timestamp(row.finishedAtMs);
     if (finishedAtMs < startedAtMs) throw new Error('The completed session date is invalid.');
-    return { id: identifier(row.id), startedAtMs, finishedAtMs, durationMs: duration(row.durationMs) };
+    return { id: identifier(row.id), startedAtMs, finishedAtMs, durationMs: duration(row.durationMs),
+      watchedVideoCount: duration(row.watchedVideoCount ?? 0) };
   });
   if (new Set(leaderboard.map((item) => item.id)).size !== leaderboard.length) {
     throw new Error('The playback history contains duplicate sessions.');
@@ -60,7 +72,8 @@ export function parseViewingSessions(raw: string | null): ViewingSessionStore {
     const resumedAtMs = row.resumedAtMs === null ? null : timestamp(row.resumedAtMs);
     const lastCheckpointMs = timestamp(row.lastCheckpointMs);
     active = { id: identifier(row.id), startedAtMs: timestamp(row.startedAtMs),
-      elapsedMs: duration(row.elapsedMs), resumedAtMs, lastCheckpointMs };
+      elapsedMs: duration(row.elapsedMs), resumedAtMs, lastCheckpointMs,
+      watchedVideoIds: videoIdentifiers(row.watchedVideoIds) };
     if (resumedAtMs !== null && resumedAtMs < active.startedAtMs) throw new Error('The active session date is invalid.');
   }
   return { version: 1, totalPlaybackMs: duration(data.totalPlaybackMs), leaderboard: sortLeaderboard(leaderboard), active };
@@ -73,6 +86,15 @@ export function recoverViewingSessions(store: ViewingSessionStore, now: number):
 }
 export function elapsedViewingTime(active: ActiveViewingSession, now: number): number {
   return active.elapsedMs + (active.resumedAtMs === null ? 0 : Math.max(0, now - active.resumedAtMs));
+}
+export function recordWatchedVideos(store: ViewingSessionStore, ids: readonly string[]): ViewingSessionStore {
+  if (!store.active || ids.length === 0) return store;
+  const watched = new Set(store.active.watchedVideoIds);
+  for (const id of ids) {
+    if (id.length > 0 && id.length <= 4096) watched.add(id);
+  }
+  if (watched.size === store.active.watchedVideoIds.length) return store;
+  return { ...store, active: { ...store.active, watchedVideoIds: [...watched] } };
 }
 export function formatViewingTime(milliseconds: number): string {
   if (milliseconds > 0 && milliseconds < 1000) return '< 1s';
@@ -87,7 +109,7 @@ export function formatViewingTime(milliseconds: number): string {
 export function finishViewingSession(store: ViewingSessionStore, now: number) {
   if (!store.active) return { store, completed: null as FinishedViewingSession | null };
   const completed = { id: store.active.id, startedAtMs: store.active.startedAtMs, finishedAtMs: now,
-    durationMs: elapsedViewingTime(store.active, now) };
+    durationMs: elapsedViewingTime(store.active, now), watchedVideoCount: store.active.watchedVideoIds.length };
   return { store: { version: 1 as const,
     totalPlaybackMs: store.totalPlaybackMs + completed.durationMs,
     leaderboard: completed.durationMs > 0 ? sortLeaderboard([...store.leaderboard, completed]) : store.leaderboard,

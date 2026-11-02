@@ -1,8 +1,8 @@
-import Slider from '@react-native-community/slider';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { MAX_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
+import TouchSlider from './TouchSlider';
 
 export default function ControlsTimeoutSetting({
   value,
@@ -21,7 +21,7 @@ export default function ControlsTimeoutSetting({
           ? 'Automatic fading is off. Tap a video to hide or show controls.'
           : `Fade controls after ${value} ${value === 1 ? 'second' : 'seconds'} without interaction. Tap a video to hide or show them immediately.`}
       </Text>
-      <Slider
+      <TouchSlider
         style={styles.slider}
         accessibilityLabel="Controls auto-hide delay in seconds"
         accessibilityValue={{ min: 0, max: MAX_CONTROLS_HIDE_SECONDS, now: value, text: value === 0 ? 'Never auto-hide' : `${value} seconds` }}
@@ -30,7 +30,7 @@ export default function ControlsTimeoutSetting({
         step={1}
         value={value}
         disabled={disabled}
-        onValueChange={(seconds) => onChange(parseControlsHideSeconds(seconds))}
+        onSlidingComplete={(seconds) => onChange(parseControlsHideSeconds(seconds))}
         minimumTrackTintColor={colors.primary}
         maximumTrackTintColor={colors.mutedForeground}
         thumbTintColor={colors.primary}
