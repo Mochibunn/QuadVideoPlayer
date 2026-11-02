@@ -15,6 +15,24 @@ The image dungeon should support the local slideshow pool, saved Rule34/e621 sea
 
 **How to apply:** Keep enemy tag searches configurable independently from slideshow source selection, and preserve their safe-rating settings.
 
+Encounter enemies belong above the playing videos, not inside the quest window.
+
+**Why:** The user explicitly wants larger, more randomly moving enemies in front of the streams. The quest window is for setup and quest management, not the combat arena.
+
+**How to apply:** Keep active fights independent of quest-window visibility and preserve video touch controls outside enemy/HUD hit areas.
+
+The local AI may direct enemy movement, give enemies taunts and defeat lines in nearby speech balloons, and automatically add enemy-search tags during fights. Profanity is allowed.
+
+**Why:** The user explicitly requested autonomous in-fight tag additions and AI-driven movement/dialogue.
+
+**How to apply:** Expose clear AI and automatic-search controls, preserve avoid-tags and source rating settings, bound movement and request rates, and discard stale responses after encounter changes.
+
+The user wants more of a game feel, paw-themed fantasy cosmetics, and Wii-like mini-games driven by real watch movement.
+
+**Why:** The user explicitly requested watch-motion mini-games alongside border improvements.
+
+**How to apply:** Use actual watch sensors and the paired-phone relay; describe wrist gestures rather than claiming Wii-style positional tracking. Keep new flavor copy non-graphic.
+
 When expanding persisted RPG state, accept known older save versions and initialize new mechanics without discarding existing progression.
 
 **Why:** RPG progress is stored locally and must survive feature and app-version updates.

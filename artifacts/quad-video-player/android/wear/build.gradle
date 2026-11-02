@@ -13,8 +13,8 @@ android {
     applicationId 'com.mochi.quadvideoplayer'
     minSdk 30
     targetSdk 35
-    versionCode 30
-    versionName '1.14.1'
+    versionCode 33
+    versionName '1.17.0'
   }
 
   signingConfigs {

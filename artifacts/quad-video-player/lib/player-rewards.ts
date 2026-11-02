@@ -21,7 +21,14 @@ export const borderOptions = [
   { id: 'nebula', name: 'Nebula', unlockLevel: 4 },
   { id: 'prism', name: 'Prism', unlockLevel: 5 },
   { id: 'aurora', name: 'Aurora', unlockLevel: 6 },
+  { id: 'pawprint', name: 'Pawprint Trail', unlockLevel: 1 },
 ] as const;
+
+/** Border styles drawn from a repeating tile; they honour texture scale and scrolling. */
+export const TEXTURED_BORDER_STYLES: readonly BorderStyleId[] = ['puzzled', 'pawprint'];
+export function isTexturedBorder(id: BorderStyleId): boolean {
+  return TEXTURED_BORDER_STYLES.includes(id);
+}
 
 export const themeUnlockLevels: Record<string, number> = {
   amethyst: 1,
@@ -55,7 +62,32 @@ export const rewardMilestones = [
 ] as const;
 
 export type BorderStyleId = (typeof borderOptions)[number]['id'];
-export type BorderDirection = 'left' | 'right' | 'up' | 'down';
+export const BORDER_DIRECTIONS = [
+  'left', 'right', 'up', 'down', 'up-left', 'up-right', 'down-left', 'down-right',
+] as const;
+export type BorderDirection = (typeof BORDER_DIRECTIONS)[number];
+const DIRECTION_ALIASES: Record<string, BorderDirection> = {
+  nw: 'up-left', ne: 'up-right', sw: 'down-left', se: 'down-right',
+  northwest: 'up-left', northeast: 'up-right', southwest: 'down-left', southeast: 'down-right',
+  'left-up': 'up-left', 'right-up': 'up-right', 'left-down': 'down-left', 'right-down': 'down-right',
+};
+export function parseBorderDirection(value: unknown, fallback: BorderDirection = 'right'): BorderDirection {
+  if (typeof value !== 'string') return fallback;
+  const key = value.trim().toLowerCase();
+  if ((BORDER_DIRECTIONS as readonly string[]).includes(key)) return key as BorderDirection;
+  return DIRECTION_ALIASES[key] ?? fallback;
+}
+/** Unit-length travel vector (screen coords, +y is down). Diagonals are normalized. */
+export function borderDirectionVector(direction: BorderDirection): { x: number; y: number } {
+  const x = direction.includes('left') ? -1 : direction.includes('right') ? 1 : 0;
+  const y = direction.includes('up') ? -1 : direction.includes('down') ? 1 : 0;
+  const length = Math.hypot(x, y) || 1;
+  return { x: x / length, y: y / length };
+}
+export function clampTextureScale(value: unknown): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 1;
+  return Math.round(Math.max(PUZZLED_TEXTURE_SCALE_MIN, Math.min(PUZZLED_TEXTURE_SCALE_MAX, n)) * 10) / 10;
+}
 export type PlayerRewardsSettings = {
   borderEnabled: boolean;
   borderStyle: BorderStyleId;
@@ -139,15 +171,13 @@ export function parsePlayerRewards(raw: string | null): PlayerRewardsSettings {
     throw new Error('The border and celebration settings are damaged.');
   }
   const value = data as Record<string, unknown>;
-  const direction: BorderDirection = ['left', 'right', 'up', 'down'].includes(String(value.scrollDirection))
-    ? value.scrollDirection as BorderDirection : DEFAULT_PLAYER_REWARDS.scrollDirection;
+  const direction = parseBorderDirection(value.scrollDirection, DEFAULT_PLAYER_REWARDS.scrollDirection);
   const borderStyle = borderOptions.some((item) => item.id === value.borderStyle)
     ? value.borderStyle as BorderStyleId : DEFAULT_PLAYER_REWARDS.borderStyle;
   const speed = typeof value.scrollSpeed === 'number' && Number.isFinite(value.scrollSpeed)
     ? Math.max(1, Math.min(10, value.scrollSpeed)) : DEFAULT_PLAYER_REWARDS.scrollSpeed;
   const textureScale = typeof value.textureScale === 'number' && Number.isFinite(value.textureScale)
-    ? Math.round(Math.max(PUZZLED_TEXTURE_SCALE_MIN, Math.min(PUZZLED_TEXTURE_SCALE_MAX, value.textureScale)) * 10) / 10
-    : DEFAULT_PLAYER_REWARDS.textureScale;
+    ? clampTextureScale(value.textureScale) : DEFAULT_PLAYER_REWARDS.textureScale;
   const congratsText = typeof value.congratsText === 'string'
     ? value.congratsText.slice(0, 1_000) : DEFAULT_PLAYER_REWARDS.congratsText;
   return {

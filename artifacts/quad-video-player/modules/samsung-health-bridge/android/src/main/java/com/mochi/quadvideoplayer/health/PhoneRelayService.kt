@@ -96,11 +96,13 @@ class PhoneRelayService : Service() {
           .put("bpm", packet.bpm)
           .put("receivedAtMs", packet.receivedAtMs)
       }
+      val motion = MotionRuntime.latest
+      line.put("motion", MotionBridgeCodec.relayJson(motion, System.currentTimeMillis()))
       writer.write(line.toString())
       writer.newLine()
       writer.flush()
       try {
-        Thread.sleep(1000)
+        Thread.sleep(if (motion != null && System.currentTimeMillis() - motion.receivedAtMs < 3000) 200 else 1000)
       } catch (_: InterruptedException) {
         Thread.currentThread().interrupt()
         return

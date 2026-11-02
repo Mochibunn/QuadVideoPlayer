@@ -84,3 +84,59 @@ mtime_ms = 1793651222629
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/4a207f0c-ee1c-4fa1-8a58-8dd789c53c21/fb54cecd-16ee-47df-9395-c7e484156645"
 storage_version_token = "1793651234495179"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "J_72lPw033XxJjcnh7URp"
+uri = "file://generated-artifacts/android/goon-quest-v1.15.0-arm64-download.zip"
+type = "unspecified"
+title = "Goon Quest 1.15.0 — Portraits Gone Rogue"
+description = "Android tablet update. Extract goon-quest-arm64.apk from the ZIP and install it over your existing app. Larger on-video enemies, randomized movement, and local-AI tag suggestions. Version 31; development signature and checksums verified."
+logical_id = "3a588727-5164-4dba-9748-7881d72f0a03"
+content_hash = "sha256:0f14f533e59afe149c0cdb1f144918d2953b8008015446d2c2268767b165ad3a"
+size = 61002261
+mtime_ms = 1793654384500
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/3a588727-5164-4dba-9748-7881d72f0a03/bab40f4e-e1a0-404e-836d-f476466eb45c"
+storage_version_token = "1793654399364420"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "qC5gutfk4QRO3IXta1Ok1"
+uri = "file://generated-artifacts/android/goon-quest-v1.16.0-arm64-download.zip"
+type = "unspecified"
+title = "Goon Quest 1.16.0 — Puppet Paws & Tag Goblins"
+description = "Extract goon-quest-arm64.apk and install over your existing tablet app. Adds local-AI enemy movement, taunt/defeat balloons, optional swearing, and automatic in-fight tag hunts. Version 32; APK signature and checksums verified. GGUF model weights are not bundled."
+logical_id = "82aee3ee-87b3-4347-84f7-781e40ac4037"
+content_hash = "sha256:e537bb4dd2c51454708ba7e69747b5d9d42c1ee44018f3c0b0e1fa51022cf8e3"
+size = 61023750
+mtime_ms = 1793655596028
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/82aee3ee-87b3-4347-84f7-781e40ac4037/6d5fd4d6-8405-4959-8e2d-44d3d7f18125"
+storage_version_token = "1793655612056792"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "5pUnZHHr_ab37QZsWEFbU"
+uri = "file://generated-artifacts/android/goon-quest-v1.17.0-phone-tablet-download.zip"
+type = "unspecified"
+title = "Goon Quest 1.17.0 — Phone & Tablet"
+description = "Paw Parry Patrol. Extract goon-quest-arm64.apk and install over the existing app on BOTH your phone and tablet. Includes fixed border tiling, texture scale, diagonal scrolling, Pawprint frames, and the watch-motion arcade. Version 33; signature and checksum verified."
+logical_id = "4fa169e2-b96d-4884-8482-c41e0f00e3bb"
+content_hash = "sha256:8d814f257db851d64d88663c3dd0589aa7ddd970b65e8a6130aaf92592b8f506"
+size = 61050300
+mtime_ms = 1793656746543
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/4fa169e2-b96d-4884-8482-c41e0f00e3bb/d6253ae3-3692-44a6-9433-f7d607975436"
+storage_version_token = "1793656769608515"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "af6ed9yq6i-ak2m0NMYVk"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.17.0.apk"
+type = "unspecified"
+title = "Goon Quest Link 1.17.0 — Watch"
+description = "Install on your Galaxy Watch, then tap Start wrist controls and allow Nearby devices. Sends real motion through your paired phone bridge. Wrist controls stop after 15 minutes for battery safety; heart-rate tracking stays independent."
+logical_id = "c874acb6-68e3-4593-9318-d8588fe6a4db"
+content_hash = "sha256:5d5b8928273e8bb4687519305688bbb5f358474e969ed87b7baaef7b07cc1c03"
+size = 4223462
+mtime_ms = 1793656748231
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/c874acb6-68e3-4593-9318-d8588fe6a4db/05994cbe-80af-441f-8667-1c6e5bc300d4"
+storage_version_token = "1793656772541695"
+content_type = "application/octet-stream"

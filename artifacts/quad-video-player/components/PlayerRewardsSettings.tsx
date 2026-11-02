@@ -1,12 +1,12 @@
-import { Feather } from '@expo/vector-icons';
-import React from 'react';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import SettingSwitch from '@/components/SettingSwitch';
 import TouchSlider from '@/components/TouchSlider';
 import { useColors } from '@/hooks/useColors';
 import {
   ANIMATED_BORDER_LEVEL, borderOptions, experienceIntoLevel, experienceUntilNextLevel, nextRewardMilestone,
-  isBorderUnlocked, levelForExperience, PUZZLED_TEXTURE_SCALE_MAX, PUZZLED_TEXTURE_SCALE_MIN, XP_PER_LEVEL,
+  isBorderUnlocked, isTexturedBorder, levelForExperience, PUZZLED_TEXTURE_SCALE_MAX, PUZZLED_TEXTURE_SCALE_MIN, XP_PER_LEVEL,
   type BorderDirection, type BorderStyleId, type PlayerRewardsSettings,
 } from '@/lib/player-rewards';
 import { playerRankTitle } from '@/lib/player-achievements';
@@ -16,6 +16,10 @@ const directionOptions: { id: BorderDirection; icon: keyof typeof Feather.glyphM
   { id: 'right', icon: 'arrow-right', label: 'Right' },
   { id: 'up', icon: 'arrow-up', label: 'Up' },
   { id: 'down', icon: 'arrow-down', label: 'Down' },
+  { id: 'up-left', icon: 'arrow-up-left', label: 'NW' },
+  { id: 'up-right', icon: 'arrow-up-right', label: 'NE' },
+  { id: 'down-left', icon: 'arrow-down-left', label: 'SW' },
+  { id: 'down-right', icon: 'arrow-down-right', label: 'SE' },
 ];
 
 export default function PlayerRewardsSettings({
@@ -37,7 +41,10 @@ export default function PlayerRewardsSettings({
   const animationUnlocked = settings.allRewardsUnlocked || level >= ANIMATED_BORDER_LEVEL;
   const disabled = !ready || !!error;
   const scrollSwitchDisabled = disabled || !animationUnlocked;
-  const directionDisabled = disabled || !animationUnlocked || settings.borderStyle !== 'puzzled';
+  const texturedSelected = isTexturedBorder(settings.borderStyle);
+  const directionDisabled = disabled || !animationUnlocked || !texturedSelected;
+  const [scaleDraft, setScaleDraft] = useState<number | null>(null);
+  const shownScale = scaleDraft ?? settings.textureScale;
   const nextReward = nextRewardMilestone(xp);
   const setBorder = (id: BorderStyleId) => update({ borderStyle: id });
 
@@ -92,10 +99,10 @@ export default function PlayerRewardsSettings({
 
       <View style={styles.settingRow}>
         <View style={styles.settingCopy}>
-          <Text style={[styles.label, { color: colors.foreground }]}>Four-way frame</Text>
-          <Text style={[styles.description, { color: colors.mutedForeground }]}>Give each stream its own guild border.</Text>
+          <Text style={[styles.label, { color: colors.foreground }]}>Screen frame</Text>
+          <Text style={[styles.description, { color: colors.mutedForeground }]}>Four quadrant frames in quad view; one frame around a fullscreen stream.</Text>
         </View>
-        <SettingSwitch label="Show quarter frames" value={settings.borderEnabled} disabled={disabled}
+        <SettingSwitch label="Show screen frame" value={settings.borderEnabled} disabled={disabled}
           onValueChange={(borderEnabled) => update({ borderEnabled })} />
       </View>
 
@@ -119,7 +126,10 @@ export default function PlayerRewardsSettings({
             >
               <View style={[styles.swatch, { backgroundColor: option.id === 'gamecubed' || option.id === 'nebula' ? colors.primary
                 : option.id === 'arcade' ? colors.accentForeground
-                  : option.id === 'prism' ? '#f6392c' : option.id === 'aurora' ? '#76b8b2' : '#edb71f' }]} />
+                  : option.id === 'prism' ? '#f6392c' : option.id === 'aurora' ? '#76b8b2'
+                    : option.id === 'pawprint' ? colors.accent : '#edb71f' }]}>
+                {option.id === 'pawprint' && <MaterialCommunityIcons name="paw" size={15} color={colors.primary} style={{ margin: 4.5 }} />}
+              </View>
               <View style={styles.optionText}>
                 <Text style={[styles.optionName, { color: colors.foreground }]}>{option.name}</Text>
                 <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>
@@ -132,38 +142,62 @@ export default function PlayerRewardsSettings({
         })}
       </View>
 
-      {settings.borderStyle === 'puzzled' && (
-        <View style={styles.textureSetting}>
-          <View style={styles.levelHeading}>
-            <View style={styles.settingCopy}>
-              <Text style={[styles.label, { color: colors.foreground }]}>Runic texture scale</Text>
-              <Text style={[styles.description, { color: colors.mutedForeground }]}>Adjust the repeating frame pattern.</Text>
-            </View>
-            <Text style={[styles.optionMeta, { color: colors.primary }]}>{Math.round(settings.textureScale * 100)}%</Text>
+      <View style={[styles.textureSetting, { borderColor: colors.border, backgroundColor: colors.background }]}>
+        <View style={styles.levelHeading}>
+          <View style={styles.settingCopy}>
+            <Text style={[styles.label, { color: colors.foreground }]}>Texture scale</Text>
+            <Text style={[styles.description, { color: colors.mutedForeground }]}>
+              {texturedSelected
+                ? 'Size of the repeating pattern. Saved when you let go.'
+                : 'Applies to Puzzled and Pawprint Trail. Saved now, shown when one is picked.'}
+            </Text>
           </View>
-          <TouchSlider
-            style={{ width: '100%', height: 44 }}
-            accessibilityLabel="Puzzle texture scale"
-            accessibilityValue={{ min: 50, max: 250, now: Math.round(settings.textureScale * 100) }}
-            minimumValue={PUZZLED_TEXTURE_SCALE_MIN}
-            maximumValue={PUZZLED_TEXTURE_SCALE_MAX}
-            step={0.1}
-            value={settings.textureScale}
-            disabled={disabled}
-            onSlidingComplete={(textureScale) => update({ textureScale })}
-            minimumTrackTintColor={colors.primary}
-            maximumTrackTintColor={colors.mutedForeground}
-            thumbTintColor={colors.primary}
-          />
+          <View style={[styles.scaleBadge, { borderColor: colors.primary, backgroundColor: colors.accent }]}>
+            <Text style={[styles.scaleValue, { color: colors.primary }]}>{shownScale.toFixed(1)}×</Text>
+          </View>
         </View>
-      )}
+        <View style={[styles.scalePreview, { borderColor: colors.border }]}
+          accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {Array.from({ length: Math.max(3, Math.round(14 / shownScale)) }, (_, index) => (
+            <MaterialCommunityIcons key={index} name={settings.borderStyle === 'pawprint' ? 'paw' : 'puzzle'}
+              size={Math.round(10 * shownScale)} color={index % 2 ? colors.accentForeground : colors.primary}
+              style={{ transform: [{ rotate: index % 2 ? '14deg' : '-14deg' }] }} />
+          ))}
+        </View>
+        <TouchSlider
+          style={{ width: '100%', height: 48 }}
+          accessibilityLabel="Border texture scale"
+          accessibilityValue={{ min: 50, max: 250, now: Math.round(shownScale * 100), text: `${shownScale.toFixed(1)} times` }}
+          minimumValue={PUZZLED_TEXTURE_SCALE_MIN}
+          maximumValue={PUZZLED_TEXTURE_SCALE_MAX}
+          step={0.1}
+          value={settings.textureScale}
+          disabled={disabled}
+          onDraftValueChange={(next) => setScaleDraft(Math.round(next * 10) / 10)}
+          onSlidingComplete={(next) => {
+            setScaleDraft(null);
+            update({ textureScale: Math.round(next * 10) / 10 });
+          }}
+          minimumTrackTintColor={colors.primary}
+          maximumTrackTintColor={colors.mutedForeground}
+          thumbTintColor={colors.primary}
+        />
+        <View style={styles.levelHeading}>
+          <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>0.5× fine</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Reset texture scale to 1x" disabled={disabled}
+            onPress={() => update({ textureScale: 1 })}>
+            <Text style={[styles.optionMeta, { color: colors.primary }]}>Reset 1.0×</Text>
+          </Pressable>
+          <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>2.5× chunky</Text>
+        </View>
+      </View>
 
       <View style={styles.settingRow}>
         <View style={styles.settingCopy}>
           <Text style={[styles.label, { color: colors.foreground }]}>Wandering frame pattern</Text>
           <Text style={[styles.description, { color: colors.mutedForeground }]}>
-            {settings.borderStyle !== 'puzzled'
-              ? 'Choose Puzzled to set its pattern in motion.'
+            {!texturedSelected
+              ? 'Choose Puzzled or Pawprint Trail to set its pattern in motion.'
               : animationUnlocked ? 'Let the pattern drift around the frame.' : `Earn guild rank ${ANIMATED_BORDER_LEVEL} to unlock.`}
           </Text>
         </View>
@@ -172,10 +206,10 @@ export default function PlayerRewardsSettings({
           onValueChange={(scrollBorder) => update({ scrollBorder })} />
       </View>
 
-      {settings.scrollBorder && settings.borderStyle === 'puzzled' && (
+      {settings.scrollBorder && texturedSelected && (
         <View style={{ gap: 8, opacity: directionDisabled ? 0.55 : 1 }}>
           <Text style={[styles.label, { color: colors.foreground }]}>Direction</Text>
-          <View style={styles.directionRow}>
+          <View style={styles.directionGrid}>
             {directionOptions.map((option) => {
               const selected = settings.scrollDirection === option.id;
               return (
@@ -263,9 +297,13 @@ const styles = StyleSheet.create({
   optionText: { flex: 1, gap: 2 },
   optionName: { fontSize: 12, fontWeight: '700' },
   optionMeta: { fontSize: 10 },
-  textureSetting: { gap: 4 },
-  directionRow: { flexDirection: 'row', gap: 7 },
-  directionButton: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8,
+  textureSetting: { gap: 6, borderWidth: 1, borderRadius: 12, padding: 12 },
+  scaleBadge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, minWidth: 58, alignItems: 'center' },
+  scaleValue: { fontSize: 15, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  scalePreview: { height: 40, borderWidth: 1, borderStyle: 'dashed', borderRadius: 8, overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 6 },
+  directionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  directionButton: { width: '23%', flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8,
     borderRadius: 9, borderWidth: 1 },
   directionLabel: { fontSize: 10, fontWeight: '600' },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: 2 },

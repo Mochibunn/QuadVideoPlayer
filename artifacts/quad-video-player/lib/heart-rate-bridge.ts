@@ -1,4 +1,5 @@
 import { requireNativeModule } from 'expo-modules-core';
+import type { WatchMotionState } from './watch-motion-bridge';
 
 export type BluetoothPeer = {
   name: string;
@@ -15,6 +16,7 @@ export type HeartRateBridgeState = {
 };
 
 export type SamsungHealthBridgeNative = {
+  getWatchMotion(): Promise<WatchMotionState>;
   getBondedDevices(): Promise<BluetoothPeer[]>;
   getPhoneState(): Promise<HeartRateBridgeState>;
   getTabletState(): Promise<HeartRateBridgeState>;

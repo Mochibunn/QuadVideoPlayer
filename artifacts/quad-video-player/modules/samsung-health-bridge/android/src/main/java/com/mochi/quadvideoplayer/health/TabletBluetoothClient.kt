@@ -13,6 +13,7 @@ object TabletBluetoothClient {
   @Volatile private var socket: BluetoothSocket? = null
   @Volatile private var readerThread: Thread? = null
   @Volatile private var latestPacket: HeartRatePacket? = null
+  @Volatile private var latestMotion: MotionPacket? = null
   @Volatile private var connected = false
   @Volatile private var status = "Not connected"
 
@@ -51,6 +52,7 @@ object TabletBluetoothClient {
   @Synchronized
   fun disconnect(): Map<String, Any?> {
     connected = false
+    latestMotion = null
     try {
       socket?.close()
     } catch (_: IOException) {
@@ -73,12 +75,21 @@ object TabletBluetoothClient {
     )
   }
 
+  fun motionState(): Map<String, Any?> =
+    MotionBridgeCodec.state(latestMotion, connected, System.currentTimeMillis())
+
   private fun readHeartRate(source: BluetoothSocket) {
     try {
       val reader = BufferedReader(InputStreamReader(source.inputStream, Charsets.UTF_8))
       while (!Thread.currentThread().isInterrupted) {
         val line = reader.readLine() ?: break
         HeartRateBridgeCodec.parseRelayLine(line)?.let { latestPacket = it }
+        if (socket !== source) break
+        MotionBridgeCodec.parseRelayLine(line, System.currentTimeMillis())?.let { incoming ->
+          val previous = latestMotion
+          if (previous == null || incoming.session != previous.session || incoming.sequence > previous.sequence)
+            latestMotion = incoming
+        }
       }
       if (socket === source) {
         connected = false

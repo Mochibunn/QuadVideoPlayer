@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchSourcePage, mergeRemoteMedia, parseOnlineSources, parseOnlineSource, type OnlineSource, type RemoteMedia } from '@/lib/online-sources';
 import { redditGet } from '@/lib/reddit-account';
 import { readRule34Credentials } from '@/lib/rule34-account';
+import { filterEnemyTagSuggestions, separateEnemyQuery } from '@/lib/enemy-tag-suggestions';
 
 const KEY = 'quad.online-sources.v1';
 export type SourceResult = {
@@ -15,6 +16,7 @@ type ContextValue = {
   refresh(id: string, more?: boolean, mergeNew?: boolean): Promise<void>; ensureLoaded(id: string): void;
   saveSource(source: OnlineSource): Promise<void>; removeSource(id: string): Promise<void>;
   restoreSources(sources: OnlineSource[]): Promise<void>; retryStorage(): Promise<void>; clearRedditResults(reload?: boolean): void;
+  fetchEnemyTagImages(sourceId: string, tag: string, signal: AbortSignal): Promise<RemoteMedia[]>;
 };
 const Context = createContext<ContextValue | null>(null);
 export function OnlineSourcesProvider({ children }: { children: React.ReactNode }) {
@@ -26,6 +28,7 @@ export function OnlineSourcesProvider({ children }: { children: React.ReactNode 
   const currentResults = useRef(results);
   const controllers = useRef(new Map<string, AbortController>());
   const writing = useRef(false);
+  const enemyFetchGate = useRef({ inFlight: false, nextAllowedAt: 0 });
   const update = useCallback((id: string, partial: Partial<SourceResult>) => {
     const value = { ...(currentResults.current[id] ?? empty()), ...partial };
     if (partial.items) value.images = partial.items.filter((item) => item.kind === 'image');
@@ -112,8 +115,43 @@ export function OnlineSourcesProvider({ children }: { children: React.ReactNode 
       if (reload) void refresh(source.id);
     });
   }
+  const fetchEnemyTagImages = useCallback(async (
+    sourceId: string, tag: string, signal: AbortSignal,
+  ): Promise<RemoteMedia[]> => {
+    if (signal.aborted) throw new Error('Enemy tag hunt was cancelled.');
+    const source = definitions.current.find((item) => item.id === sourceId);
+    if (!source || (source.kind !== 'rule34' && source.kind !== 'e621')) {
+      throw new Error('Select a saved Rule34/e621 enemy source for automatic tag hunts.');
+    }
+    const accepted = filterEnemyTagSuggestions([tag], {
+      provider: source.kind, existingTags: source.tags, excludeTags: source.excludeTags,
+      safeOnly: source.safeOnly, theme: '',
+    });
+    if (!accepted.length) throw new Error('The AI tag is already in this search, excluded, or invalid.');
+    const now = Date.now();
+    if (enemyFetchGate.current.inFlight || now < enemyFetchGate.current.nextAllowedAt) {
+      throw new Error('Automatic enemy tag hunts are limited to one per minute.');
+    }
+    enemyFetchGate.current = { inFlight: true, nextAllowedAt: now + 60_000 };
+    const snapshot = JSON.stringify(source);
+    try {
+      const transient = {
+        ...source, tags: separateEnemyQuery(accepted[0], source.tags), dungeonEnemy: true,
+      };
+      const credentials = source.kind === 'rule34' ? await readRule34Credentials() : undefined;
+      if (signal.aborted) throw new Error('Enemy tag hunt was cancelled.');
+      const page = await fetchSourcePage(
+        transient, null, redditGet, signal, undefined, credentials ?? undefined,
+      );
+      if (signal.aborted) throw new Error('Enemy tag hunt was cancelled.');
+      if (JSON.stringify(definitions.current.find((item) => item.id === sourceId)) !== snapshot) {
+        throw new Error('The enemy source changed or was removed; late search results were discarded.');
+      }
+      return page.items.filter((item) => item.kind === 'image').slice(0, 40);
+    } finally { enemyFetchGate.current.inFlight = false; }
+  }, []);
   return <Context.Provider value={{ sources, results, loaded, storageError, retryStorage, refresh, ensureLoaded,
-    saveSource, removeSource, restoreSources, clearRedditResults }}>{children}</Context.Provider>;
+    saveSource, removeSource, restoreSources, clearRedditResults, fetchEnemyTagImages }}>{children}</Context.Provider>;
 }
 export function useOnlineSources() {
   const value = useContext(Context);

@@ -74,6 +74,9 @@ class HealthBridgeModule : Module() {
     AsyncFunction("getTabletState") {
       TabletBluetoothClient.state()
     }
+    AsyncFunction("getWatchMotion") {
+      TabletBluetoothClient.motionState()
+    }
 
     AsyncFunction("connectTablet") { address: String ->
       val context = requireContext()

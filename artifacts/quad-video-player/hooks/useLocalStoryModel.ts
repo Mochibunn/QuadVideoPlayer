@@ -4,6 +4,11 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
 import type { LlamaContext } from 'llama.rn';
+import { enemyTagPrompt, parseEnemyTagSuggestions, type EnemyTagRequest } from '@/lib/enemy-tag-suggestions';
+import {
+  COMBAT_RESPONSE_SCHEMA, combatAiPrompt, parseCombatAiPlan,
+  type CombatAiPlan, type CombatAiRequest,
+} from '@/lib/combat-ai';
 import {
   createStoryQuest,
   goonQuestClasses,
@@ -19,6 +24,7 @@ import {
   parseStoryQuestNarrative,
   storyQuestPrompt,
   type LocalStoryPreferences,
+  type CombatPreferenceKey,
 } from '@/lib/local-story';
 
 export type LocalStoryBusy = 'importing' | 'loading' | 'unloading' | 'generating' | null;
@@ -35,6 +41,19 @@ const QUEST_RESPONSE_SCHEMA = {
         enemyLine: { type: 'string' },
       },
       required: ['title', 'description', 'enemyLine'],
+      additionalProperties: false,
+    },
+  },
+};
+
+const TAG_RESPONSE_SCHEMA = {
+  type: 'json_schema' as const,
+  json_schema: {
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: { tags: { type: 'array', items: { type: 'string' }, maxItems: 8 } },
+      required: ['tags'],
       additionalProperties: false,
     },
   },
@@ -97,6 +116,10 @@ export function useLocalStoryModel() {
 
   const setEnemyBanterEnabled = useCallback((enabled: boolean) => {
     setPreferences((current) => ({ ...current, enemyBanterEnabled: enabled }));
+  }, []);
+
+  const setCombatPreference = useCallback((key: CombatPreferenceKey, enabled: boolean) => {
+    setPreferences((current) => ({ ...current, [key]: enabled }));
   }, []);
 
   const importModel = useCallback(async () => {
@@ -247,7 +270,7 @@ export function useLocalStoryModel() {
 
   const complete = useCallback(async (
     userPrompt: string,
-    options: { nPredict: number; json?: boolean },
+    options: { nPredict: number; json?: boolean; tagSuggestions?: boolean; combatPlan?: boolean },
   ) => {
     const context = contextRef.current;
     if (!context) throw new Error('Load your local model first.');
@@ -263,7 +286,9 @@ export function useLocalStoryModel() {
         n_predict: options.nPredict,
         temperature: 0.8,
         top_p: 0.9,
-        ...(options.json ? { response_format: QUEST_RESPONSE_SCHEMA } : {}),
+        ...(options.combatPlan ? { response_format: COMBAT_RESPONSE_SCHEMA } :
+          options.tagSuggestions ? { response_format: TAG_RESPONSE_SCHEMA } :
+          options.json ? { response_format: QUEST_RESPONSE_SCHEMA } : {}),
       });
       return result.text;
     } finally {
@@ -324,7 +349,44 @@ export function useLocalStoryModel() {
     if (line) setTestResult(line);
   }, [generateCharacterLine]);
 
+  const suggestEnemyTags = useCallback(async (request: EnemyTagRequest): Promise<string[]> => {
+    if (!contextRef.current) throw new Error('Load your GGUF model in Settings → Local storyteller first.');
+    if (completionBusy.current) throw new Error('The local model is busy. Try again when it finishes.');
+    setBusy('generating');
+    setError('');
+    try {
+      const text = await complete(enemyTagPrompt(request), { nPredict: 160, tagSuggestions: true });
+      const tags = parseEnemyTagSuggestions(text, request);
+      if (!tags.length) throw new Error('No new valid tags were suggested. Try another theme or model.');
+      return tags;
+    } catch (reason) {
+      const message = friendlyModelError(reason);
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setBusy(null);
+    }
+  }, [complete]);
+
+  const generateCombatPlan = useCallback(async (request: CombatAiRequest): Promise<CombatAiPlan | null> => {
+    if (!contextRef.current || completionBusy.current) return null;
+    setBusy('generating');
+    setError('');
+    try {
+      const text = await complete(combatAiPrompt(request), { nPredict: 500, combatPlan: true });
+      const plan = parseCombatAiPlan(text, request);
+      if (!plan) throw new Error('The local model returned no valid enemy actions. Random movement remains active.');
+      return plan;
+    } catch (reason) {
+      setError(friendlyModelError(reason));
+      return null;
+    } finally { setBusy(null); }
+  }, [complete]);
+
   return {
+    generateCombatPlan,
+    setCombatPreference,
+    suggestEnemyTags,
     preferences,
     preferencesReady,
     modelLoaded,

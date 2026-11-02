@@ -1704,6 +1704,7 @@ export default function QuadVideoPlayerScreen() {
           textureScale={playerRewards.settings.textureScale}
           xp={viewing.xp}
           allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked}
+          layout={singleStreamIndex !== null ? 'single' : 'quad'}
         />
         <KeyJingleOverlay
           enabled={playExtras.settings.keysEnabled}
@@ -1969,6 +1970,7 @@ export default function QuadVideoPlayerScreen() {
                     onPromptChange={localStory.updatePrompt}
                     onEnemyBanterChange={localStory.setEnemyBanterEnabled}
                     onTest={() => void localStory.testPrompt()}
+                    onCombatPreferenceChange={localStory.setCombatPreference}
                   />
                 )}
                 {settingsCategory === 'heart-rate' && <HeartRateSettings />}
@@ -2098,7 +2100,11 @@ export default function QuadVideoPlayerScreen() {
       </Modal>
       <SlideshowPanel visible={activePanel === 'slideshow'} onClose={() => setActivePanel(slideshowReturn === 'settings' ? 'settings' : null)}
         onManageSources={() => { setSourcesReturn('slideshow'); setActivePanel('sources'); }} />
-      <OnlineSourcesPanel visible={activePanel === 'sources'} onClose={() => {
+      <OnlineSourcesPanel visible={activePanel === 'sources'}
+        onSuggestEnemyTags={localStory.suggestEnemyTags}
+        storytellerReady={localStory.modelLoaded}
+        storytellerBusy={localStory.busy !== null}
+        onClose={() => {
         if (questSourcesReturn) {
           setQuestSourcesReturn(false);
           setActivePanel(null);
@@ -2145,8 +2151,13 @@ export default function QuadVideoPlayerScreen() {
         onGenerateStoryQuest={generateStoryQuest}
         onGenerateCharacterLine={localStory.generateCharacterLine}
         storytellerReady={localStory.modelLoaded}
-        storytellerBusy={localStory.busy === 'generating'}
+        storytellerBusy={localStory.busy !== null}
         enemyBanterEnabled={localStory.preferences.enemyBanterEnabled}
+        combatAiEnabled={localStory.preferences.combatAiEnabled}
+        combatSpeechEnabled={localStory.preferences.combatSpeechEnabled}
+        combatAutoTagsEnabled={localStory.preferences.combatAutoTagsEnabled}
+        combatProfanityEnabled={localStory.preferences.combatProfanityEnabled}
+        onGenerateCombatPlan={localStory.generateCombatPlan}
         controlScheme={controlScheme}
         onManageImages={() => {
           setQuestVisible(false);
@@ -2164,6 +2175,7 @@ export default function QuadVideoPlayerScreen() {
         videoIndex={questVideoIndex}
         videoProgress={questVideoProgress}
         videoIsPlaying={playingQuadrants.has(`${session}-${questVideoIndex}`)}
+        combatPlaybackActive={[...playingQuadrants].some((id) => id.startsWith(`${session}-`))}
         bossVideoEnded={bossVideoEnded}
         onSelectVideo={selectQuestVideo}
         onBeginBossVideo={beginBossVideo}

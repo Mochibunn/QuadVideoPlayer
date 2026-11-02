@@ -17,6 +17,7 @@ async function load(name, modules = {}, globals = {}) {
 }
 const core = await load('lib/online-sources.ts', { 'fast-xml-parser': require('fast-xml-parser'), htmlparser2: require('htmlparser2') });
 const oauth = await load('lib/reddit-oauth.ts');
+const tagHelpers = await load('lib/enemy-tag-suggestions.ts');
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const board = core.parseOnlineSource({ id: 'board', name: 'Scenery', kind: 'booru',
   board: 'landscapes.booru.org', tags: 'blue_sky -rain', safeOnly: true });
@@ -384,6 +385,7 @@ test('real source provider keeps searches independent and ignores late deleted r
     },
     '@/lib/reddit-account': { redditGet() { assert.fail('Unexpected request'); } },
     '@/lib/rule34-account': { async readRule34Credentials() { return null; } },
+    '@/lib/enemy-tag-suggestions': tagHelpers,
     '@/lib/online-sources': { ...core, fetchSourcePage: (source, next) =>
       new Promise((resolve) => pending.push({ id: source.id, next, resolve })) },
   });

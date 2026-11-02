@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as Crypto from 'expo-crypto';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useColors } from '@/hooks/useColors';
@@ -10,6 +10,7 @@ import { parseOnlineSource, type OnlineSource, type RemoteMedia } from '@/lib/on
 import RedditAccountSettings from './RedditAccountSettings';
 import Rule34AccountSettings from './Rule34AccountSettings';
 import SettingSwitch from '../SettingSwitch';
+import { filterEnemyTagSuggestions, separateEnemyQuery, type EnemyTagRequest } from '@/lib/enemy-tag-suggestions';
 
 function draft(): OnlineSource {
   return {
@@ -17,28 +18,47 @@ function draft(): OnlineSource {
     subreddits: '', sort: 'hot', safeOnly: true,
   };
 }
-export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
+export default function OnlineSourcesPanel({
+  visible, onClose, onPlayVideos, onSuggestEnemyTags, storytellerReady, storytellerBusy,
+}: {
   visible: boolean; onClose(): void; onPlayVideos(items: RemoteMedia[], name: string): void;
+  onSuggestEnemyTags(request: EnemyTagRequest): Promise<string[]>;
+  storytellerReady: boolean;
+  storytellerBusy: boolean;
 }) {
   const colors = useColors();
   const api = useOnlineSources();
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<OnlineSource | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tagBusy, setTagBusy] = useState(false);
+  const [tagTheme, setTagTheme] = useState('');
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  const [tagNotice, setTagNotice] = useState('');
+  useEffect(() => {
+    setTagSuggestions([]);
+    setTagNotice('');
+  }, [editing?.id, editing?.kind]);
+  const tagRequest: EnemyTagRequest | null =
+    editing?.kind === 'rule34' || editing?.kind === 'e621'
+      ? { provider: editing.kind, existingTags: editing.tags, excludeTags: editing.excludeTags,
+        safeOnly: editing.safeOnly, theme: tagTheme }
+      : null;
+  const availableTags = tagRequest ? filterEnemyTagSuggestions(tagSuggestions, tagRequest) : [];
   const source = api.sources.find((s) => s.id === selected) ?? api.sources[0];
   const result = source ? api.results[source.id] : undefined;
   const videos = result?.items.filter((item) => item.kind === 'video') ?? [];
   const label = (text: string, small = false) => <Text style={{ color: small ? colors.mutedForeground : colors.foreground, fontSize: small ? 12 : 14 }}>{text}</Text>;
   const button = (text: string, action: () => void, disabled = false) => (
-    <Pressable accessibilityRole="button" disabled={busy || disabled} onPress={action}
-      style={[styles.button, { borderColor: colors.primary, opacity: busy || disabled ? 0.5 : 1 }]}>
+    <Pressable accessibilityRole="button" disabled={busy || tagBusy || disabled} onPress={action}
+      style={[styles.button, { borderColor: colors.primary, opacity: busy || tagBusy || disabled ? 0.5 : 1 }]}>
       <Text style={{ color: colors.primary }}>{text}</Text>
     </Pressable>
   );
   function input(title: string, key: 'name' | 'board' | 'tags' | 'excludeTags' | 'subreddits', hint: string) {
     return <View style={{ gap: 6 }}>{label(title)}<TextInput accessibilityLabel={title}
       value={editing?.[key] ?? ''} placeholder={hint} placeholderTextColor={colors.mutedForeground}
-      autoCapitalize="none" autoCorrect={false} editable={!busy}
+      autoCapitalize="none" autoCorrect={false} editable={!busy && !tagBusy}
       onChangeText={(value) => setEditing((old) => old ? { ...old, [key]: value } : old)}
       style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} /></View>;
   }
@@ -62,10 +82,38 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
       } },
     ]);
   }
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={() => { if (!busy) onClose(); }}>
+  async function suggestTags() {
+    if (!tagRequest || tagBusy || busy || storytellerBusy) return;
+    setTagBusy(true);
+    setTagNotice('');
+    try {
+      const tags = await onSuggestEnemyTags(tagRequest);
+      setTagSuggestions(tags);
+      setTagNotice('Review each suggestion. AI tags may not exist on the site.');
+    } catch (error) {
+      setTagNotice(error instanceof Error ? error.message : 'Could not suggest tags.');
+    } finally { setTagBusy(false); }
+  }
+  async function searchTagSeparately(tag: string) {
+    if (!editing || !tagRequest || busy || tagBusy ||
+      !filterEnemyTagSuggestions([tag], tagRequest).length) return;
+    setBusy(true);
+    try {
+      const next = parseOnlineSource({
+        ...editing, id: Crypto.randomUUID(), name: `${editing.name || 'AI enemy'} · ${tag}`,
+        tags: separateEnemyQuery(tag, editing.tags), dungeonEnemy: true,
+      });
+      await api.saveSource(next);
+      setSelected(next.id);
+      setEditing(null);
+    } catch (error) {
+      setTagNotice(error instanceof Error ? error.message : 'Could not create the search.');
+    } finally { setBusy(false); }
+  }
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={() => { if (!busy && !tagBusy) onClose(); }}>
     <View style={styles.backdrop}><View style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
       <View style={styles.row}><Text style={[styles.title, { color: colors.foreground }]}>Online media sources</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Close online sources" disabled={busy} onPress={onClose} style={styles.icon}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close online sources" disabled={busy || tagBusy} onPress={onClose} style={styles.icon}>
           <Feather name="x" size={22} color={colors.foreground} />
         </Pressable>
       </View>
@@ -92,6 +140,8 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
                   `${source.kind === 'rule34' ? 'Rule34.xxx' : 'e621.net'}\nTags: ${source.tags || '(all)'}${source.excludeTags ? `\nAvoid: ${source.excludeTags}` : ''}${source.safeOnly ? ' · safe-rated only' : ''}${source.dungeonEnemy ? '\nDungeon enemy source' : ''}`, true)}
               <View style={styles.wrap}>
                 {button('Edit', () => setEditing({ ...source }))}
+                {(source.kind === 'rule34' || source.kind === 'e621') &&
+                  button('Suggest enemy tags', () => setEditing({ ...source }))}
                 {button('Remove', remove)}
                 {button(result?.loaded ? 'Refresh' : 'Load results', () => void api.refresh(source.id), result?.loading)}
                 {button('Load more', () => void api.refresh(source.id, true), !result?.hasMore || result.loading)}
@@ -135,6 +185,27 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
                   onValueChange={(dungeonEnemy) => setEditing((old) => old ? { ...old, dungeonEnemy } : old)} />
               </View>
               {label('Marked searches get an Enemy label. Any saved Rule34/e621 search can still be selected for a dungeon run.', true)}
+              <View style={[styles.aiTags, { borderColor: colors.primary }]}>
+                {label('Local AI · enemy tag ideas')}
+                {label(storytellerReady
+                  ? 'Describe a creature or visual theme. The loaded GGUF model suggests tags on this device.'
+                  : 'Import and load a GGUF model in Settings → Local storyteller to enable suggestions.', true)}
+                <TextInput accessibilityLabel="Enemy tag inspiration" value={tagTheme}
+                  onChangeText={setTagTheme} maxLength={300} editable={!busy && !tagBusy}
+                  placeholder="Moonlit fox knights, forest spirits…" placeholderTextColor={colors.mutedForeground}
+                  style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} />
+                {button(tagBusy ? 'Thinking…' : 'Suggest tags with local AI', () => void suggestTags(),
+                  !storytellerReady || storytellerBusy)}
+                {tagBusy && <ActivityIndicator color={colors.primary} />}
+                {!!tagNotice && label(tagNotice, true)}
+                {availableTags.map((tag) => <View key={tag} style={styles.row}>
+                  <Text style={{ color: colors.foreground, flex: 1 }}>{tag}</Text>
+                  {button('Add tag', () => setEditing((old) => old
+                    ? { ...old, tags: `${old.tags} ${tag}`.trim() } : old))}
+                  {button('Search separately', () => void searchTagSeparately(tag))}
+                </View>)}
+                {label('Add tag narrows the current query; use Save and search to fetch it. Search separately creates and fetches a new enemy source. Your safe-rating and avoid-tag settings stay unchanged.', true)}
+              </View>
             </>}
             <View style={styles.row}>{label('Only safe-rated posts')}
               <SettingSwitch label="Only safe-rated posts" value={editing.safeOnly} disabled={busy}
@@ -157,6 +228,7 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
   </Modal>;
 }
 const styles = StyleSheet.create({
+  aiTags: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 10 },
   backdrop: { flex: 1, padding: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.85)' },
   sheet: { width: '100%', maxWidth: 820, maxHeight: '92%', padding: 20, gap: 12, borderWidth: 1, borderRadius: 20 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },

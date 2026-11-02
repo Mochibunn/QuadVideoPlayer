@@ -17,7 +17,14 @@ export type LocalStoryPreferences = {
   modelBytes: number;
   systemPrompt: string;
   enemyBanterEnabled: boolean;
+  combatAiEnabled: boolean;
+  combatSpeechEnabled: boolean;
+  combatAutoTagsEnabled: boolean;
+  combatProfanityEnabled: boolean;
 };
+
+export type CombatPreferenceKey =
+  'combatAiEnabled' | 'combatSpeechEnabled' | 'combatAutoTagsEnabled' | 'combatProfanityEnabled';
 
 export type StoryQuestNarrative = {
   title: string;
@@ -32,6 +39,10 @@ export function emptyLocalStoryPreferences(): LocalStoryPreferences {
     modelBytes: 0,
     systemPrompt: DEFAULT_STORY_PROMPT,
     enemyBanterEnabled: false,
+    combatAiEnabled: false,
+    combatSpeechEnabled: true,
+    combatAutoTagsEnabled: false,
+    combatProfanityEnabled: true,
   };
 }
 
@@ -55,6 +66,10 @@ export function parseLocalStoryPreferences(raw: string | null): LocalStoryPrefer
         ? Math.max(0, data.modelBytes) : 0,
       systemPrompt: prompt.trim() ? prompt : empty.systemPrompt,
       enemyBanterEnabled: data.enemyBanterEnabled === true,
+      combatAiEnabled: data.combatAiEnabled === true,
+      combatSpeechEnabled: data.combatSpeechEnabled !== false,
+      combatAutoTagsEnabled: data.combatAutoTagsEnabled === true,
+      combatProfanityEnabled: data.combatProfanityEnabled !== false,
     };
   } catch {
     return empty;

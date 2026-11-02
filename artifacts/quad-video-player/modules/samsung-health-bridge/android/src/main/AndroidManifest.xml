@@ -15,7 +15,7 @@
         <data
           android:scheme="wear"
           android:host="*"
-          android:pathPrefix="/qvp/hr" />
+          android:pathPrefix="/qvp/" />
       </intent-filter>
     </service>
     <service

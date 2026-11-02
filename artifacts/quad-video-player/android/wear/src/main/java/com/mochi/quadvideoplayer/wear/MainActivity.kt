@@ -23,6 +23,7 @@ import android.widget.TextView
 class MainActivity : Activity() {
   private lateinit var statusText: TextView
   private lateinit var trackingButton: Button
+  private lateinit var motionButton: Button
   private lateinit var permissionHelpText: TextView
   private var stateReceiverRegistered = false
 
@@ -93,7 +94,7 @@ class MainActivity : Activity() {
       setOnClickListener { openAppPermissionSettings() }
     }
     root.addView(TextView(this).apply {
-      text = "Link 1.14.1\nSensor Sprout Rescue"
+      text = "Link ${packageManager.getPackageInfo(packageName, 0).versionName}\nPaw Parry Patrol"
       textSize = 12f
       gravity = Gravity.CENTER
       setTextColor(android.graphics.Color.rgb(185, 173, 240))
@@ -107,6 +108,21 @@ class MainActivity : Activity() {
     root.addView(permissionHelpText, LinearLayout.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
+    motionButton = Button(this).apply {
+      text = "Start wrist controls"
+      setOnClickListener {
+        if (MotionTrackingState.active) stopService(Intent(this@MainActivity, MotionTrackingService::class.java))
+        else startMotionControls()
+        renderTrackingState()
+      }
+    }
+    root.addView(motionButton)
+    root.addView(TextView(this).apply {
+      text = "Wrist controls use small movements, not position tracking. Secure your strap and keep space around you. Stop when finished; controls stop automatically after 15 minutes to save battery."
+      textSize = 12f
+      gravity = Gravity.CENTER
+      setPadding(8, 8, 8, 16)
+    })
     setContentView(ScrollView(this).apply { addView(root) })
   }
 
@@ -199,6 +215,10 @@ class MainActivity : Activity() {
       else -> "Heart-rate access is already allowed. Tap Start to connect; no extra prompt is expected."
     }
     trackingButton.text = if (HeartRateTrackingState.active) "Stop tracking" else "Start tracking"
+    if (::motionButton.isInitialized) {
+      motionButton.text = if (MotionTrackingState.active) "Stop wrist controls" else "Start wrist controls"
+      statusText.append("\n${MotionTrackingState.status}")
+    }
     permissionHelpText.text =
       "Sensor: ${if (hasForegroundSensorAccess()) "allowed" else "not allowed"} · " +
       "Background: ${if (hasBackgroundSensorAccess()) "allowed" else "not allowed"}\n" +
@@ -213,6 +233,21 @@ class MainActivity : Activity() {
     )
   }
 
+  private fun startMotionControls() {
+    if (Build.VERSION.SDK_INT >= 31 &&
+      checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+      requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), REQUEST_MOTION_PERMISSION)
+      return
+    }
+    try {
+      val intent = Intent(this, MotionTrackingService::class.java)
+      if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
+    } catch (error: Exception) {
+      MotionTrackingState.status = error.message ?: "Could not start wrist controls."
+      renderTrackingState()
+    }
+  }
+
   override fun onRequestPermissionsResult(
     requestCode: Int,
     permissions: Array<out String>,
@@ -220,6 +255,11 @@ class MainActivity : Activity() {
   ) {
     super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     when (requestCode) {
+      REQUEST_MOTION_PERMISSION -> {
+        if (Build.VERSION.SDK_INT < 31 ||
+          checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) startMotionControls()
+        else { MotionTrackingState.status = "Nearby devices access is needed for wrist controls."; renderTrackingState() }
+      }
       REQUEST_SENSOR_PERMISSIONS -> {
         if (hasForegroundSensorAccess()) {
           requestBackgroundPermissionOrStart()
@@ -262,5 +302,6 @@ class MainActivity : Activity() {
     private const val REQUEST_SENSOR_PERMISSIONS = 7101
     private const val REQUEST_BACKGROUND_PERMISSION = 7102
     private const val REQUEST_NOTIFICATION_PERMISSION = 7103
+    private const val REQUEST_MOTION_PERMISSION = 7104
   }
 }

@@ -1,8 +1,8 @@
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Animated, BackHandler, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions,
+  AccessibilityInfo, ActivityIndicator, Animated, BackHandler, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -14,6 +14,12 @@ import {
 import { BOSS_HEALTH_PER_SECOND, bossHealthForRemainingSeconds } from '@/lib/boss-fight';
 import { analyzeVideoBpm } from '@/lib/media-bpm';
 import type { SlideshowImage } from '@/lib/slideshow';
+import CombatField, { SpeechLayer, SpritePositions } from '@/components/quest/CombatField';
+import MotionMiniGame from '@/components/quest/MotionMiniGame';
+import { familiarCheer, GUILD_TIPS, pickLine } from '@/lib/quest-flavor';
+import { useCombatDirector } from '@/hooks/useCombatDirector';
+import { combineEnemyPool } from '@/lib/combat-director';
+import type { CombatAiPlan, CombatAiRequest } from '@/lib/combat-ai';
 import { shouldActivateCombatTap, type CombatControlScheme } from '@/lib/input-controls';
 
 type EnemyImage = Pick<SlideshowImage, 'uri' | 'name'> & { preview?: string };
@@ -26,10 +32,8 @@ type Enemy = {
   name: string;
   hp: number;
   maxHp: number;
-  x: number;
-  y: number;
-  drift: number;
   bpm: number | null;
+  vanished?: boolean;
 };
 
 type Props = {
@@ -59,6 +63,16 @@ type Props = {
   onBeginBossVideo: (index: number) => void;
   onEndBossVideo: () => void;
   onBpmResult: (videoId: string, result: { bpm: number | null; confidence: number; error?: string }) => void;
+  /** Optional calm-motion preference; OS reduce-motion is always respected. */
+  calmMotion?: boolean;
+  /** True while any video in the session plays; falls back to videoIsPlaying. Boss logic keeps videoIsPlaying. */
+  combatPlaybackActive?: boolean;
+  /** Local AI combat director (sampled, optional). */
+  combatAiEnabled?: boolean;
+  combatSpeechEnabled?: boolean;
+  combatAutoTagsEnabled?: boolean;
+  combatProfanityEnabled?: boolean;
+  onGenerateCombatPlan?: (request: CombatAiRequest) => Promise<CombatAiPlan | null>;
 };
 
 const DUNGEON_WAVES = 3;
@@ -75,66 +89,9 @@ function createWave(pool: EnemyImage[], wave: number, bpm: number | null): Enemy
       name: image.name,
       hp: wave,
       maxHp: wave,
-      x: Math.floor(Math.random() * 72),
-      y: Math.floor(Math.random() * 56),
-      drift: 45 + Math.floor(Math.random() * 55),
       bpm,
     };
   });
-}
-
-function BouncingTarget({
-  enemy,
-  onTap,
-  controlScheme,
-}: {
-  enemy: Enemy;
-  onTap: () => void;
-  controlScheme: CombatControlScheme;
-}) {
-  const colors = useColors();
-  const drift = useRef(new Animated.Value(0)).current;
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    const duration = enemy.bpm ? 30_000 / enemy.bpm : 900 + enemy.drift * 8;
-    const animation = Animated.loop(Animated.sequence([
-      Animated.timing(drift, { toValue: 1, duration, useNativeDriver: true }),
-      Animated.timing(drift, { toValue: 0, duration, useNativeDriver: true }),
-    ]));
-    animation.start();
-    return () => animation.stop();
-  }, [drift, enemy.bpm, enemy.drift]);
-
-  return (
-    <Animated.View
-      style={[
-        styles.target,
-        {
-          left: `${enemy.x}%`,
-          top: `${enemy.y}%`,
-          transform: [
-            { translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [-enemy.drift / 2, enemy.drift / 2] }) },
-            { translateY: drift.interpolate({ inputRange: [0, 1], outputRange: [28, -28] }) },
-            { rotate: drift.interpolate({ inputRange: [0, 1], outputRange: ['-8deg', '8deg'] }) },
-          ],
-        },
-      ]}
-    >
-      <Pressable accessibilityRole="button" accessibilityLabel={`Tap ${enemy.name}, ${enemy.hp} health remaining`}
-        onPress={controlScheme === 'touch' ? onTap : undefined}
-        onPointerUp={controlScheme === 'spen' ? (event) => {
-          if (shouldActivateCombatTap(controlScheme, event.nativeEvent.pointerType)) onTap();
-        } : undefined}
-        style={[styles.targetPressable, { borderColor: colors.primary }]}>
-        {!failed && <Image source={{ uri: enemy.uri }} contentFit="cover" style={styles.targetImage}
-          onError={() => setFailed(true)} transition={0} />}
-        <View style={[styles.hpPill, { backgroundColor: colors.secondary, borderColor: colors.primary }]}>
-          <Text style={[styles.hpText, { color: colors.foreground }]}>{enemy.hp}/{enemy.maxHp}</Text>
-        </View>
-      </Pressable>
-    </Animated.View>
-  );
 }
 
 function QuestRow({
@@ -179,12 +136,20 @@ export default function GoonQuestOverlay({
   onAddStoryQuest, onGenerateStoryQuest, onGenerateCharacterLine, storytellerReady, storytellerBusy,
   enemyBanterEnabled, controlScheme,
   videos, videoIndex, videoProgress, videoIsPlaying, bossVideoEnded, onSelectVideo, onBeginBossVideo, onEndBossVideo,
-  onBpmResult,
+  onBpmResult, calmMotion = false, combatPlaybackActive,
+  combatAiEnabled = false, combatSpeechEnabled = true, combatAutoTagsEnabled = false, combatProfanityEnabled = true,
+  onGenerateCombatPlan,
 }: Props) {
   const colors = useColors();
   const online = useOnlineSources();
   const { width } = useWindowDimensions();
   const [inDungeon, setInDungeon] = useState(false);
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [arcadeOpen, setArcadeOpen] = useState(false);
+  const [flavorSeed, setFlavorSeed] = useState(() => Math.floor(Date.now() / 60_000));
+  const [combatPaused, setCombatPaused] = useState(false);
+  const [osReduceMotion, setOsReduceMotion] = useState(false);
+  const failedEnemyUris = useRef(new Set<string>());
   const [selectedEnemySourceId, setSelectedEnemySourceId] = useState<string | null>(null);
   const [wave, setWave] = useState(0);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
@@ -237,9 +202,27 @@ export default function GoonQuestOverlay({
   const remainingSeconds = Math.max(0, videoProgress.duration - videoProgress.currentTime);
   const bossMaxHpForVideo = bossHealthForRemainingSeconds(remainingSeconds);
   const selectedSourceResult = selectedEnemySource ? online.results[selectedEnemySource.id] : undefined;
-  const enemyPool: EnemyImage[] = selectedEnemySource
+  const [runId, setRunId] = useState(0);
+  const spritePositions = useRef(new SpritePositions()).current;
+  const baseEnemyPool: EnemyImage[] = selectedEnemySource
     ? selectedSourceResult?.images ?? []
     : pool;
+  const knownEnemyUris = useMemo(() => new Set(baseEnemyPool.flatMap((image) =>
+    image.preview ? [image.uri, image.preview] : [image.uri])), [baseEnemyPool]);
+  const combatVideoPlaying = combatPlaybackActive ?? videoIsPlaying;
+  const combatPausedNow = combatPaused || !combatVideoPlaying;
+  const calm = calmMotion || osReduceMotion;
+  const director = useCombatDirector({
+    runId, runActive: inDungeon, paused: combatPausedNow, enemies, wave, bpm: dungeonBpm,
+    aiEnabled: combatAiEnabled, speechEnabled: combatSpeechEnabled, autoTagsEnabled: combatAutoTagsEnabled,
+    profanityEnabled: combatProfanityEnabled, modelLoaded: storytellerReady, storytellerBusy,
+    generatePlan: onGenerateCombatPlan, enemySource: selectedEnemySource ?? null, fetchTagImages: online.fetchEnemyTagImages,
+    knownUris: knownEnemyUris,
+  });
+  // Transient AI images only join an online source's pool; combined pool bounded at 80.
+  const enemyPool: EnemyImage[] = useMemo(() => director.extraImages.length && selectedEnemySource
+    ? combineEnemyPool<EnemyImage>(baseEnemyPool, director.extraImages) : baseEnemyPool,
+  [baseEnemyPool, director.extraImages, selectedEnemySource]);
 
   useEffect(() => {
     const videoId = selectedVideo?.id ?? '';
@@ -444,6 +427,13 @@ export default function GoonQuestOverlay({
     if (sourceId) online.ensureLoaded(sourceId);
   };
 
+  useEffect(() => {
+    let mounted = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (mounted) setOsReduceMotion(value); }).catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setOsReduceMotion);
+    return () => { mounted = false; subscription.remove(); };
+  }, []);
+
   useEffect(() => () => {
     if (transitionTimer.current) clearTimeout(transitionTimer.current);
     cooldownTimers.current.forEach(clearTimeout);
@@ -457,8 +447,15 @@ export default function GoonQuestOverlay({
   }, [activeClass.name, adultMode, onDialogue, visible]);
 
   useEffect(() => {
-    if (!inDungeon || !enemies.length || enemies.some((enemy) => enemy.hp > 0) || transitionHandled.current) return;
+    if (!inDungeon || combatPausedNow || !enemies.length || enemies.some((enemy) => enemy.hp > 0) || transitionHandled.current) return;
     transitionHandled.current = true;
+    const usableLeft = enemyPool.some((image) => !failedEnemyUris.current.has(image.preview ?? image.uri));
+    if (!usableLeft || enemies.every((enemy) => enemy.vanished)) {
+      setInDungeon(false);
+      setEnemies([]);
+      setDungeonMessage('None of the enemy images could load. The run ended without a reward; choose another source.');
+      return;
+    }
     if (wave < DUNGEON_WAVES) {
       setDungeonMessage(adultMode
         ? `Wave ${wave} down. Keep edging; the next adult pinups are coming.`
@@ -468,9 +465,16 @@ export default function GoonQuestOverlay({
         : `Wave ${wave} quieted. Ready yourself for the next chamber.`);
       transitionTimer.current = setTimeout(() => {
         const nextWave = wave + 1;
+        const usable = enemyPool.filter((image) => !failedEnemyUris.current.has(image.preview ?? image.uri));
+        if (!usable.length) {
+          setInDungeon(false);
+          setDungeonMessage('None of the enemy images could load. Choose another source to continue.');
+          return;
+        }
         setWave(nextWave);
-        setEnemies(createWave(enemyPool, nextWave, dungeonBpm));
+        setEnemies(createWave(usable, nextWave, dungeonBpm));
         setDungeonMessage('');
+        transitionTimer.current = null;
         transitionHandled.current = false;
       }, 900);
     } else {
@@ -483,13 +487,33 @@ export default function GoonQuestOverlay({
         ? 'You cleared the horde without breaking your rhythm. Now you can let yourself come and collect the guild reward.'
         : 'Den cleared. The restless portraits are quiet, and the guild purse is yours.');
     }
-  }, [adultMode, dungeonBpm, enemies, enemyPool, inDungeon, onCombatProgress, onDialogue, wave]);
+  }, [adultMode, combatPausedNow, dungeonBpm, enemies, enemyPool, inDungeon, onCombatProgress, onDialogue, wave]);
+
+  // Pausing freezes a pending wave transition; it re-arms after resuming.
+  useEffect(() => {
+    if (!combatPausedNow || !transitionTimer.current) return;
+    clearTimeout(transitionTimer.current);
+    transitionTimer.current = null;
+    transitionHandled.current = false;
+  }, [combatPausedNow]);
+
+  // Reopening the quest button mid-run brings the board back up.
+  const previousVisible = useRef(visible);
+  useEffect(() => {
+    if (visible && !previousVisible.current && inDungeon) setBoardOpen(true);
+    previousVisible.current = visible;
+  }, [inDungeon, visible]);
 
   const startDungeon = () => {
     if (!enemyPool.length) return;
     if (transitionTimer.current) clearTimeout(transitionTimer.current);
     transitionHandled.current = false;
+    failedEnemyUris.current.clear();
+    setCombatPaused(false);
+    setBoardOpen(false);
     setCombo(0);
+    setRunId((value) => value + 1);
+    spritePositions.clear();
     setWave(1);
     setDungeonBpm(effectiveSelectedBpm);
     setEnemies(createWave(enemyPool, 1, effectiveSelectedBpm));
@@ -500,7 +524,19 @@ export default function GoonQuestOverlay({
       : `The moonlit den stirs${effectiveSelectedBpm ? ` to ${effectiveSelectedBpm} BPM` : ''}. Tap each portrait before it bounds away.`);
   };
 
+  const handleEnemyImageFailed = (enemyId: string, uri: string) => {
+    failedEnemyUris.current.add(uri);
+    setEnemies((current) => current.map((enemy) => {
+      if (enemy.id !== enemyId || enemy.hp <= 0) return enemy;
+      const options = enemyPool.filter((image) => !failedEnemyUris.current.has(image.preview ?? image.uri));
+      if (!options.length) return { ...enemy, hp: 0, vanished: true };
+      const image = options[Math.floor(Math.random() * options.length)];
+      return { ...enemy, id: `image-enemy-${++nextEnemyId}`, uri: image.preview ?? image.uri, name: image.name };
+    }));
+  };
+
   const hitEnemy = (enemyId: string, damage: number, message?: string) => {
+    if (combatPausedNow) return;
     const current = enemies;
     const target = current.find((enemy) => enemy.id === enemyId);
     if (!target || target.hp <= 0) return;
@@ -508,6 +544,7 @@ export default function GoonQuestOverlay({
       ? { ...enemy, hp: Math.max(0, enemy.hp - damage) } : enemy);
     const defeated = target.hp <= damage ? 1 : 0;
     setEnemies(next);
+    if (defeated) director.reportDefeats([target.id]);
     if (defeated) {
       onCombatProgress({ defeats: defeated });
       setDungeonMessage(adultMode
@@ -516,7 +553,7 @@ export default function GoonQuestOverlay({
       onDialogue(adultMode
         ? `${target.name} vanishes in a flash of magic. Keep your hand moving; the den is still hungry.`
         : `${target.name} sent packing.`);
-      if (storytellerReady && enemyBanterEnabled && !enemyLineBusy.current) {
+      if (storytellerReady && enemyBanterEnabled && !(combatAiEnabled && combatSpeechEnabled) && !enemyLineBusy.current) {
         enemyLineBusy.current = true;
         void onGenerateCharacterLine(`${target.name}, a defeated image enemy, reacts to the player's ${activeClass.name} attack.`)
           .then((line) => {
@@ -533,6 +570,7 @@ export default function GoonQuestOverlay({
   };
 
   const tapTarget = (enemyId: string) => {
+    if (combatPausedNow) return;
     setCombo((value) => value + 1);
     hitEnemy(enemyId, 1);
   };
@@ -590,7 +628,7 @@ export default function GoonQuestOverlay({
   };
 
   const useSkill = () => {
-    if (!inDungeon || !skillReady) return;
+    if (!inDungeon || !skillReady || combatPausedNow) return;
     const target = enemies.find((enemy) => enemy.hp > 0);
     if (!target) return;
     startCooldown('skill');
@@ -602,7 +640,7 @@ export default function GoonQuestOverlay({
   };
 
   const useSpell = () => {
-    if (!inDungeon || !spellReady) return;
+    if (!inDungeon || !spellReady || combatPausedNow) return;
     const living = enemies.filter((enemy) => enemy.hp > 0);
     if (!living.length) return;
     startCooldown('spell');
@@ -610,8 +648,10 @@ export default function GoonQuestOverlay({
     if (activeClass.areaSpell) {
       const next = enemies.map((enemy) => enemy.hp > 0
         ? { ...enemy, hp: Math.max(0, enemy.hp - activeClass.spellDamage) } : enemy);
-      const defeated = living.filter((enemy) => enemy.hp <= activeClass.spellDamage).length;
+      const fallen = living.filter((enemy) => enemy.hp <= activeClass.spellDamage);
+      const defeated = fallen.length;
       setEnemies(next);
+      if (defeated) director.reportDefeats(fallen.map((enemy) => enemy.id));
       if (defeated) onCombatProgress({ defeats: defeated });
       setDungeonMessage(`${activeClass.spell} hits ${living.length} target${living.length === 1 ? '' : 's'}!`);
     } else {
@@ -622,10 +662,20 @@ export default function GoonQuestOverlay({
       : `${activeClass.name} casts ${activeClass.spell}.`);
   };
 
+  const leaveDungeon = () => {
+    if (transitionTimer.current) clearTimeout(transitionTimer.current);
+    transitionHandled.current = false;
+    setInDungeon(false);
+    setEnemies([]);
+    setRunId((value) => value + 1);
+    setCombatPaused(false);
+    setBoardOpen(false);
+  };
+
+  // Closing the board never ends an active encounter; combat stays on the videos.
   const close = () => {
     if (bossActive) onEndBossVideo();
-    setInDungeon(false);
-    if (transitionTimer.current) clearTimeout(transitionTimer.current);
+    setBoardOpen(false);
     onClose();
   };
 
@@ -740,8 +790,40 @@ export default function GoonQuestOverlay({
     );
   }
 
+  const combatLayer = inDungeon ? (
+    <CombatField
+      enemies={enemies}
+      paused={combatPausedNow}
+      calm={calm}
+      controlScheme={controlScheme}
+      onHit={tapTarget}
+      onImageFailed={handleEnemyImageFailed}
+      banner={dungeonMessage}
+      hud={{
+        wave, waves: DUNGEON_WAVES, combo, bpm: dungeonBpm,
+        message: dungeonMessage || 'Tap a restless portrait to strike.',
+        skillName: activeClass.skill, spellName: activeClass.spell, skillReady, spellReady,
+        paused: combatPausedNow, videoPaused: !combatVideoPlaying, canOpenBoard: visible,
+        onSkill: useSkill, onSpell: useSpell,
+        onTogglePause: () => setCombatPaused((value) => !value),
+        onOpenBoard: () => setBoardOpen(true),
+        onLeave: leaveDungeon,
+        directorLabel: director.directorLabel, directorMode: director.mode, huntLabel: director.huntLabel,
+      }}
+      directives={director.motions}
+      speech={director.speech}
+      positions={spritePositions}
+    />
+  ) : director.speech.some((item) => item.kind === 'defeat') ? (
+    <View pointerEvents="none" style={styles.speechAfterglow}>
+      <SpeechLayer speech={director.speech} positions={spritePositions} />
+    </View>
+  ) : null;
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
+    <>
+    {combatLayer}
+    <Modal visible={visible && (!inDungeon || boardOpen)} transparent animationType="fade" onRequestClose={close}>
       <View style={styles.backdrop}>
         <SafeAreaView style={[styles.panel, { backgroundColor: colors.background, borderColor: colors.border, maxWidth: width > 1000 ? 980 : 760 }]}>
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -773,6 +855,29 @@ export default function GoonQuestOverlay({
               <StatPill label="DEN COINS" value={String(state.coins)} colors={colors} />
               <StatPill label="HUNTED" value={String(state.totalDefeated)} colors={colors} />
               <StatPill label="BEASTFOLK" value={activeClass.name} colors={colors} />
+            </View>
+
+            <View style={[styles.storyCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+              <View style={styles.storyCardHeading}>
+                <Feather name="bookmark" size={15} color={colors.primary} />
+                <Text style={[styles.sectionKicker, { color: colors.primary }]}>NOTICE BOARD</Text>
+              </View>
+              <Text style={[styles.muted, { color: colors.foreground }]}>{pickLine(GUILD_TIPS, flavorSeed)}</Text>
+              <Text style={[styles.muted, { color: colors.mutedForeground, fontStyle: 'italic' }]}>
+                {familiarCheer(state.petName, flavorSeed + 3)}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Read another guild notice"
+                  onPress={() => setFlavorSeed((value) => value + 1)}
+                  style={[styles.claimButton, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.claimText, { color: colors.foreground }]}>Next notice</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Open Paw Parry wrist-motion arcade"
+                  onPress={() => setArcadeOpen(true)}
+                  style={[styles.claimButton, { backgroundColor: colors.primary }]}>
+                  <Text style={[styles.claimText, { color: colors.primaryForeground }]}>Paw Parry arcade</Text>
+                </Pressable>
+              </View>
             </View>
 
             <View style={styles.sectionTitleLine}>
@@ -1101,6 +1206,25 @@ export default function GoonQuestOverlay({
                   </View>
                 )}
               </View>
+              <View style={[styles.directorCard, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                <Feather name={director.mode === 'ai' ? 'cpu' : 'shuffle'} size={14} color={colors.primary} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.directorTitle, { color: colors.foreground }]}>{director.directorLabel}</Text>
+                  {combatAutoTagsEnabled && !selectedEnemySource ? (
+                    <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+                      Auto tag hunts only work with an online enemy source. Select a Rule34 or e621 search above; the slideshow pool is never searched.
+                    </Text>
+                  ) : director.huntLabel ? (
+                    <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+                      {director.huntLabel} · temporary, your saved search is not changed
+                    </Text>
+                  ) : (
+                    <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+                      Toggle the AI director, enemy speech, and tag hunts in Local Story Settings.
+                    </Text>
+                  )}
+                </View>
+              </View>
               {!inDungeon ? (
                 <Pressable onPress={startDungeon} accessibilityRole="button" disabled={!enemyPool.length}
                   style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: enemyPool.length ? 1 : 0.45 }]}>
@@ -1110,43 +1234,19 @@ export default function GoonQuestOverlay({
                   </Text>
                 </Pressable>
               ) : (
-                <>
-                  <View style={[styles.arena, { borderColor: colors.border, width: '100%', backgroundColor: colors.background }]}>
-                    {enemies.filter((enemy) => enemy.hp > 0).map((enemy) => (
-                      <BouncingTarget key={enemy.id} enemy={enemy} onTap={() => tapTarget(enemy.id)}
-                        controlScheme={controlScheme} />
-                    ))}
-                    {!enemies.some((enemy) => enemy.hp > 0) && (
-                      <View style={styles.waveNotice}>
-                        <Text style={[styles.waveNoticeText, { color: colors.foreground }]}>{dungeonMessage}</Text>
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.combatInfo}>
-                    <Text style={[styles.waveText, { color: colors.foreground }]}>
-                      Moonlit run {wave}/{DUNGEON_WAVES} · streak {combo}{dungeonBpm ? ` · ${dungeonBpm} BPM` : ''}
+                <View style={styles.skillRow}>
+                  <Pressable accessibilityRole="button" onPress={() => setBoardOpen(false)}
+                    style={[styles.primaryButton, { backgroundColor: colors.primary, flexGrow: 1 }]}>
+                    <Feather name="play" size={16} color={colors.primaryForeground} />
+                    <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>
+                      Resume combat · wave {wave}/{DUNGEON_WAVES}
                     </Text>
-                    <Text style={[styles.muted, { color: colors.mutedForeground }]}>{dungeonMessage || 'Tap a restless portrait to strike.'}</Text>
-                  </View>
-                  <View style={styles.skillRow}>
-                    <Pressable accessibilityRole="button" disabled={!skillReady}
-                      onPress={useSkill}
-                      style={[styles.skillButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: skillReady ? 1 : 0.45 }]}>
-                      <Feather name="target" size={15} color={colors.primary} />
-                      <Text style={[styles.skillText, { color: colors.foreground }]}>{activeClass.skill} · {skillReady ? 'Ready' : 'Resting'}</Text>
-                    </Pressable>
-                    <Pressable accessibilityRole="button" disabled={!spellReady}
-                      onPress={useSpell}
-                      style={[styles.skillButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: spellReady ? 1 : 0.45 }]}>
-                      <Feather name="zap" size={15} color={colors.primary} />
-                      <Text style={[styles.skillText, { color: colors.foreground }]}>{activeClass.spell} · {spellReady ? 'Ready' : 'Resting'}</Text>
-                    </Pressable>
-                    <Pressable accessibilityRole="button" onPress={() => setInDungeon(false)}
-                      style={[styles.leaveButton, { borderColor: colors.border }]}>
-                      <Text style={[styles.skillText, { color: colors.mutedForeground }]}>Leave the den</Text>
-                    </Pressable>
-                  </View>
-                </>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" onPress={leaveDungeon}
+                    style={[styles.leaveButton, { borderColor: colors.border }]}>
+                    <Text style={[styles.skillText, { color: colors.mutedForeground }]}>Leave the den</Text>
+                  </Pressable>
+                </View>
               )}
             </View>
             <Text style={[styles.footerNote, { color: colors.mutedForeground }]}>
@@ -1156,6 +1256,8 @@ export default function GoonQuestOverlay({
         </SafeAreaView>
       </View>
     </Modal>
+    <MotionMiniGame visible={visible && arcadeOpen} onClose={() => setArcadeOpen(false)} calm={calm} />
+    </>
   );
 }
 
@@ -1169,6 +1271,9 @@ function StatPill({ label, value, colors }: { label: string; value: string; colo
 }
 
 const styles = StyleSheet.create({
+  speechAfterglow: { ...StyleSheet.absoluteFill, zIndex: 91, elevation: 91 },
+  directorCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 10 },
+  directorTitle: { fontSize: 12, fontWeight: '800' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.91)', justifyContent: 'center', alignItems: 'center', padding: 10 },
   panel: { width: '100%', flex: 1, maxHeight: '100%', borderWidth: 1, borderRadius: 22, overflow: 'hidden' },
   header: { minHeight: 76, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
