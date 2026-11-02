@@ -68,6 +68,12 @@ class DownloadsMediaModule : Module() {
       VideoPreviewStore.get(context, uri)
     }
 
+    AsyncFunction("analyzeVideoBpm") { uri: String ->
+      val context = appContext.reactContext
+        ?: throw IllegalStateException("The Android application is not available.")
+      AudioBpmAnalyzer.analyze(context, uri)
+    }.runOnQueue(Queues.DEFAULT)
+
     AsyncFunction("getVideos") {
       val context = appContext.reactContext
         ?: throw IllegalStateException("The Android application is not available.")

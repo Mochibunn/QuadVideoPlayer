@@ -4,7 +4,8 @@ import type { Rule34Credentials } from './rule34-account';
 
 export type OnlineSource = {
   id: string; name: string; kind: 'booru' | 'rule34' | 'e621' | 'reddit'; board: string; tags: string;
-  subreddits: string; sort: 'hot' | 'new' | 'top'; safeOnly: boolean;
+  excludeTags: string; subreddits: string; sort: 'hot' | 'new' | 'top'; safeOnly: boolean;
+  dungeonEnemy?: boolean;
 };
 export type RemoteMedia = {
   id: string; uri: string; name: string; kind: 'image' | 'video'; postUrl: string; preview?: string;
@@ -70,9 +71,11 @@ export function parseOnlineSource(value: unknown): OnlineSource {
     id: v.id, name: v.name.trim().slice(0, 100), kind,
     board: kind === 'booru' ? normalizeBoard(String(v.board ?? '')) : '',
     tags: String(v.tags ?? '').trim().slice(0, 1000),
+    excludeTags: String(v.excludeTags ?? '').trim().slice(0, 1000),
     subreddits: kind === 'reddit' ? normalizeSubreddits(String(v.subreddits ?? '')) : '',
     sort: v.sort === 'new' || v.sort === 'top' ? v.sort : 'hot',
     safeOnly: v.safeOnly !== false,
+    ...((kind === 'rule34' || kind === 'e621') && v.dungeonEnemy === true ? { dungeonEnemy: true } : {}),
   };
 }
 export function parseOnlineSources(value: unknown): OnlineSource[] {
@@ -83,7 +86,8 @@ export function parseOnlineSources(value: unknown): OnlineSource[] {
 }
 export function booruSearchUrl(source: OnlineSource, page: number): string {
   const url = new URL('/index.php', normalizeBoard(source.board));
-  const tags = [source.tags, source.safeOnly ? 'rating:safe' : ''].filter(Boolean).join(' ');
+  const tags = [source.tags, ...excludedTags(source.excludeTags), source.safeOnly ? 'rating:safe' : '']
+    .filter(Boolean).join(' ');
   // Hosted booru.org boards run the older HTML-only engine. Its pid is an
   // offset in 20-post pages, not the DAPI page number used by newer engines.
   url.search = new URLSearchParams({ page: 'post', s: 'list', pid: String(Math.max(0, Math.floor(page)) * 20), tags: tags || 'all' }).toString();
@@ -91,7 +95,11 @@ export function booruSearchUrl(source: OnlineSource, page: number): string {
 }
 function apiTags(source: OnlineSource) {
   const safeTag = source.kind === 'e621' ? 'rating:safe' : 'rating:s';
-  return [source.tags, source.safeOnly ? safeTag : ''].filter(Boolean).join(' ');
+  return [source.tags, ...excludedTags(source.excludeTags), source.safeOnly ? safeTag : '']
+    .filter(Boolean).join(' ');
+}
+function excludedTags(value: string): string[] {
+  return value.split(/[\s,]+/).map((tag) => tag.replace(/^-+/, '')).filter(Boolean).map((tag) => `-${tag}`);
 }
 export function rule34SearchUrl(source: OnlineSource, page: number, credentials: Rule34Credentials): string {
   const url = new URL('/index.php', 'https://api.rule34.xxx');

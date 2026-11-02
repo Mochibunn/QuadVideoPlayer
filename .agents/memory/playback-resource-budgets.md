@@ -19,3 +19,12 @@ a stack trace, so it did not establish the original crash's precise cause.
 Never describe compressed-buffer targets as total RAM usage, or claim native
 crash resolution based only on compilation/unit checks. Use the on-device
 crash/exit report to distinguish Java, native-code, and low-memory failures.
+
+When gameplay needs one video full-screen, reuse a current quadrant player and
+restore the prior focus afterward; do not add a fifth video decoder.
+
+**Why:** Boss fights need a moving video deadline, while another decoder would
+compound the tablet's existing four-player memory and surface load.
+
+**How to apply:** Tie full-screen encounters to a selected active stream, track
+its playback position/end, and return to the previous quad/focus state afterward.

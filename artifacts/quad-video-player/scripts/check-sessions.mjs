@@ -156,13 +156,17 @@ test('partial restore validates images without discarding the stored image pool'
 test('online search definitions and per-slideshow source assignments round-trip without account tokens', () => {
   const value = fixture();
   value.sources = [online.parseOnlineSource({ id: 'query', name: 'Sky', kind: 'booru',
-    board: 'sky.booru.org', tags: 'blue_sky -rain', safeOnly: true })];
+    board: 'sky.booru.org', tags: 'blue_sky -rain', excludeTags: 'watermark low_res', safeOnly: true }),
+  online.parseOnlineSource({ id: 'enemy-tags', name: 'Dungeon foxes', kind: 'e621',
+    tags: 'fox -young', excludeTags: 'watermark', safeOnly: true, dungeonEnemy: true })];
   value.slideshow = { ...plain(slideshow.DEFAULT_SLIDESHOW), enabled: true, pool: [], instances: [
     { ...plain(slideshow.DEFAULT_INSTANCE), sourceId: 'query', index: 17 },
   ] };
   const result = codec.parseSession(JSON.stringify(value));
   assert.deepEqual(plain(result), plain(value));
   assert.equal(result.slideshow.instances[0].index, 17);
+  assert.equal(result.sources[0].excludeTags, 'watermark low_res');
+  assert.equal(result.sources[1].excludeTags, 'watermark');
   assert.equal(result.accessToken, undefined);
 });
 test('valid HTTPS online streams remain playable session media', () => {

@@ -35,6 +35,7 @@ import ControlsTimeoutSetting from '@/components/ControlsTimeoutSetting';
 import PoolVideoPreview from '@/components/PoolVideoPreview';
 import PlayerRewardsSettings from '@/components/PlayerRewardsSettings';
 import PlayerRpgDashboard from '@/components/PlayerRpgDashboard';
+import RpgTownHub from '@/components/RpgTownHub';
 import GoonQuestOverlay from '@/components/GoonQuestOverlay';
 import PlayExtrasSettings from '@/components/PlayExtrasSettings';
 import KeyJingleOverlay from '@/components/KeyJingleOverlay';
@@ -85,6 +86,7 @@ import { VIEWING_SESSIONS_KEY } from '@/lib/viewing-sessions';
 import { PLAY_EXTRAS_KEY } from '@/lib/play-extras';
 
 type ActivePanel = 'settings' | 'pool' | 'audio' | 'slideshow' | 'sources' | null;
+type VideoBpmReport = { bpm: number | null; confidence: number; error?: string };
 
 function formatVideoClock(seconds: number): string {
   const wholeSeconds = Math.max(0, Math.floor(seconds));
@@ -205,6 +207,7 @@ function VideoTile({
   asset,
   pool,
   index,
+  bpmByVideoId,
   globalPlaying,
   normalizeLoudness,
   linkedVolume,
@@ -222,10 +225,14 @@ function VideoTile({
   onVideoStarted,
   getNextVideo,
   onAssetChange,
+  onPlaybackProgress,
+  onPlaybackEnded,
+  stopAtEnd,
 }: {
   asset: VideoAsset;
   pool: VideoAsset[];
   index: number;
+  bpmByVideoId: Record<string, VideoBpmReport>;
   globalPlaying: boolean;
   normalizeLoudness: boolean;
   linkedVolume: boolean;
@@ -243,10 +250,14 @@ function VideoTile({
   onVideoStarted: (videoId: string) => void;
   getNextVideo: (slot: number, currentId: string) => VideoAsset | undefined;
   onAssetChange: (slot: number, next: VideoAsset) => void;
+  onPlaybackProgress: (slot: number, progress: { currentTime: number; duration: number }) => void;
+  onPlaybackEnded: (slot: number) => void;
+  stopAtEnd: boolean;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [currentAsset, setCurrentAsset] = useState(asset);
+  const bpm = bpmByVideoId[currentAsset.id]?.bpm ?? null;
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(initialSnapshot?.muted ?? false);
   const [individualVolume, setIndividualVolume] = useState(initialSnapshot?.volume ?? START_VOLUME);
@@ -284,11 +295,13 @@ function VideoTile({
   const updatePlaybackProgress = useCallback((currentTime: number) => {
     const duration = player.duration;
     if (!Number.isFinite(duration) || duration <= 0) return;
-    setPlaybackProgress({
+    const progress = {
       currentTime: Math.max(0, Math.min(duration, Number.isFinite(currentTime) ? currentTime : 0)),
       duration,
-    });
-  }, [player]);
+    };
+    setPlaybackProgress(progress);
+    onPlaybackProgress(index, progress);
+  }, [index, onPlaybackProgress, player]);
   usePlayerSoundEffects(player);
   useEffect(() => prepareVideoSlot(
     player, asset.uri, index,
@@ -358,6 +371,11 @@ function VideoTile({
   );
 
   useEventListener(player, 'playToEnd', () => {
+    if (stopAtEnd) {
+      player.pause();
+      onPlaybackEnded(index);
+      return;
+    }
     void advance(true);
   });
 
@@ -413,12 +431,15 @@ function VideoTile({
     const focusChanged = previousPlayMode.current.focusIndex !== focusIndex;
     previousPlayMode.current = { focusIndex, globalPlaying };
     if (focusIndex !== null && focusIndex !== index) {
-      if (globalChanged) restorePlaying.current = globalPlaying;
+      restorePlaying.current = false;
       player.pause();
       return;
     }
     if (!globalChanged && focusChanged) {
-      if (globalPlaying && restorePlaying.current) player.play();
+      if (focusIndex === index && globalPlaying) {
+        restorePlaying.current = true;
+        player.play();
+      } else if (globalPlaying && restorePlaying.current) player.play();
       else player.pause();
       return;
     }
@@ -577,6 +598,12 @@ function VideoTile({
         <Text numberOfLines={1} ellipsizeMode="middle" style={[styles.videoName, { color: colors.foreground }]}>
           {currentAsset.name}
         </Text>
+        <View style={[styles.bpmPill, { backgroundColor: colors.secondary }]}>
+          <Feather name="activity" size={11} color={colors.primary} />
+          <Text style={[styles.bpmText, { color: colors.foreground }]}>
+            {bpm === null ? 'BPM —' : `${bpm} BPM`}
+          </Text>
+        </View>
         <View style={[styles.liveDot, { backgroundColor: errorMessage ? colors.destructive : colors.primary }]} />
         <Pressable
           accessibilityRole="button"
@@ -725,7 +752,10 @@ export default function QuadVideoPlayerScreen() {
   const [backgroundTrackCount, setBackgroundTrackCount] = useState(0);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [questVisible, setQuestVisible] = useState(false);
+  const [townHubVisible, setTownHubVisible] = useState(false);
+  const [questSourcesReturn, setQuestSourcesReturn] = useState(false);
   const [singleStreamIndex, setSingleStreamIndex] = useState<number | null>(null);
+  const [videoBpmById, setVideoBpmById] = useState<Record<string, VideoBpmReport>>({});
   const [sessionListRevision, setSessionListRevision] = useState(0);
   const [pool, setPool] = useState<VideoAsset[]>([]);
   const [activeVideos, setActiveVideos] = useState<VideoAsset[]>([]);
@@ -738,6 +768,13 @@ export default function QuadVideoPlayerScreen() {
   const [session, setSession] = useState(0);
   const [globalPlaying, setGlobalPlaying] = useState(true);
   const [playingQuadrants, setPlayingQuadrants] = useState<Set<string>>(() => new Set());
+  const [questVideoIndex, setQuestVideoIndex] = useState(0);
+  const [questVideoProgress, setQuestVideoProgress] = useState({ currentTime: 0, duration: 0 });
+  const [bossVideoIndex, setBossVideoIndex] = useState<number | null>(null);
+  const [bossVideoEnded, setBossVideoEnded] = useState(false);
+  const videoProgressBySlot = useRef<Record<number, { currentTime: number; duration: number }>>({});
+  const previousStreamFocus = useRef<number | null>(null);
+  const bossFocusCaptured = useRef(false);
   const [isPicking, setIsPicking] = useState(false);
   const [sourceLabel, setSourceLabel] = useState('');
   const insets = useSafeAreaInsets();
@@ -759,6 +796,43 @@ export default function QuadVideoPlayerScreen() {
       return next;
     });
   }, []);
+  const reportVideoProgress = useCallback((slot: number, progress: { currentTime: number; duration: number }) => {
+    videoProgressBySlot.current[slot] = progress;
+    if ((questVisible || bossVideoIndex !== null) && (slot === questVideoIndex || slot === bossVideoIndex)) {
+      setQuestVideoProgress(progress);
+    }
+  }, [bossVideoIndex, questVideoIndex, questVisible]);
+  const selectQuestVideo = useCallback((slot: number) => {
+    setQuestVideoIndex(slot);
+    setQuestVideoProgress(videoProgressBySlot.current[slot] ?? { currentTime: 0, duration: 0 });
+  }, []);
+  const beginBossVideo = useCallback((slot: number) => {
+    previousStreamFocus.current = singleStreamIndex;
+    bossFocusCaptured.current = true;
+    setQuestVideoIndex(slot);
+    setQuestVideoProgress(videoProgressBySlot.current[slot] ?? { currentTime: 0, duration: 0 });
+    setBossVideoEnded(false);
+    setBossVideoIndex(slot);
+    setSingleStreamIndex(slot);
+  }, [singleStreamIndex]);
+  const endBossVideo = useCallback(() => {
+    if (!bossFocusCaptured.current) return;
+    bossFocusCaptured.current = false;
+    setBossVideoIndex(null);
+    setBossVideoEnded(false);
+    setSingleStreamIndex(previousStreamFocus.current);
+    previousStreamFocus.current = null;
+  }, []);
+  const reportVideoEnded = useCallback((slot: number) => {
+    if (bossVideoIndex === slot) setBossVideoEnded(true);
+  }, [bossVideoIndex]);
+  const recordVideoBpm = useCallback((videoId: string, result: VideoBpmReport) => {
+    setVideoBpmById((current) => ({ ...current, [videoId]: result }));
+  }, []);
+  useEffect(() => {
+    if (!questVisible || bossVideoIndex !== null) return;
+    setQuestVideoProgress(videoProgressBySlot.current[questVideoIndex] ?? { currentTime: 0, duration: 0 });
+  }, [bossVideoIndex, questVideoIndex, questVisible]);
   useEffect(() => {
     let mounted = true;
     AsyncStorage.getItem(VIDEO_WATCH_HISTORY_KEY)
@@ -1121,6 +1195,12 @@ export default function QuadVideoPlayerScreen() {
   };
 
   const toggleAll = () => setGlobalPlaying((playing) => !playing);
+  const openTownHub = () => {
+    setGlobalPlaying(false);
+    setQuestVisible(false);
+    setActivePanel(null);
+    setTownHubVisible(true);
+  };
 
   const stopPlayback = () => {
     activeAssetsRef.current.clear();
@@ -1397,7 +1477,9 @@ export default function QuadVideoPlayerScreen() {
                 <ActionButton
                   compact
                   icon={globalPlaying ? 'pause' : 'play'}
-                  label={globalPlaying ? 'Pause all videos' : 'Play all videos'}
+                  label={singleStreamIndex === null
+                    ? (globalPlaying ? 'Pause all videos' : 'Play all videos')
+                    : (globalPlaying ? 'Pause focused video' : 'Play focused video')}
                   onPress={toggleAll}
                 />
                 <ActionButton
@@ -1429,6 +1511,12 @@ export default function QuadVideoPlayerScreen() {
               icon="music"
               label={`Background audio: ${backgroundTrackCount} ${backgroundTrackCount === 1 ? 'track' : 'tracks'}`}
               onPress={() => setActivePanel('audio')}
+            />
+            <ActionButton
+              compact
+              icon="home"
+              label="Open town and guild hub"
+              onPress={openTownHub}
             />
             {pool.length > 0 && (
               <ActionButton
@@ -1464,11 +1552,15 @@ export default function QuadVideoPlayerScreen() {
                   asset={asset}
                   pool={pool}
                   index={index}
+                  bpmByVideoId={videoBpmById}
                   playbackId={playbackId}
                   onPlaybackStateChange={reportQuadrantPlayback}
                   onVideoStarted={recordVideoStarted}
                   getNextVideo={getNextVideoForQuadrant}
                   onAssetChange={onAssetChange}
+                  onPlaybackProgress={reportVideoProgress}
+                  onPlaybackEnded={reportVideoEnded}
+                  stopAtEnd={bossVideoIndex === index}
                   globalPlaying={globalPlaying}
                   normalizeLoudness={audioMode === 'normalized'}
                   linkedVolume={audioMode === 'shared'}
@@ -1878,11 +1970,17 @@ export default function QuadVideoPlayerScreen() {
       </Modal>
       <SlideshowPanel visible={activePanel === 'slideshow'} onClose={() => setActivePanel(slideshowReturn === 'settings' ? 'settings' : null)}
         onManageSources={() => { setSourcesReturn('slideshow'); setActivePanel('sources'); }} />
-      <OnlineSourcesPanel visible={activePanel === 'sources'} onClose={() => setActivePanel(sourcesReturn)}
+      <OnlineSourcesPanel visible={activePanel === 'sources'} onClose={() => {
+        if (questSourcesReturn) {
+          setQuestSourcesReturn(false);
+          setActivePanel(null);
+          setQuestVisible(true);
+        } else setActivePanel(sourcesReturn);
+      }}
         onPlayVideos={(items: RemoteMedia[], name: string) => {
           const apply = () => {
             startStreams(items.map((item) => ({ id: item.uri, uri: item.uri, name: item.name })));
-            setSourceLabel(name); setActivePanel(null);
+            setSourceLabel(name); setActivePanel(null); setQuestSourcesReturn(false);
           };
           if (pool.length) Alert.alert('Play online source videos?', 'This replaces the active video pool and restarts the four quadrants. Local files and saved sessions are not deleted.', [
             { text: 'Cancel', style: 'cancel' }, { text: 'Play source videos', onPress: apply },
@@ -1893,6 +1991,19 @@ export default function QuadVideoPlayerScreen() {
         visible={activePanel === 'audio'}
         onClose={() => setActivePanel(null)}
         onCountChange={setBackgroundTrackCount}
+      />
+      <RpgTownHub
+        visible={townHubVisible}
+        onClose={() => setTownHubVisible(false)}
+        state={playerRpg.state}
+        ready={playerRpg.ready}
+        error={playerRpg.error}
+        onRetry={() => void playerRpg.retry()}
+        onSelectClass={playerRpg.setClass}
+        onClaimQuest={playerRpg.claimQuest}
+        onUpgradeSkill={playerRpg.upgradeSkill}
+        onBuyItem={playerRpg.buyItem}
+        onEquipItem={playerRpg.equipItem}
       />
       <GoonQuestOverlay
         visible={questVisible}
@@ -1907,7 +2018,22 @@ export default function QuadVideoPlayerScreen() {
           setSlideshowReturn(null);
           setActivePanel('slideshow');
         }}
+        onManageSources={() => {
+          setQuestSourcesReturn(true);
+          setQuestVisible(false);
+          setSourcesReturn('settings');
+          setActivePanel('sources');
+        }}
         onDialogue={speakDialogue}
+        videos={activeVideos}
+        videoIndex={questVideoIndex}
+        videoProgress={questVideoProgress}
+        videoIsPlaying={playingQuadrants.has(`${session}-${questVideoIndex}`)}
+        bossVideoEnded={bossVideoEnded}
+        onSelectVideo={selectQuestVideo}
+        onBeginBossVideo={beginBossVideo}
+        onEndBossVideo={endBossVideo}
+        onBpmResult={recordVideoBpm}
       />
     </SafeAreaView>
     </ColorContext.Provider>
@@ -2008,6 +2134,8 @@ const styles = StyleSheet.create({
   },
   streamNumberText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
   videoName: { flex: 1, fontSize: 12, fontWeight: '500' },
+  bpmPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8 },
+  bpmText: { fontSize: 10, fontWeight: '800', fontVariant: ['tabular-nums'] },
   liveDot: { width: 7, height: 7, borderRadius: 4, marginLeft: 4 },
   videoFrame: { ...StyleSheet.absoluteFill, overflow: 'hidden' },
   videoStatus: {

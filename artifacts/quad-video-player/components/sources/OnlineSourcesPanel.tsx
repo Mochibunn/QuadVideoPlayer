@@ -12,7 +12,10 @@ import Rule34AccountSettings from './Rule34AccountSettings';
 import SettingSwitch from '../SettingSwitch';
 
 function draft(): OnlineSource {
-  return { id: Crypto.randomUUID(), name: '', kind: 'booru', board: '', tags: '', subreddits: '', sort: 'hot', safeOnly: true };
+  return {
+    id: Crypto.randomUUID(), name: '', kind: 'booru', board: '', tags: '', excludeTags: '',
+    subreddits: '', sort: 'hot', safeOnly: true,
+  };
 }
 export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
   visible: boolean; onClose(): void; onPlayVideos(items: RemoteMedia[], name: string): void;
@@ -32,7 +35,7 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
       <Text style={{ color: colors.primary }}>{text}</Text>
     </Pressable>
   );
-  function input(title: string, key: 'name' | 'board' | 'tags' | 'subreddits', hint: string) {
+  function input(title: string, key: 'name' | 'board' | 'tags' | 'excludeTags' | 'subreddits', hint: string) {
     return <View style={{ gap: 6 }}>{label(title)}<TextInput accessibilityLabel={title}
       value={editing?.[key] ?? ''} placeholder={hint} placeholderTextColor={colors.mutedForeground}
       autoCapitalize="none" autoCorrect={false} editable={!busy}
@@ -71,7 +74,7 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
         renderScrollComponent={(props) => <KeyboardAwareScrollView {...props} />}
         ListHeaderComponent={<View style={{ gap: 12 }}>
-              {label('Create separate booru/tag or subreddit searches, then select a source for each slideshow. Nothing is bulk-downloaded. Online videos play in the four native video quadrants.', true)}
+          {label('Create separate tag or subreddit searches for slideshows and the dungeon. Mark Rule34/e621 searches as enemy sources, then choose them in the quest board. Nothing is bulk-downloaded.', true)}
           {api.storageError ? <>{label(api.storageError)}{button('Retry saved searches', () => void api.retryStorage())}</> : null}
           <RedditAccountSettings />
               <Rule34AccountSettings />
@@ -84,9 +87,9 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
                 <Text style={{ color: colors.foreground }}>{item.name}</Text>
               </Pressable>} />
             {source && <>
-              {label(source.kind === 'booru' ? `${source.board}\nTags: ${source.tags || '(all)'}${source.safeOnly ? ' · safe-rated only' : ''}` :
+              {label(source.kind === 'booru' ? `${source.board}\nTags: ${source.tags || '(all)'}${source.excludeTags ? `\nAvoid: ${source.excludeTags}` : ''}${source.safeOnly ? ' · safe-rated only' : ''}` :
                 source.kind === 'reddit' ? `r/${source.subreddits} · ${source.sort}${source.safeOnly ? ' · safe posts only' : ''}` :
-                  `${source.kind === 'rule34' ? 'Rule34.xxx' : 'e621.net'}\nTags: ${source.tags || '(all)'}${source.safeOnly ? ' · safe-rated only' : ''}`, true)}
+                  `${source.kind === 'rule34' ? 'Rule34.xxx' : 'e621.net'}\nTags: ${source.tags || '(all)'}${source.excludeTags ? `\nAvoid: ${source.excludeTags}` : ''}${source.safeOnly ? ' · safe-rated only' : ''}${source.dungeonEnemy ? '\nDungeon enemy source' : ''}`, true)}
               <View style={styles.wrap}>
                 {button('Edit', () => setEditing({ ...source }))}
                 {button('Remove', remove)}
@@ -112,7 +115,8 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
             {editing.kind === 'booru' ? <>
               {input('Board address', 'board', 'https://your-board.booru.org')}
               {input('Tags', 'tags', 'landscape blue_sky -rain')}
-              {label('Use the board’s tag syntax: spaces combine tags, underscores join words, and -tag excludes a tag. The board must expose its public DAPI feed; access restrictions are not bypassed.', true)}
+              {input('Tags to avoid', 'excludeTags', 'rain watermark low_res')}
+              {label('Separate tags with spaces or commas; use underscores within a tag. Excluded tags are sent as negative tags. The board must expose its public DAPI feed; access restrictions are not bypassed.', true)}
             </> : editing.kind === 'reddit' ? <>
               {input('Subreddits', 'subreddits', 'EarthPorn + aww')}
               <View style={styles.wrap}>{(['hot', 'new', 'top'] as const).map((sort) =>
@@ -121,9 +125,16 @@ export default function OnlineSourcesPanel({ visible, onClose, onPlayVideos }: {
               {label('Reddit sources require the linked account above and Reddit’s approval. GIF files go to slideshows; video-based animations and videos go to the video player.', true)}
             </> : <>
               {input('Tags', 'tags', 'fox landscape -animated')}
-              {label(editing.kind === 'e621'
+              {input('Tags to avoid', 'excludeTags', 'watermark low_res young')}
+               {label(editing.kind === 'e621'
                 ? 'Uses the e621 JSON API with paced requests. Safe-rated posts are selected by default; source ratings come from the site.'
                 : 'Uses the Rule34 JSON API. Connect with your Rule34 numeric user ID and API key above; credentials are stored only in Android secure storage.', true)}
+              <View style={styles.row}>
+                {label('Use this search for dungeon enemies')}
+                <SettingSwitch label="Use this search for dungeon enemies" value={editing.dungeonEnemy === true} disabled={busy}
+                  onValueChange={(dungeonEnemy) => setEditing((old) => old ? { ...old, dungeonEnemy } : old)} />
+              </View>
+              {label('Marked searches get an Enemy label. Any saved Rule34/e621 search can still be selected for a dungeon run.', true)}
             </>}
             <View style={styles.row}>{label('Only safe-rated posts')}
               <SettingSwitch label="Only safe-rated posts" value={editing.safeOnly} disabled={busy}

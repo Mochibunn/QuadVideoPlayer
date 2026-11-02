@@ -35,6 +35,20 @@ test('tags and pagination are encoded without changing their search syntax', () 
   assert.equal(url.searchParams.get('page'), 'post');
   assert.equal(url.searchParams.get('s'), 'list');
 });
+test('blacklist tags become negative tags for hosted boards, Rule34, and e621', () => {
+  const boardUrl = new URL(core.booruSearchUrl(core.parseOnlineSource({
+    ...board, tags: 'landscape', excludeTags: 'rain watermark, -low_res',
+  }), 0));
+  assert.equal(boardUrl.searchParams.get('tags'), 'landscape -rain -watermark -low_res rating:safe');
+  const rule34Url = new URL(core.rule34SearchUrl(core.parseOnlineSource({
+    ...rule34, tags: 'fox', excludeTags: 'watermark low_res',
+  }), 0, { userId: '12345', apiKey: 'test-key' }));
+  assert.equal(rule34Url.searchParams.get('tags'), 'fox -watermark -low_res rating:s');
+  const e621Url = new URL(core.e621SearchUrl(core.parseOnlineSource({
+    ...e621, tags: 'fox', excludeTags: 'young, gore',
+  }), 0));
+  assert.equal(e621Url.searchParams.get('tags'), 'fox -young -gore rating:safe');
+});
 test('refreshing a source merges unseen media and keeps the cache bounded', () => {
   const media = (id) => ({ id, uri: `https://img.example/${id}.jpg`, name: id, kind: 'image', postUrl: 'https://example.test/post' });
   const existing = Array.from({ length: 5 }, (_, index) => media(`old-${index}`));
@@ -56,6 +70,13 @@ test('Rule34 and e621 use safe-rated site APIs with their own tag syntax', () =>
   assert.equal(e621Url.pathname, '/posts.json');
   assert.equal(e621Url.searchParams.get('tags'), 'fox landscape rating:safe');
   assert.equal(e621Url.searchParams.get('limit'), '40');
+});
+test('only Rule34 and e621 sources retain the dedicated dungeon-enemy flag', () => {
+  assert.equal(core.parseOnlineSource({ ...rule34, dungeonEnemy: true }).dungeonEnemy, true);
+  assert.equal(core.parseOnlineSource({ ...e621, dungeonEnemy: true }).dungeonEnemy, true);
+  assert.equal(core.parseOnlineSource({ ...rule34, dungeonEnemy: 'yes' }).dungeonEnemy, undefined);
+  assert.equal(core.parseOnlineSource({ ...board, dungeonEnemy: true }).dungeonEnemy, undefined);
+  assert.equal(core.parseOnlineSource({ ...reddit, dungeonEnemy: true }).dungeonEnemy, undefined);
 });
 const thumb = (id, rating = 'Safe', path = '') => `<span class="thumb"><a href="${path || `index.php?page=post&amp;s=view&amp;id=${id}`}"><img src="https://img.booru.org/board/thumbnails/1/thumbnail_hash.jpg" title="blue_sky score:0 rating:${rating}"/></a></span>`;
 const fastPacing = { setTimeout: (callback, ms, ...args) => setTimeout(callback, ms === 1500 ? 0 : ms, ...args) };

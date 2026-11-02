@@ -1,5 +1,13 @@
-import { Feather } from '@expo/vector-icons';
+import { Feather, FontAwesome } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   ActivityIndicator,
   PermissionsAndroid,
@@ -113,13 +121,31 @@ export default function HeartRateSettings() {
     await refreshState();
   });
 
-  if (Platform.OS !== 'android') return null;
-
   const primaryState = tabletState.connected ? tabletState : phoneState.active ? phoneState : EMPTY_STATE;
   const readingFresh = isHeartRateFresh(primaryState);
+  const liveBpm = readingFresh ? primaryState.bpm : null;
+  const pulseScale = useSharedValue(1);
+  const heartPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+  }));
+  useEffect(() => {
+    cancelAnimation(pulseScale);
+    pulseScale.value = 1;
+    if (!liveBpm || liveBpm <= 0) return;
+    const beatMs = Math.min(2_000, Math.max(300, 60_000 / liveBpm));
+    pulseScale.value = withRepeat(withSequence(
+      withTiming(1.2, { duration: Math.max(70, beatMs * 0.14) }),
+      withTiming(1, { duration: Math.max(70, beatMs * 0.16) }),
+      withTiming(1.1, { duration: Math.max(70, beatMs * 0.11) }),
+      withTiming(1, { duration: Math.max(70, beatMs * 0.59) }),
+    ), -1, false);
+    return () => cancelAnimation(pulseScale);
+  }, [liveBpm, pulseScale]);
   const ageSeconds = primaryState.receivedAtMs
     ? Math.max(0, Math.floor((Date.now() - primaryState.receivedAtMs) / 1000))
     : null;
+
+  if (Platform.OS !== 'android') return null;
 
   return (
     <View style={[styles.card, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
@@ -133,11 +159,23 @@ export default function HeartRateSettings() {
         <Feather name="activity" size={19} color={colors.primary} />
       </View>
 
-      <View style={[styles.reading, { borderColor: colors.border, backgroundColor: colors.background }]}>
-        <Text style={[styles.bpm, { color: colors.foreground }]}>
-          {readingFresh ? primaryState.bpm : '—'}
-          <Text style={[styles.unit, { color: colors.mutedForeground }]}> BPM</Text>
-        </Text>
+      <View
+        accessibilityLabel={readingFresh ? `Live heart rate ${primaryState.bpm} beats per minute` : 'No live heart-rate reading'}
+        style={[styles.reading, { borderColor: colors.border, backgroundColor: colors.background }]}
+      >
+        <View style={styles.heartBpmRow}>
+          <Animated.View style={[styles.heartIcon, heartPulseStyle]}>
+            <FontAwesome
+              name="heart"
+              size={25}
+              color={readingFresh ? colors.primary : colors.mutedForeground}
+            />
+          </Animated.View>
+          <Text style={[styles.bpm, { color: colors.foreground }]}>
+            {readingFresh ? primaryState.bpm : '—'}
+            <Text style={[styles.unit, { color: colors.mutedForeground }]}> BPM</Text>
+          </Text>
+        </View>
         <Text style={[styles.status, { color: readingFresh ? colors.primary : colors.mutedForeground }]}>
           {readingFresh
             ? 'Live'
@@ -287,6 +325,8 @@ const styles = StyleSheet.create({
   title: { fontSize: 17, fontWeight: '700' },
   description: { fontSize: 12, lineHeight: 17 },
   reading: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 12, alignItems: 'center', gap: 3 },
+  heartBpmRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  heartIcon: { width: 34, height: 36, alignItems: 'center', justifyContent: 'center' },
   bpm: { fontSize: 34, fontWeight: '800', fontVariant: ['tabular-nums'] },
   unit: { fontSize: 13, fontWeight: '600' },
   status: { fontSize: 12, lineHeight: 17 },
