@@ -5,6 +5,7 @@ import {
   elapsedViewingTime, emptyViewingSessions, finishViewingSession, parseViewingSessions,
   recordWatchedVideos as applyWatchedVideos, recoverViewingSessions,
   recordHeartRate as applyHeartRate,
+  recordMiniGameWin as applyMiniGameWin,
   VIEWING_ACHIEVEMENT_MS, VIEWING_SESSIONS_KEY, type FinishedViewingSession, type ViewingSessionStore,
 } from '@/lib/viewing-sessions';
 import { experienceForPlayback, nextSessionMilestone, SESSION_MILESTONE_MS } from '@/lib/player-rewards';
@@ -160,6 +161,8 @@ export function useViewingSessions(isPlaybackActive: boolean) {
 
   const recordVideosWatched = useCallback((ids: readonly string[]) =>
     mutate((current) => applyWatchedVideos(current, ids)), [mutate]);
+  const recordMiniGameWin = useCallback(() =>
+    mutate((current) => applyMiniGameWin(current)), [mutate]);
 
   // Keep live samples in memory; existing 15-second checkpoints, pause, and
   // finish persist them together instead of writing the history every second.
@@ -192,5 +195,5 @@ export function useViewingSessions(isPlaybackActive: boolean) {
   }, [syncXp]);
 
   return { store, ready, error, celebration, setCelebration, milestone, setMilestone, xp, finishRecap,
-    setFinishRecap, finishSession, recordVideosWatched, recordHeartRate, restoreStore, retryStorage: reload };
+    setFinishRecap, finishSession, recordVideosWatched, recordMiniGameWin, recordHeartRate, restoreStore, retryStorage: reload };
 }

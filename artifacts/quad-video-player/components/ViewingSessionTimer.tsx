@@ -3,13 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SessionMilestoneConfetti from '@/components/SessionMilestoneConfetti';
+import PixelIcon from '@/components/PixelIcon';
 import { useColors } from '@/hooks/useColors';
 import {
   celebrationLineForMinute, celebrationLinesFrom, DEFAULT_CONGRATS_TEXT, experienceIntoLevel, levelForExperience,
   nextCheerMinute, XP_PER_LEVEL,
 } from '@/lib/player-rewards';
 import { heartSummary } from '@/lib/session-stats-overlay';
-import { evaluatePlayerAchievements, playerRankTitle } from '@/lib/player-achievements';
+import { evaluatePlayerAchievements, playerRankTitle, type PlayerAchievement } from '@/lib/player-achievements';
 import {
   elapsedViewingTime, formatViewingTime, localSessionDate, mergeHeartRateStats, VIEWING_ACHIEVEMENT_MS,
   type ViewingSessionStore,
@@ -42,6 +43,9 @@ type Props = {
   onGenerateCelebrations?: () => Promise<void>;
   generatingCelebrations?: boolean;
   showMinuteCheers?: boolean;
+  generatedAchievements?: PlayerAchievement[];
+  onGenerateAchievements?: () => Promise<void>;
+  generatingAchievements?: boolean;
 };
 
 function CheerText({ text }: { text: string }) {
@@ -65,6 +69,9 @@ export default function ViewingSessionTimer({
   onCelebrateDone, onRecapDismiss, onEndSession, onRetry,
   open, onClose, showButton = true, celebrationLines, onGenerateCelebrations, generatingCelebrations = false,
   showMinuteCheers = true,
+  generatedAchievements = [],
+  onGenerateAchievements,
+  generatingAchievements = false,
 }: Props) {
   const colors = useColors();
   const [now, setNow] = useState(Date.now());
@@ -121,12 +128,23 @@ export default function ViewingSessionTimer({
   const recapRank = finishRecap ? store.leaderboard.findIndex((entry) => entry.id === finishRecap.id) + 1 : 0;
   const level = levelForExperience(xp);
   const levelProgress = experienceIntoLevel(xp) / XP_PER_LEVEL;
-  const achievements = evaluatePlayerAchievements({
+  const allAchievements = evaluatePlayerAchievements({
     completedSessions: store.leaderboard.length,
     totalPlaybackMs: store.totalPlaybackMs + (store.active ? elapsed ?? 0 : 0),
     bestSessionMs: Math.max(0, ...store.leaderboard.map((entry) => entry.durationMs)),
     xp,
+    totalVideosWatched: (store.totalVideosWatched ?? 0) + (store.active?.watchedVideoIds.length ?? 0),
+    miniGamesWon: store.miniGamesWon ?? 0,
   });
+  const extras = generatedAchievements.map((item) => {
+    const progress = item.metric === 'totalPlaybackMs' ? store.totalPlaybackMs + (store.active ? elapsed ?? 0 : 0)
+      : item.metric === 'bestSessionMs' ? Math.max(0, ...store.leaderboard.map((entry) => entry.durationMs))
+        : item.metric === 'xp' ? xp
+          : item.metric === 'totalVideosWatched' ? (store.totalVideosWatched ?? 0) + (store.active?.watchedVideoIds.length ?? 0)
+            : item.metric === 'miniGamesWon' ? store.miniGamesWon ?? 0 : store.leaderboard.length;
+    return { ...item, progress: Math.min(item.target, progress), ratio: Math.min(1, progress / item.target), unlocked: progress >= item.target };
+  });
+  const achievements = [...allAchievements, ...extras];
   const unlockedAchievements = achievements.filter((achievement) => achievement.unlocked).length;
   type HrCarrier = { heartRate?: unknown };
   const storeExtra = store as typeof store & HrCarrier & { totalVideosWatched?: number };
@@ -291,6 +309,10 @@ export default function ViewingSessionTimer({
                     <Text style={[styles.total, { color: colors.foreground }]}>{lifetimeVideos}</Text>
                   </View>
                   <View style={styles.totalRow}>
+                    <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>Paw Parry wins</Text>
+                    <Text style={[styles.total, { color: colors.foreground }]}>{store.miniGamesWon ?? 0}</Text>
+                  </View>
+                  <View style={styles.totalRow}>
                     <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>All-time HR min / avg / max</Text>
                     <Text style={[styles.total, { color: colors.foreground }]}>{totalHr.text}</Text>
                   </View>
@@ -321,12 +343,29 @@ export default function ViewingSessionTimer({
                         {unlockedAchievements}/{achievements.length} unlocked
                       </Text>
                     </View>
+                    <View style={styles.xpCard}>
+                      <Text style={[styles.date, { color: colors.mutedForeground }]}>
+                        Track lifetime time, sessions, XP, watched videos, and Paw Parry wins.
+                      </Text>
+                      <Pressable accessibilityRole="button" disabled={!onGenerateAchievements || generatingAchievements}
+                        onPress={() => void onGenerateAchievements?.()}
+                        style={[styles.endButton, { borderColor: colors.primary, opacity: !onGenerateAchievements || generatingAchievements ? 0.5 : 1 }]}>
+                        <PixelIcon name="star" color={colors.primary} size={16} />
+                        <Text style={[styles.endText, { color: colors.primary }]}>
+                          {generatingAchievements ? 'Forging achievements…' : 'Forge 3 AI achievements'}
+                        </Text>
+                      </Pressable>
+                    </View>
                     <View style={styles.achievementGrid}>
                       {achievements.map((achievement) => {
                         const progressText = achievement.metric === 'totalPlaybackMs' || achievement.metric === 'bestSessionMs'
                           ? `${formatViewingTime(achievement.progress)} / ${formatViewingTime(achievement.target)}`
                           : achievement.metric === 'xp'
                             ? `${Math.floor(achievement.progress)} / ${achievement.target} XP`
+                            : achievement.metric === 'totalVideosWatched'
+                              ? `${Math.floor(achievement.progress)} / ${achievement.target} videos`
+                              : achievement.metric === 'miniGamesWon'
+                                ? `${Math.floor(achievement.progress)} / ${achievement.target} wins`
                             : `${Math.floor(achievement.progress)} / ${achievement.target} sessions`;
                         return (
                           <View key={achievement.id} style={[
@@ -335,11 +374,10 @@ export default function ViewingSessionTimer({
                               backgroundColor: achievement.unlocked ? `${colors.primary}18` : colors.secondary },
                           ]}>
                             <View style={styles.achievementCardHeading}>
-                              <Feather
-                                name={achievement.icon as keyof typeof Feather.glyphMap}
-                                size={17}
-                                color={achievement.unlocked ? colors.primary : colors.mutedForeground}
-                              />
+                              {achievement.generated
+                                ? <PixelIcon name="star" size={17} color={achievement.unlocked ? colors.primary : colors.mutedForeground} />
+                                : <Feather name={achievement.icon as keyof typeof Feather.glyphMap} size={17}
+                                  color={achievement.unlocked ? colors.primary : colors.mutedForeground} />}
                               <Text numberOfLines={1} style={[styles.achievementName, { color: colors.foreground }]}>
                                 {achievement.name}
                               </Text>

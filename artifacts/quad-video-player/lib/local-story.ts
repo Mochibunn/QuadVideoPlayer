@@ -21,6 +21,9 @@ export type LocalStoryPreferences = {
   combatSpeechEnabled: boolean;
   combatAutoTagsEnabled: boolean;
   combatProfanityEnabled: boolean;
+  autoQuestGeneration: boolean;
+  autoHonorGeneration: boolean;
+  autoCheerGeneration: boolean;
 };
 
 export type CombatPreferenceKey =
@@ -43,6 +46,9 @@ export function emptyLocalStoryPreferences(): LocalStoryPreferences {
     combatSpeechEnabled: true,
     combatAutoTagsEnabled: false,
     combatProfanityEnabled: true,
+    autoQuestGeneration: false,
+    autoHonorGeneration: false,
+    autoCheerGeneration: false,
   };
 }
 
@@ -70,6 +76,9 @@ export function parseLocalStoryPreferences(raw: string | null): LocalStoryPrefer
       combatSpeechEnabled: data.combatSpeechEnabled !== false,
       combatAutoTagsEnabled: data.combatAutoTagsEnabled === true,
       combatProfanityEnabled: data.combatProfanityEnabled !== false,
+      autoQuestGeneration: data.autoQuestGeneration === true,
+      autoHonorGeneration: data.autoHonorGeneration === true,
+      autoCheerGeneration: data.autoCheerGeneration === true,
     };
   } catch {
     return empty;

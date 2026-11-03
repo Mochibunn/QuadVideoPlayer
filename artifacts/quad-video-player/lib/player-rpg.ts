@@ -36,10 +36,10 @@ export const storyQuestObjectiveOptions: {
   rewardCoins: number;
   unit: 'targets' | 'casts' | 'dungeons' | 'videos';
 }[] = [
-  { id: 'defeats', label: 'Defeat 4 enemies', target: 4, rewardCoins: 20, unit: 'targets' },
-  { id: 'spells', label: 'Cast 3 skills or spells', target: 3, rewardCoins: 20, unit: 'casts' },
-  { id: 'dungeons', label: 'Clear an image dungeon', target: 1, rewardCoins: 30, unit: 'dungeons' },
-  { id: 'videos', label: 'Watch 3 different videos', target: 3, rewardCoins: 20, unit: 'videos' },
+  { id: 'defeats', label: 'Send 4 flirty foes packing', target: 4, rewardCoins: 20, unit: 'targets' },
+  { id: 'spells', label: 'Cast 3 spells with a teasing flourish', target: 3, rewardCoins: 20, unit: 'casts' },
+  { id: 'dungeons', label: 'Clear an after-hours image dungeon', target: 1, rewardCoins: 30, unit: 'dungeons' },
+  { id: 'videos', label: 'Watch 3 clips with your favorite familiar', target: 3, rewardCoins: 20, unit: 'videos' },
 ];
 
 const STORY_QUEST_LIMIT = 10;

@@ -8,6 +8,20 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.18.3',
+    title: 'Pawprint Pixel Pulse',
+    date: 'November 3, 2026',
+    summary: 'Fresh guild goals, a livelier heart-rate HUD, and a cleaner watch companion.',
+    changes: [
+      'Added lifetime video and Paw Parry win totals plus time-, video-, and mini-game achievements.',
+      'Forge batches of local-AI achievements; optional, rate-limited background quest, honor, and cheer generation is off by default.',
+      'The HUD can show lifetime video totals, and its heart icon pulses in time with a fresh live heart-rate reading.',
+      'Added paw-border spacing control and raised the playback toolbar above the decorative frame.',
+      'Added pixel-style game icons and a compact purple-and-black Galaxy Watch Link screen and launcher icon.',
+      'Gave generated quests more after-hours fantasy flavor.',
+    ],
+  },
+  {
     version: '1.18.2',
     title: 'Bubble Pop Bumper Pals',
     date: 'November 3, 2026',

@@ -224,3 +224,31 @@ mtime_ms = 1793702908734
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/7d6072af-6b27-4fb5-8cbe-144aa101339a/4578653b-0307-4207-b8a1-a72a8769b729"
 storage_version_token = "1793702941325580"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "8R_iN2itIoUvUgYDSNfdn"
+uri = "file://generated-artifacts/android/goon-quest-v1.18.3-phone-tablet-download.zip"
+type = "unspecified"
+title = "Goon Quest 1.18.3 · Phone and tablet APK"
+description = "Signed arm64 APK in a ZIP archive. Extract the APK before installing."
+logical_id = "b38471c2-201a-44b6-a184-a5b4e46ef2cb"
+content_hash = "sha256:74fc314456e387fd9080d2bc29bcecac8e3db6a785a66c9cd61fd86cd65a4536"
+size = 61116288
+mtime_ms = 1793705492926
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/b38471c2-201a-44b6-a184-a5b4e46ef2cb/14f59307-87b8-4c2d-9c5c-76ff04b3ee74"
+storage_version_token = "1793705606368074"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "RGVqS-8AaXBNe0UTR5Fra"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.18.3.apk"
+type = "unspecified"
+title = "Goon Quest Link 1.18.3 · Galaxy Watch APK"
+description = "Signed Wear OS companion APK. Install it on the paired Galaxy Watch."
+logical_id = "569dc9bf-50f6-45ff-a748-83fc9fb7f4d7"
+content_hash = "sha256:03244a9e4fd05e18b66831030d1c9d3360c5fc7de63ef1eb3a5c23bae8c09c0b"
+size = 4225018
+mtime_ms = 1793705481794
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/569dc9bf-50f6-45ff-a748-83fc9fb7f4d7/31d8f56a-ff87-4bd5-a76d-6ebdc17dae75"
+storage_version_token = "1793705607166910"
+content_type = "application/octet-stream"

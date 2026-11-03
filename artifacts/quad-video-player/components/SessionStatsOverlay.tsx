@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent,
+  Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent,
 } from 'react-native';
 import SettingSwitch from '@/components/SettingSwitch';
 import TouchSlider from '@/components/TouchSlider';
@@ -18,6 +18,7 @@ export type SessionStatsOverlayProps = {
   heartRate: number | null;
   recordedHeartRate?: HeartRateAggregate | null;
   videosWatched: number;
+  lifetimeVideosWatched: number;
   poolSize: number;
   averageBpm: number | null;
   isPlaying: boolean;
@@ -58,7 +59,7 @@ function useSessionStatsSettings() {
 }
 
 export default function SessionStatsOverlay({
-  elapsedMs, heartRate, recordedHeartRate, videosWatched, poolSize, averageBpm, isPlaying, settingsVisible, onCloseSettings,
+  elapsedMs, heartRate, recordedHeartRate, videosWatched, lifetimeVideosWatched, poolSize, averageBpm, isPlaying, settingsVisible, onCloseSettings,
 }: SessionStatsOverlayProps) {
   const colors = useColors();
   const { settings, setSettings, ready, error, retry, reset } = useSessionStatsSettings();
@@ -69,6 +70,24 @@ export default function SessionStatsOverlay({
   const [xDraft, setXDraft] = useState<number | null>(null);
   const [yDraft, setYDraft] = useState<number | null>(null);
   const hrValid = isValidHeartRate(heartRate);
+  const heartbeat = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    heartbeat.stopAnimation();
+    heartbeat.setValue(1);
+    if (!hrValid || !settings.showHeartRate) return;
+    const period = 60_000 / Math.max(25, Math.min(250, Math.round(heartRate!)));
+    const first = Math.max(55, Math.min(120, period * 0.18));
+    const second = Math.max(55, Math.min(120, period * 0.18));
+    const third = Math.max(55, Math.min(120, period * 0.18));
+    const animation = Animated.loop(Animated.sequence([
+      Animated.timing(heartbeat, { toValue: 1.32, duration: first, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(heartbeat, { toValue: 1, duration: second, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(heartbeat, { toValue: 1.16, duration: third, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(heartbeat, { toValue: 1, duration: Math.max(70, period - first - second - third), easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ]));
+    animation.start();
+    return () => animation.stop();
+  }, [heartbeat, heartRate, hrValid, settings.showHeartRate]);
 
   const patch = (next: Partial<SessionStatsSettings>) => setSettings((current) => ({ ...current, ...next }));
   const tint = settings.color === 'theme' ? colors.primary : STATS_FIXED_COLORS[settings.color];
@@ -81,6 +100,7 @@ export default function SessionStatsOverlay({
   if (settings.showHeartRate) rows.push({ key: 'hr', icon: 'heart', label: 'HR', value: hrValid ? `${Math.round(heartRate)} bpm` : '—' });
   if (settings.showHeartRange) rows.push({ key: 'range', icon: 'activity', label: 'MIN/MAX', value: range ? `${Math.round(range.min)} / ${Math.round(range.max)}` : '—' });
   if (settings.showVideos) rows.push({ key: 'vid', icon: 'film', label: 'VIDEOS', value: `${videosWatched} / ${poolSize}` });
+  if (settings.showLifetimeVideos) rows.push({ key: 'lifetime-videos', icon: 'video', label: 'TOTAL VIDEOS', value: String(lifetimeVideosWatched) });
   if (settings.showAverageBpm) rows.push({ key: 'bpm', icon: 'music', label: 'AVG VIDEO BPM', value: averageBpm != null && Number.isFinite(averageBpm) ? String(Math.round(averageBpm)) : '—' });
   const disabled = !ready || !!error;
   const showReadout = settings.enabled && rows.length > 0;
@@ -102,7 +122,11 @@ export default function SessionStatsOverlay({
           <View onLayout={onBox} style={[styles.readout, { left: origin.left, top: origin.top, opacity: view.w ? 1 : 0 }]}>
             {rows.map((row) => (
               <View key={row.key} style={styles.row}>
-                <Feather name={row.icon} size={Math.round(fontSize * 0.85)} color={tint} style={outline} />
+                {row.key === 'hr'
+                  ? <Animated.View style={{ transform: [{ scale: heartbeat }] }}>
+                    <Feather name={row.icon} size={Math.round(fontSize * 0.85)} color={tint} style={outline} />
+                  </Animated.View>
+                  : <Feather name={row.icon} size={Math.round(fontSize * 0.85)} color={tint} style={outline} />}
                 <Text style={[styles.label, outline, { color: tint, fontSize: Math.max(8, fontSize * 0.55) }]}>{row.label}</Text>
                 <Text style={[styles.value, outline, { color: colors.foreground, fontSize }]}>{row.value}</Text>
               </View>
@@ -143,6 +167,7 @@ export default function SessionStatsOverlay({
                 ['showHeartRate', 'Heart rate', 'Live reading from your watch. Shows — with no signal.'],
                 ['showHeartRange', 'Heart min / max', 'From real samples since this overlay started.'],
                 ['showVideos', 'Videos watched', 'Unique videos this session / pool size.'],
+                ['showLifetimeVideos', 'Total videos watched', 'All-time unique video starts recorded in the leaderboard.'],
                 ['showAverageBpm', 'Average video BPM', 'Mean detected music tempo of the playing videos.'],
               ] as const).map(([key, label, hint]) => (
                 <View key={key} style={styles.settingRow}>

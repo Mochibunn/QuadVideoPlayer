@@ -37,7 +37,13 @@ The user wants more of a game feel, paw-themed fantasy cosmetics, and Wii-like m
 
 **Why:** The user explicitly requested watch-motion mini-games alongside border improvements.
 
-**How to apply:** Use actual watch sensors and the paired-phone relay; describe wrist gestures rather than claiming Wii-style positional tracking. Keep new flavor copy non-graphic.
+**How to apply:** Use actual watch sensors and the paired-phone relay; describe wrist gestures rather than claiming Wii-style positional tracking.
+
+Optional local-AI generation for quests, honors, and cheers must remain off by default and rate-limited while videos are playing.
+
+**Why:** On-device inference competes with four video streams for CPU, memory bandwidth, and battery.
+
+**How to apply:** Only run background generation when the player enables it, a model is loaded, and playback is active; keep batch sizes, open quest counts, and generation intervals bounded.
 
 When expanding persisted RPG state, accept known older save versions and initialize new mechanics without discarding existing progression.
 

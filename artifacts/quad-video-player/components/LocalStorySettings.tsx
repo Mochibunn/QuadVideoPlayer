@@ -22,6 +22,7 @@ type Props = {
   onEnemyBanterChange: (enabled: boolean) => void;
   onTest: () => void;
   onCombatPreferenceChange?: (key: CombatPreferenceKey, enabled: boolean) => void;
+  onAutomationPreferenceChange?: (key: 'autoQuestGeneration' | 'autoHonorGeneration' | 'autoCheerGeneration', enabled: boolean) => void;
 };
 
 const COMBAT_TOGGLES: { key: CombatPreferenceKey; label: string; detail: string; needsDirector?: boolean }[] = [
@@ -53,6 +54,7 @@ export default function LocalStorySettings({
   onEnemyBanterChange,
   onTest,
   onCombatPreferenceChange,
+  onAutomationPreferenceChange,
 }: Props) {
   const colors = useColors();
   const working = busy !== null;
@@ -192,6 +194,27 @@ export default function LocalStorySettings({
               onValueChange={(enabled) => onCombatPreferenceChange?.(toggle.key, enabled)}
               disabled={!onCombatPreferenceChange || (toggle.needsDirector === true && !preferences.combatAiEnabled)}
             />
+          </View>
+        ))}
+      </View>
+
+      <View style={[styles.combatBlock, { borderColor: colors.border }]}>
+        <Text style={[styles.sectionKicker, { color: colors.primary }]}>BACKGROUND STORYTELLER</Text>
+        <Text style={[styles.description, { color: colors.mutedForeground }]}>
+          Optional, rate-limited generation while a session is playing. These are off by default and use the same on-device model.
+        </Text>
+        {([
+          ['autoQuestGeneration', 'Auto-forge quests', 'Keep up to two open AI quests ready.'],
+          ['autoHonorGeneration', 'Auto-forge guild honors', 'Keep a small reserve of unclaimed honors.'],
+          ['autoCheerGeneration', 'Auto-write cheer notes', 'Refresh cheer lines when the saved set runs low.'],
+        ] as const).map(([key, label, detail]) => (
+          <View key={key} style={[styles.settingRow, { borderColor: colors.border }]}>
+            <View style={styles.copy}>
+              <Text style={[styles.label, { color: colors.foreground }]}>{label}</Text>
+              <Text style={[styles.description, { color: colors.mutedForeground }]}>{detail}</Text>
+            </View>
+            <SettingSwitch label={label} value={preferences[key]} onValueChange={(enabled) => onAutomationPreferenceChange?.(key, enabled)}
+              disabled={working || !onAutomationPreferenceChange || (!modelLoaded && !preferences[key])} />
           </View>
         ))}
       </View>

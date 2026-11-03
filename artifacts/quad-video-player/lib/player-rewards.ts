@@ -115,6 +115,7 @@ export type PlayerRewardsSettings = {
   scrollDirection: BorderDirection;
   scrollSpeed: number;
   textureScale: number;
+  pawSpacing: number;
   /** null = per-style default (22 textured, 5 solid). */
   borderThickness: number | null;
   congratsText: string;
@@ -129,6 +130,7 @@ export const DEFAULT_PLAYER_REWARDS: PlayerRewardsSettings = {
   scrollDirection: 'right',
   scrollSpeed: 3,
   textureScale: 1,
+  pawSpacing: 1,
   borderThickness: null,
   congratsText: DEFAULT_CONGRATS_TEXT,
   minuteCheersEnabled: true,
@@ -203,12 +205,14 @@ export function parsePlayerRewards(raw: string | null): PlayerRewardsSettings {
     ? Math.max(1, Math.min(10, value.scrollSpeed)) : DEFAULT_PLAYER_REWARDS.scrollSpeed;
   const textureScale = typeof value.textureScale === 'number' && Number.isFinite(value.textureScale)
     ? clampTextureScale(value.textureScale) : DEFAULT_PLAYER_REWARDS.textureScale;
+  const pawSpacing = typeof value.pawSpacing === 'number' && Number.isFinite(value.pawSpacing)
+    ? Math.max(0.5, Math.min(3, value.pawSpacing)) : DEFAULT_PLAYER_REWARDS.pawSpacing;
   const congratsText = typeof value.congratsText === 'string'
     ? value.congratsText.slice(0, 1_000) : DEFAULT_PLAYER_REWARDS.congratsText;
   return {
     borderEnabled: typeof value.borderEnabled === 'boolean' ? value.borderEnabled : DEFAULT_PLAYER_REWARDS.borderEnabled,
     borderStyle, scrollBorder: typeof value.scrollBorder === 'boolean' ? value.scrollBorder : DEFAULT_PLAYER_REWARDS.scrollBorder,
-    scrollDirection: direction, scrollSpeed: speed, textureScale, congratsText,
+    scrollDirection: direction, scrollSpeed: speed, textureScale, pawSpacing, congratsText,
     borderThickness: typeof value.borderThickness === 'number' && Number.isFinite(value.borderThickness)
       ? clampBorderThickness(value.borderThickness) : null,
     allRewardsUnlocked: value.allRewardsUnlocked === true,

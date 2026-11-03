@@ -30,6 +30,7 @@ import {
   parseCelebrations,
   parseHonorIdea,
 } from '@/lib/local-story';
+import { parseGeneratedAchievements, type PlayerAchievement } from '@/lib/player-achievements';
 import { chatContext, chatSystemPrompt, parseChatReply, type ChatMessage } from '@/lib/pawstar-chat';
 
 export type LocalStoryBusy = 'importing' | 'loading' | 'unloading' | 'generating' | null;
@@ -72,6 +73,36 @@ const HONOR_RESPONSE_SCHEMA = {
       type: 'object',
       properties: { title: { type: 'string' }, description: { type: 'string' } },
       required: ['title', 'description'],
+      additionalProperties: false,
+    },
+  },
+};
+
+const ACHIEVEMENT_RESPONSE_SCHEMA = {
+  type: 'json_schema' as const,
+  json_schema: {
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        achievements: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 5,
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              description: { type: 'string' },
+              metric: { type: 'string', enum: ['completedSessions', 'totalPlaybackMs', 'bestSessionMs', 'xp', 'totalVideosWatched', 'miniGamesWon'] },
+              target: { type: 'integer' },
+            },
+            required: ['name', 'description', 'metric', 'target'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['achievements'],
       additionalProperties: false,
     },
   },
@@ -150,6 +181,9 @@ export function useLocalStoryModel() {
   }, []);
 
   const setCombatPreference = useCallback((key: CombatPreferenceKey, enabled: boolean) => {
+    setPreferences((current) => ({ ...current, [key]: enabled }));
+  }, []);
+  const setAutomationPreference = useCallback((key: 'autoQuestGeneration' | 'autoHonorGeneration' | 'autoCheerGeneration', enabled: boolean) => {
     setPreferences((current) => ({ ...current, [key]: enabled }));
   }, []);
 
@@ -303,7 +337,7 @@ export function useLocalStoryModel() {
     userPrompt: string,
     options: {
       nPredict: number; json?: boolean; tagSuggestions?: boolean; combatPlan?: boolean;
-      schema?: typeof LINES_RESPONSE_SCHEMA | typeof HONOR_RESPONSE_SCHEMA;
+      schema?: typeof LINES_RESPONSE_SCHEMA | typeof HONOR_RESPONSE_SCHEMA | typeof ACHIEVEMENT_RESPONSE_SCHEMA;
       systemPrompt?: string; history?: ChatMessage[];
     },
   ) => {
@@ -469,6 +503,22 @@ export function useLocalStoryModel() {
     return lines ?? [];
   }, [complete, guarded]);
 
+  const generateAchievements = useCallback((count: number, existing: readonly PlayerAchievement[]) => guarded(async () => {
+    const amount = Math.max(1, Math.min(5, Math.floor(count)));
+    const existingNames = existing.map((item) => item.name.toLowerCase()).slice(0, 48).join(', ');
+    const text = await complete(
+      `Create ${amount} distinct Goon Quest achievements in a cozy adult furry pixel-fantasy RPG. Keep names playful, lewd-but-not-graphic, and concise. Every goal must track only one allowed metric. Use an achievable positive integer target. Allowed metrics: completedSessions, totalPlaybackMs (milliseconds), bestSessionMs (milliseconds), xp, totalVideosWatched, miniGamesWon. Avoid these existing names: ${existingNames || 'none'}. Return only the required JSON.`,
+      { nPredict: 400, schema: ACHIEVEMENT_RESPONSE_SCHEMA },
+    );
+    let parsed: unknown;
+    try { parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? ''); } catch { parsed = null; }
+    const rows = parsed && typeof parsed === 'object' && 'achievements' in parsed
+      ? (parsed as { achievements: unknown }).achievements : [];
+    const accepted = parseGeneratedAchievements(rows, existing.map((item) => item.name));
+    if (!accepted.length) throw new Error('The model did not return any new, trackable achievements.');
+    return accepted;
+  }), [complete]);
+
   /** Name and flavor only; the game assigns the tracked goal. */
   const generateHonorIdea = useCallback((context: { className: string; companionName: string }) => guarded(async () => {
     const text = await complete(honorIdeaPrompt(context), { nPredict: 120, schema: HONOR_RESPONSE_SCHEMA });
@@ -480,9 +530,11 @@ export function useLocalStoryModel() {
   return {
     generateChatReply,
     generateCelebrations,
+    generateAchievements,
     generateHonorIdea,
     generateCombatPlan,
     setCombatPreference,
+    setAutomationPreference,
     suggestEnemyTags,
     preferences,
     preferencesReady,

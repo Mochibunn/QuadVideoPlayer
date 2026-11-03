@@ -74,6 +74,7 @@ import { pickMediaFiles } from '@/lib/media-picker';
 import { DEFAULT_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
 import { readDownloadsVideos } from '@/lib/downloads-library';
 import { getVideoAudioMode } from '@/lib/audio-mode';
+import { mergeGeneratedAchievements, parseGeneratedAchievements, playerAchievements, type PlayerAchievement } from '@/lib/player-achievements';
 import { celebrationLineForMinute, congratulationsFor, effectiveBorderThickness, isBorderUnlocked, isThemeUnlocked, mergeGeneratedCheers, messagesForCongratText, themeUnlockLevels } from '@/lib/player-rewards';
 import { hasVideoExtension, isVideoFile, mediaPlaybackError, videoSourceForUri } from '@/lib/media-formats';
 import {
@@ -127,6 +128,7 @@ const NORMALIZE_STORAGE_KEY = 'quad-video-player.normalize';
 const SYNC_STORAGE_KEY = 'quad-video-player.sync';
 const VIDEO_FILL_STORAGE_KEY = 'quad-video-player.video-fill';
 const CONTROLS_DELAY_STORAGE_KEY = 'quad-video-player.controls-hide-seconds';
+const AI_ACHIEVEMENTS_KEY = 'goon-quest.ai-achievements.v1';
 
 function isThemeId(value: string | null): value is ThemeId {
   return themePresets.some((theme) => theme.id === value);
@@ -984,8 +986,29 @@ export default function QuadVideoPlayerScreen() {
     () => localStory.generateStoryQuest(playerRpg.state),
     [localStory.generateStoryQuest, playerRpg.state],
   );
+  const generateStoryQuestRef = useRef(generateStoryQuest);
+  generateStoryQuestRef.current = generateStoryQuest;
+  const openStoryQuestCount = playerRpg.state.storyQuests.filter((quest) => !quest.claimed).length;
+  const openStoryQuestCountRef = useRef(openStoryQuestCount);
+  openStoryQuestCountRef.current = openStoryQuestCount;
+  const autoQuestLastRun = useRef(0);
+  useEffect(() => {
+    if (!isPlaybackActive || !localStory.modelLoaded || !localStory.preferences.autoQuestGeneration) return;
+    const timer = setInterval(() => {
+      if (Date.now() - autoQuestLastRun.current < 15 * 60_000 || openStoryQuestCountRef.current >= 2 ||
+        localStory.busy !== null) return;
+      autoQuestLastRun.current = Date.now();
+      void generateStoryQuestRef.current().then((generated) => {
+        if (generated) playerRpg.addStoryQuest(generated.quest);
+      }).catch(() => undefined);
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [isPlaybackActive, localStory.busy, localStory.modelLoaded,
+    localStory.preferences.autoQuestGeneration, playerRpg.addStoryQuest]);
   const [generatedCheers, setGeneratedCheers] = useState<string[]>([]);
   const [generatingCheers, setGeneratingCheers] = useState(false);
+  const [generatedAchievements, setGeneratedAchievements] = useState<PlayerAchievement[]>([]);
+  const [generatingAchievements, setGeneratingAchievements] = useState(false);
   const cheersSeed = playerRewards.settings.congratsText;
   const cheersSeedRef = useRef(cheersSeed);
   cheersSeedRef.current = cheersSeed;
@@ -995,6 +1018,33 @@ export default function QuadVideoPlayerScreen() {
     ? celebrationLineForMinute(generatedCheers, Math.max(0, Math.floor((viewing.milestone ?? viewing.celebration ?? 0) / 600_000) - 1))
     : congratulationsFor(cheersSeed, viewing.milestone ?? viewing.celebration ?? 0);
   const cheerStorageKey = 'goon-quest.generated-celebrations.v1';
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(AI_ACHIEVEMENTS_KEY).then((raw) => {
+      if (!active) return;
+      const parsed = raw ? JSON.parse(raw) as unknown : [];
+      setGeneratedAchievements(parseGeneratedAchievements(parsed));
+    }).catch(() => {
+      if (active) Alert.alert('AI achievements unavailable', 'Generated achievements could not be loaded. Existing progress is unchanged.');
+    });
+    return () => { active = false; };
+  }, []);
+  const generateAchievementBatch = useCallback(async () => {
+    if (!localStory.modelLoaded) throw new Error('Load the local storyteller first.');
+    if (localStory.busy || generatingAchievements) throw new Error('The storyteller is busy. Try again later.');
+    setGeneratingAchievements(true);
+    try {
+      const incoming = await localStory.generateAchievements(3, [...playerAchievements, ...generatedAchievements]);
+      if (!incoming?.length) throw new Error('The storyteller did not return a complete achievement batch.');
+      const merged = mergeGeneratedAchievements(generatedAchievements, incoming);
+      await AsyncStorage.setItem(AI_ACHIEVEMENTS_KEY, JSON.stringify(merged));
+      setGeneratedAchievements(merged);
+    } catch (error) {
+      Alert.alert('Could not forge achievements', error instanceof Error ? error.message : 'Try again after the storyteller is ready.');
+    } finally {
+      setGeneratingAchievements(false);
+    }
+  }, [generatedAchievements, generatingAchievements, localStory.busy, localStory.generateAchievements, localStory.modelLoaded]);
   useEffect(() => {
     let active = true;
     const revision = ++cheerRevision.current;
@@ -1024,6 +1074,18 @@ export default function QuadVideoPlayerScreen() {
       if (cheersSeedRef.current === cheersSeed) setGeneratedCheers(lines);
     } finally { setGeneratingCheers(false); }
   }, [cheersSeed, generatedCheers, generatingCheers, localStory.busy, localStory.generateCelebrations, localStory.modelLoaded]);
+  const autoCheerLastRun = useRef(0);
+  useEffect(() => {
+    if (!isPlaybackActive || !localStory.modelLoaded || !localStory.preferences.autoCheerGeneration) return;
+    const timer = setInterval(() => {
+      if (generatedCheers.length >= 5 || generatingCheers || localStory.busy !== null ||
+        Date.now() - autoCheerLastRun.current < 30 * 60_000) return;
+      autoCheerLastRun.current = Date.now();
+      void generateCheers().catch(() => undefined);
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [generateCheers, generatedCheers.length, generatingCheers, isPlaybackActive, localStory.busy,
+    localStory.modelLoaded, localStory.preferences.autoCheerGeneration]);
   const lastSpokenCelebration = useRef<string | null>(null);
   const speakDialogue = useCallback((message: string) => {
     if (!playExtras.ready || !playExtras.settings.speakDialogue || !message.trim()) return;
@@ -1667,18 +1729,6 @@ export default function QuadVideoPlayerScreen() {
         </View>
         </FadingControls>
 
-        <ScreenBorder
-          enabled={playerRewards.settings.borderEnabled}
-          styleId={playerRewards.settings.borderStyle}
-          scroll={playerRewards.settings.scrollBorder}
-          direction={playerRewards.settings.scrollDirection}
-          speed={playerRewards.settings.scrollSpeed}
-          textureScale={playerRewards.settings.textureScale}
-          thickness={playerRewards.settings.borderThickness}
-          xp={viewing.xp}
-          allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked}
-          layout={singleStreamIndex !== null ? 'single' : 'quad'}
-        />
         {activeVideos.length > 0 ? (
           <View style={[styles.grid, { padding: frameThickness, rowGap: frameThickness }]}>
             {[0, 1].map((row) => (
@@ -1770,6 +1820,19 @@ export default function QuadVideoPlayerScreen() {
             </Text>
           </View>
         )}
+        <ScreenBorder
+          enabled={playerRewards.settings.borderEnabled}
+          styleId={playerRewards.settings.borderStyle}
+          scroll={playerRewards.settings.scrollBorder}
+          direction={playerRewards.settings.scrollDirection}
+          speed={playerRewards.settings.scrollSpeed}
+          textureScale={playerRewards.settings.textureScale}
+          pawSpacing={playerRewards.settings.pawSpacing}
+          thickness={playerRewards.settings.borderThickness}
+          xp={viewing.xp}
+          allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked}
+          layout={singleStreamIndex !== null ? 'single' : 'quad'}
+        />
         <SlideshowOverlay active={hasVideos && !pipClosed} />
         <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { zIndex: 60 }]}>
           <SessionStatsOverlay
@@ -1777,6 +1840,8 @@ export default function QuadVideoPlayerScreen() {
             heartRate={liveHeartRate.bpm}
             recordedHeartRate={viewing.store.active?.heartRate}
             videosWatched={viewing.store.active?.watchedVideoIds.length ?? 0}
+            lifetimeVideosWatched={(viewing.store.totalVideosWatched ?? 0) +
+              (viewing.store.active?.watchedVideoIds.length ?? 0)}
             poolSize={pool.length}
             averageBpm={averageVideoBpm(liveVideos.filter((_, slot) => singleStreamIndex === null || singleStreamIndex === slot)
               .map((asset) => videoBpmById[asset.id]))}
@@ -1793,6 +1858,9 @@ export default function QuadVideoPlayerScreen() {
           celebrationLines={cheerLines}
           onGenerateCelebrations={generateCheers}
           generatingCelebrations={generatingCheers || localStory.busy !== null}
+          generatedAchievements={generatedAchievements}
+          onGenerateAchievements={generateAchievementBatch}
+          generatingAchievements={generatingAchievements || localStory.busy !== null}
           store={viewing.store}
           totalVideoCount={pool.length}
           visible={hasVideos || !!viewing.store.active || viewing.store.leaderboard.length > 0 || viewing.store.totalPlaybackMs > 0 || !!viewing.error}
@@ -2078,6 +2146,7 @@ export default function QuadVideoPlayerScreen() {
                     onEnemyBanterChange={localStory.setEnemyBanterEnabled}
                     onTest={() => void localStory.testPrompt()}
                     onCombatPreferenceChange={localStory.setCombatPreference}
+                    onAutomationPreferenceChange={localStory.setAutomationPreference}
                   />
                 )}
                 {settingsCategory === 'heart-rate' && <HeartRateSettings />}
@@ -2267,6 +2336,8 @@ export default function QuadVideoPlayerScreen() {
         onGenerateChatReply={localStory.generateChatReply}
         onGenerateHonorIdea={localStory.generateHonorIdea}
         storytellerError={localStory.error}
+        onMiniGameWin={viewing.recordMiniGameWin}
+        autoHonorGeneration={localStory.preferences.autoHonorGeneration}
         visible={questVisible}
         onClose={() => setQuestVisible(false)}
         pool={slideshow.pool}
@@ -2320,7 +2391,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   browserScreen: { paddingHorizontal: 12, paddingBottom: 8 },
   browserToolbar: { marginBottom: 8 },
-  toolbarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50 },
+  toolbarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 120, elevation: 120 },
   topBar: {
     minHeight: 60,
     flexDirection: 'row',

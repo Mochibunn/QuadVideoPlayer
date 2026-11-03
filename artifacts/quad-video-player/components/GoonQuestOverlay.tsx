@@ -99,8 +99,10 @@ type Props = {
   onGenerateChatReply?: (messages: ChatMessage[], rolePrompt?: string) => Promise<string | null>;
   /** Local model honor name/flavor; the game assigns the tracked goal. */
   onGenerateHonorIdea?: (context: { className: string; companionName: string }) => Promise<{ title: string; description: string } | null>;
+  onMiniGameWin?: () => void;
   /** Latest local model error, shown in chat/honor failures. */
   storytellerError?: string;
+  autoHonorGeneration?: boolean;
 };
 
 let nextEnemyId = 0;
@@ -185,7 +187,7 @@ export default function GoonQuestOverlay({
   onBpmResult, calmMotion = false, combatPlaybackActive,
   combatAiEnabled = false, combatSpeechEnabled = true, combatAutoTagsEnabled = false, combatProfanityEnabled = true,
   onGenerateCombatPlan, videoBpmById, chatVisible = false, onChatClose, onCombatActiveChange,
-  onGenerateChatReply, onGenerateHonorIdea, storytellerError,
+  onGenerateChatReply, onGenerateHonorIdea, storytellerError, onMiniGameWin, autoHonorGeneration = false,
 }: Props) {
   const colors = useColors();
   const online = useOnlineSources();
@@ -880,6 +882,19 @@ export default function GoonQuestOverlay({
       if (mountedRef.current) setHonorBusy(false);
     }
   };
+  const forgeHonorRef = useRef(forgeHonor);
+  forgeHonorRef.current = forgeHonor;
+  const autoHonorLastRun = useRef(0);
+  useEffect(() => {
+    if (!autoHonorGeneration || !combatPlaybackActive || !storytellerReady) return;
+    const timer = setInterval(() => {
+      if (storytellerBusy || honorBusy || guild.ledger.generatedHonors.length >= 8 ||
+        Date.now() - autoHonorLastRun.current < 30 * 60_000) return;
+      autoHonorLastRun.current = Date.now();
+      void forgeHonorRef.current().catch(() => undefined);
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [autoHonorGeneration, combatPlaybackActive, guild.ledger.generatedHonors.length, honorBusy, storytellerBusy, storytellerReady]);
 
   const generatedFull = guild.ledger.generatedHonors.length >= 8
     && !guild.ledger.generatedHonors.some((honor) => guild.ledger.claimedHonorIds.includes(honor.id));
@@ -1488,7 +1503,7 @@ export default function GoonQuestOverlay({
         </SafeAreaView>
       </View>
     </Modal>
-    <MotionMiniGame visible={visible && arcadeOpen} onClose={() => setArcadeOpen(false)} calm={calm} />
+    <MotionMiniGame visible={visible && arcadeOpen} onClose={() => setArcadeOpen(false)} onWin={onMiniGameWin} calm={calm} />
     </>
   );
 }

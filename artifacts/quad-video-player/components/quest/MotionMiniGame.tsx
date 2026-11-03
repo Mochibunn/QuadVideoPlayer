@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useReducer, useRef, useState } from 'rea
 import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import PixelIcon from '@/components/PixelIcon';
 import {
   initialParryState, isMotionFresh, PARRY_LIVES, PAW_PARRY_BEST_KEY, parryReducer, parseParryBests,
   type ParryBests, type ParryMode,
@@ -14,9 +15,10 @@ import { readWatchMotion, type WatchMotionState } from '@/lib/watch-motion-bridg
 const POLL_MS = 200;
 const TICK_MS = 100;
 
-export default function MotionMiniGame({ visible, onClose, calm = false }: {
+export default function MotionMiniGame({ visible, onClose, onWin, calm = false }: {
   visible: boolean;
   onClose: () => void;
+  onWin?: () => void;
   calm?: boolean;
 }) {
   const colors = useColors();
@@ -104,6 +106,7 @@ export default function MotionMiniGame({ visible, onClose, calm = false }: {
     if (game.phase !== 'over') { savedRun.current = false; return; }
     if (savedRun.current) return;
     savedRun.current = true;
+    if (game.score > 0) onWin?.();
     if (game.score > bests[game.mode]) {
       const next = { ...bests, [game.mode]: game.score };
       setBests(next);
@@ -111,7 +114,7 @@ export default function MotionMiniGame({ visible, onClose, calm = false }: {
       if (storage === 'ready') writeBests(next);
       else { setPendingSave(next); setSaveError('Saved bests could not be read, so this score was not saved.'); }
     } else setNewBest(false);
-  }, [bests, game.mode, game.phase, game.score, storage, writeBests]);
+  }, [bests, game.mode, game.phase, game.score, onWin, storage, writeBests]);
 
   // A late successful load re-merges and saves any score held back.
   useEffect(() => {
@@ -155,7 +158,7 @@ export default function MotionMiniGame({ visible, onClose, calm = false }: {
       <View style={styles.backdrop}>
         <SafeAreaView style={[styles.panel, { backgroundColor: colors.background, borderColor: colors.border }]}>
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <MaterialCommunityIcons name="paw" size={22} color={colors.primary} />
+            <PixelIcon name="paw" size={24} color={colors.primary} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.kicker, { color: colors.primary }]}>GUILD ARCADE · PRACTICE ONLY</Text>
               <Text style={[styles.title, { color: colors.foreground }]}>PAW PARRY</Text>
@@ -222,7 +225,7 @@ export default function MotionMiniGame({ visible, onClose, calm = false }: {
                 <Hud label="ROUND" value={String(game.round + 1)} colors={colors} />
                 <View style={styles.hearts} accessibilityLabel={`${game.lives} of ${PARRY_LIVES} hearts left`}>
                   {Array.from({ length: PARRY_LIVES }, (_, i) => (
-                    <MaterialCommunityIcons key={i} name={i < game.lives ? 'heart' : 'heart-outline'} size={18}
+                    <PixelIcon key={i} name="heart" size={16}
                       color={i < game.lives ? colors.primary : colors.mutedForeground} />
                   ))}
                 </View>

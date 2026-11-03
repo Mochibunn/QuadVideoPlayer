@@ -16,6 +16,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -65,65 +66,88 @@ class MainActivity : Activity() {
   }
 
   private fun buildScreen() {
+    val density = resources.displayMetrics.density
+    fun dp(value: Int) = (value * density).toInt()
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
-      setPadding(18, 16, 18, 16)
+      setPadding(dp(14), dp(16), dp(14), dp(18))
       setBackgroundColor(android.graphics.Color.rgb(8, 8, 10))
     }
+    root.addView(ImageView(this).apply {
+      setImageResource(R.drawable.ic_gq_wear_launcher)
+      contentDescription = "Goon Quest pixel paw icon"
+      scaleType = ImageView.ScaleType.FIT_CENTER
+    }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { bottomMargin = dp(4) })
     statusText = TextView(this).apply {
       text = "Heart rate is off"
-      textSize = 15f
+      textSize = 14f
       gravity = Gravity.CENTER
       setTextColor(android.graphics.Color.WHITE)
-      setPadding(8, 8, 8, 14)
+      setPadding(dp(8), dp(8), dp(8), dp(8))
     }
     trackingButton = Button(this).apply {
       text = "Start tracking"
+      isAllCaps = false
+      minHeight = dp(48)
+      setTextColor(android.graphics.Color.WHITE)
+      backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.rgb(107, 92, 177))
       setOnClickListener {
         if (HeartRateTrackingState.active) stopTracking() else requestPermissionsAndStart()
       }
     }
     permissionHelpText = TextView(this).apply {
-      text = "Android only shows a permission prompt when access is missing. Tap here to review app permissions."
-      textSize = 11f
+      text = "Tap to review permissions"
+      textSize = 10f
       gravity = Gravity.CENTER
       setTextColor(android.graphics.Color.rgb(170, 170, 180))
-      setPadding(8, 14, 8, 4)
+      setPadding(dp(8), dp(7), dp(8), dp(8))
       contentDescription = "Review Goon Quest Link app permissions"
       setOnClickListener { openAppPermissionSettings() }
     }
     root.addView(TextView(this).apply {
-      text = "Link ${packageManager.getPackageInfo(packageName, 0).versionName}\nPaw Parry Patrol"
+      text = "GOON QUEST LINK · ${packageManager.getPackageInfo(packageName, 0).versionName}"
       textSize = 12f
       gravity = Gravity.CENTER
       setTextColor(android.graphics.Color.rgb(185, 173, 240))
+      setPadding(dp(2), dp(2), dp(2), dp(6))
     })
     root.addView(statusText, LinearLayout.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
     root.addView(trackingButton, LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
+      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+    ).apply { topMargin = dp(3) })
     root.addView(permissionHelpText, LinearLayout.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
     motionButton = Button(this).apply {
       text = "Start wrist controls"
+      isAllCaps = false
+      minHeight = dp(48)
+      setTextColor(android.graphics.Color.WHITE)
+      backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.rgb(57, 45, 92))
       setOnClickListener {
         if (MotionTrackingState.active) stopService(Intent(this@MainActivity, MotionTrackingService::class.java))
         else startMotionControls()
         renderTrackingState()
       }
     }
-    root.addView(motionButton)
+    root.addView(motionButton, LinearLayout.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+    ).apply { topMargin = dp(8) })
     root.addView(TextView(this).apply {
-      text = "Wrist controls use small movements, not position tracking. Secure your strap and keep space around you. Stop when finished; controls stop automatically after 15 minutes to save battery."
-      textSize = 12f
+      text = "Small wrist movements only. Keep space around you. Controls stop after 15 minutes."
+      textSize = 10f
       gravity = Gravity.CENTER
-      setPadding(8, 8, 8, 16)
+      setTextColor(android.graphics.Color.rgb(170, 170, 180))
+      setPadding(dp(8), dp(8), dp(8), dp(12))
     })
-    setContentView(ScrollView(this).apply { addView(root) })
+    setContentView(ScrollView(this).apply {
+      isFillViewport = true
+      clipToPadding = false
+      addView(root)
+    })
   }
 
   private fun requestPermissionsAndStart() {

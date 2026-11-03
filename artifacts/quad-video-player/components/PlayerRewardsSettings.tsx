@@ -206,6 +206,44 @@ export default function PlayerRewardsSettings({
         </View>
       </View>
 
+      {(settings.borderStyle === 'pawprint' || settings.borderStyle === 'trans-paw') && (
+        <View style={[styles.textureSetting, { borderColor: colors.border, backgroundColor: colors.background }]}>
+          <View style={styles.levelHeading}>
+            <View style={styles.settingCopy}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Paw spacing</Text>
+              <Text style={[styles.description, { color: colors.mutedForeground }]}>
+                Adjust the repeat distance without changing paw size.
+              </Text>
+            </View>
+            <View style={[styles.scaleBadge, { borderColor: colors.primary, backgroundColor: colors.accent }]}>
+              <Text style={[styles.scaleValue, { color: colors.primary }]}>{settings.pawSpacing.toFixed(1)}×</Text>
+            </View>
+          </View>
+          <TouchSlider
+            style={{ width: '100%', height: 48 }}
+            accessibilityLabel="Paw border spacing"
+            accessibilityValue={{ min: 50, max: 300, now: Math.round(settings.pawSpacing * 100), text: `${settings.pawSpacing.toFixed(1)} times` }}
+            minimumValue={0.5}
+            maximumValue={3}
+            step={0.1}
+            value={settings.pawSpacing}
+            disabled={disabled}
+            onSlidingComplete={(value) => update({ pawSpacing: Math.round(value * 10) / 10 })}
+            minimumTrackTintColor={colors.primary}
+            maximumTrackTintColor={colors.mutedForeground}
+            thumbTintColor={colors.primary}
+          />
+          <View style={styles.levelHeading}>
+            <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>0.5× close</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Reset paw spacing" disabled={disabled}
+              onPress={() => update({ pawSpacing: 1 })}>
+              <Text style={[styles.optionMeta, { color: colors.primary }]}>Reset 1.0×</Text>
+            </Pressable>
+            <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>3.0× wide</Text>
+          </View>
+        </View>
+      )}
+
       <View style={[styles.textureSetting, { borderColor: colors.border, backgroundColor: colors.background }]}>
         <View style={styles.levelHeading}>
           <View style={styles.settingCopy}>

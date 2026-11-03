@@ -15,10 +15,11 @@ export type FinishedViewingSession = {
 export type ViewingSessionStore = {
   version: 1; totalPlaybackMs: number; leaderboard: FinishedViewingSession[]; active: ActiveViewingSession | null;
   totalVideosWatched?: number;
+  miniGamesWon?: number;
   heartRate?: HeartRateStats | null;
 };
 export const emptyViewingSessions = (): ViewingSessionStore =>
-  ({ version: 1, totalPlaybackMs: 0, totalVideosWatched: 0, heartRate: null, leaderboard: [], active: null });
+  ({ version: 1, totalPlaybackMs: 0, totalVideosWatched: 0, miniGamesWon: 0, heartRate: null, leaderboard: [], active: null });
 
 export function mergeHeartRateStats(a: HeartRateStats | null | undefined, b: HeartRateStats | null | undefined): HeartRateStats | null {
   if (!a) return b ? { ...b } : null;
@@ -104,6 +105,7 @@ export function parseViewingSessions(raw: string | null): ViewingSessionStore {
   }
   return { version: 1, totalPlaybackMs: duration(data.totalPlaybackMs), leaderboard: sortLeaderboard(leaderboard), active,
     totalVideosWatched: duration(data.totalVideosWatched ?? leaderboard.reduce((sum, item) => sum + item.watchedVideoCount, 0)),
+    miniGamesWon: duration(data.miniGamesWon ?? 0),
     heartRate: data.heartRate === undefined
       ? leaderboard.reduce<HeartRateStats | null>((stats, item) => mergeHeartRateStats(stats, item.heartRate), null)
       : parseHeartRateStats(data.heartRate) };
@@ -126,6 +128,9 @@ export function recordWatchedVideos(store: ViewingSessionStore, ids: readonly st
   if (watched.size === store.active.watchedVideoIds.length) return store;
   return { ...store, active: { ...store.active, watchedVideoIds: [...watched] } };
 }
+export function recordMiniGameWin(store: ViewingSessionStore): ViewingSessionStore {
+  return { ...store, miniGamesWon: (store.miniGamesWon ?? 0) + 1 };
+}
 export function formatViewingTime(milliseconds: number): string {
   if (milliseconds > 0 && milliseconds < 1000) return '< 1s';
   const seconds = Math.max(0, Math.floor(milliseconds / 1000));
@@ -144,6 +149,7 @@ export function finishViewingSession(store: ViewingSessionStore, now: number) {
   return { store: { version: 1 as const,
     totalPlaybackMs: store.totalPlaybackMs + completed.durationMs,
     totalVideosWatched: (store.totalVideosWatched ?? store.leaderboard.reduce((sum, item) => sum + item.watchedVideoCount, 0)) + completed.watchedVideoCount,
+    miniGamesWon: store.miniGamesWon ?? 0,
     heartRate: mergeHeartRateStats(store.heartRate, completed.heartRate),
     leaderboard: completed.durationMs > 0 ? sortLeaderboard([...store.leaderboard, completed]) : store.leaderboard,
     active: null },

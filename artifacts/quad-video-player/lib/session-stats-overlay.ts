@@ -34,6 +34,7 @@ export type SessionStatsSettings = {
   showHeartRate: boolean;
   showHeartRange: boolean;
   showVideos: boolean;
+  showLifetimeVideos: boolean;
   showAverageBpm: boolean;
   color: StatsColorId;
   fontSize: number;
@@ -43,7 +44,7 @@ export type SessionStatsSettings = {
 };
 
 export const DEFAULT_SESSION_STATS: SessionStatsSettings = {
-  enabled: false, showTime: true, showHeartRate: true, showHeartRange: false, showVideos: true, showAverageBpm: false,
+  enabled: false, showTime: true, showHeartRate: true, showHeartRange: false, showVideos: true, showLifetimeVideos: false, showAverageBpm: false,
   color: 'theme', fontSize: 15, position: 'top-left', x: 3, y: 4,
 };
 
@@ -66,7 +67,7 @@ export function parseSessionStatsSettings(raw: string | null): SessionStatsSetti
   const color = STATS_COLOR_OPTIONS.some((c) => c.id === v.color) ? v.color as StatsColorId : d.color;
   return {
     enabled: bool('enabled'), showTime: bool('showTime'), showHeartRate: bool('showHeartRate'),
-    showHeartRange: bool('showHeartRange'), showVideos: bool('showVideos'), showAverageBpm: bool('showAverageBpm'),
+     showHeartRange: bool('showHeartRange'), showVideos: bool('showVideos'), showLifetimeVideos: bool('showLifetimeVideos'), showAverageBpm: bool('showAverageBpm'),
     color, fontSize: clampStatsFont(v.fontSize), position, x: clampPercent(v.x, d.x), y: clampPercent(v.y, d.y),
   };
 }

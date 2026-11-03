@@ -27,7 +27,7 @@ function baseTileFor(style: BorderStyleId): number {
 }
 
 function TexturedStrip({
-  strip, tile, styleId, thickness, translateX, translateY, pawColor, pawAlt, base,
+  strip, tile, styleId, thickness, translateX, translateY, pawColor, pawAlt, base, pawSpacing,
 }: {
   strip: BorderStrip;
   tile: number;
@@ -38,6 +38,7 @@ function TexturedStrip({
   pawColor: string;
   pawAlt: string;
   base: string;
+  pawSpacing: number;
 }) {
   const grid = tileGridForStrip(strip, tile);
   const cells: React.ReactNode[] = [];
@@ -81,7 +82,7 @@ function TexturedStrip({
           );
         } else {
           // Two staggered paws per tile keep the trail continuous along both axes.
-          const icon = Math.max(8, Math.min(tile * 0.42, thickness * 0.66));
+          const icon = Math.max(8, Math.min(tile * 0.42 / pawSpacing, thickness * 0.66));
           cells.push(
             <MaterialCommunityIcons key={`${row}-${column}-a`} name="paw" size={icon} color={odd ? pawColor : pawAlt}
               style={{ position: 'absolute', left: left + tile * 0.12, top: top + tile * 0.1, transform: [{ rotate: '-18deg' }] }} />,
@@ -107,7 +108,7 @@ function TexturedStrip({
  * receives touches (pointerEvents none) and never clips other UI.
  */
 export default function ScreenBorder({
-  enabled, styleId, scroll, direction, speed, xp, allRewardsUnlocked, textureScale, layout = 'quad', thickness,
+  enabled, styleId, scroll, direction, speed, xp, allRewardsUnlocked, textureScale, pawSpacing = 1, layout = 'quad', thickness,
 }: {
   enabled: boolean;
   styleId: BorderStyleId;
@@ -117,6 +118,7 @@ export default function ScreenBorder({
   xp: number;
   allRewardsUnlocked: boolean;
   textureScale: number;
+  pawSpacing?: number;
   /** 'single' draws one frame around the fullscreen stream; 'quad' draws four. */
   layout?: BorderLayout;
   /** Border thickness in px (4–64). Omitted/null uses the style default. */
@@ -131,7 +133,9 @@ export default function ScreenBorder({
     (allRewardsUnlocked || levelForExperience(xp) >= ANIMATED_BORDER_LEVEL);
   const scale = clampTextureScale(textureScale);
   const size = effectiveBorderThickness(activeStyle, thickness);
-  const tile = baseTileFor(activeStyle) * scale;
+  const pawStyle = activeStyle === 'pawprint' || activeStyle === 'trans-paw';
+  const safePawSpacing = Math.max(0.5, Math.min(3, pawSpacing));
+  const tile = baseTileFor(activeStyle) * scale * (pawStyle ? safePawSpacing : 1);
   const loop = useMemo(() => scrollLoop(borderDirectionVector(direction), tile, speed), [direction, tile, speed]);
 
   useEffect(() => {
@@ -165,7 +169,8 @@ export default function ScreenBorder({
           <TexturedStrip key={strip.id} strip={strip} tile={tile} styleId={activeStyle} thickness={size}
             translateX={translateX} translateY={translateY}
             pawColor={trans ? TRANS_BLUE : colors.primary} pawAlt={trans ? TRANS_PINK : colors.accentForeground}
-            base={trans ? '#0b0a10' : activeStyle === 'pawprint' ? colors.accent : colors.background} />
+            base={trans ? '#0b0a10' : activeStyle === 'pawprint' ? colors.accent : colors.background}
+            pawSpacing={safePawSpacing} />
         ))}
       </View>
     );
