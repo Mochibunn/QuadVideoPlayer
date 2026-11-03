@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import Feather from '@/components/GameIcon';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo, ActivityIndicator, BackHandler, Modal, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions,
@@ -6,6 +6,7 @@ import {
 import { GameText as Text } from '@/components/GameText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useSavedSetting } from '@/hooks/useSavedSetting';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
 import {
   getRpgQuests, goonQuestClasses, type GoonQuestClassId, type PlayerRpgState,
@@ -104,6 +105,9 @@ type Props = {
   /** Latest local model error, shown in chat/honor failures. */
   storytellerError?: string;
   autoHonorGeneration?: boolean;
+  honorCooldownMinutes?: number;
+  chatCooldownSeconds?: number;
+  combatCooldownSeconds?: number;
 };
 
 let nextEnemyId = 0;
@@ -189,6 +193,7 @@ export default function GoonQuestOverlay({
   combatAiEnabled = false, combatSpeechEnabled = true, combatAutoTagsEnabled = false, combatProfanityEnabled = true,
   onGenerateCombatPlan, videoBpmById, chatVisible = false, onChatClose, onCombatActiveChange,
   onGenerateChatReply, onGenerateHonorIdea, storytellerError, onMiniGameWin, autoHonorGeneration = false,
+  honorCooldownMinutes = 30, chatCooldownSeconds = 30, combatCooldownSeconds = 20,
 }: Props) {
   const colors = useColors();
   const online = useOnlineSources();
@@ -200,7 +205,8 @@ export default function GoonQuestOverlay({
   const [combatPaused, setCombatPaused] = useState(false);
   const [osReduceMotion, setOsReduceMotion] = useState(false);
   const failedEnemyUris = useRef(new Set<string>());
-  const [selectedEnemySourceId, setSelectedEnemySourceId] = useState<string | null>(null);
+  const [selectedEnemySourceId, setSelectedEnemySourceId] = useSavedSetting<string | null>(
+    'goon-quest.enemy-source', null, (value) => typeof value === 'string' ? value : null);
   const [wave, setWave] = useState(0);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [combo, setCombo] = useState(0);
@@ -210,7 +216,10 @@ export default function GoonQuestOverlay({
   const [dungeonBpm, setDungeonBpm] = useState<number | null>(null);
   const [beatResults, setBeatResults] = useState<Record<string, { bpm: number | null; confidence: number; error?: string }>>({});
   const [beatLoadingId, setBeatLoadingId] = useState<string | null>(null);
-  const [manualBpmByVideoId, setManualBpmByVideoId] = useState<Record<string, number>>({});
+  const [manualBpmByVideoId, setManualBpmByVideoId] = useSavedSetting<Record<string, number>>(
+    'goon-quest.manual-bpm', {}, (value) => value && typeof value === 'object'
+      ? Object.fromEntries(Object.entries(value).filter(([, bpm]) => typeof bpm === 'number' && Number.isFinite(bpm) && bpm >= 20 && bpm <= 400))
+      : {});
   const manualBpmByVideoIdRef = useRef(manualBpmByVideoId);
   manualBpmByVideoIdRef.current = manualBpmByVideoId;
   const [manualBpmDraft, setManualBpmDraft] = useState('');
@@ -222,10 +231,12 @@ export default function GoonQuestOverlay({
   const [boss, setBoss] = useState<BossState | null>(null);
   const bossRef = useRef<BossState | null>(null);
   const bossVideoIdRef = useRef<string | null>(null);
-  const [denEnemyCount, setDenEnemyCount] = useState(3);
+  const [denEnemyCount, setDenEnemyCount] = useSavedSetting('goon-quest.enemy-count', 3,
+    (value) => typeof value === 'number' ? clampEnemyCount(value) : 3);
   const [wavePlan, setWavePlan] = useState<number[]>(() => planWaves(3));
   const enemiesRef = useRef<Enemy[]>([]);
-  const [batchCount, setBatchCount] = useState(1);
+  const [batchCount, setBatchCount] = useSavedSetting('goon-quest.quest-batch-count', 1,
+    (value) => typeof value === 'number' ? clampBatchCount(value, MAX_QUEST_BATCH) : 1);
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
   const [batchNotice, setBatchNotice] = useState('');
   const batchRunning = useRef(false);
@@ -234,7 +245,8 @@ export default function GoonQuestOverlay({
   const [chatOpen, setChatOpen] = useState(false);
   const [honorBusy, setHonorBusy] = useState(false);
   const [honorNotice, setHonorNotice] = useState('');
-  const [showClaimedHonors, setShowClaimedHonors] = useState(false);
+  const [showClaimedHonors, setShowClaimedHonors] = useSavedSetting('goon-quest.show-claimed-honors', false,
+    (value) => value === true);
   const guild = useGuildLedger();
   const updateLedger = guild.update;
   const [bossImage, setBossImage] = useState<EnemyImage | null>(null);
@@ -276,6 +288,7 @@ export default function GoonQuestOverlay({
   const combatPausedNow = combatPaused || !combatVideoPlaying;
   const calm = calmMotion || osReduceMotion;
   const director = useCombatDirector({
+    cooldownSeconds: combatCooldownSeconds,
     runId, runActive: inDungeon, paused: combatPausedNow, enemies, wave, bpm: dungeonBpm,
     aiEnabled: combatAiEnabled, speechEnabled: combatSpeechEnabled, autoTagsEnabled: combatAutoTagsEnabled,
     profanityEnabled: combatProfanityEnabled, modelLoaded: storytellerReady, storytellerBusy,
@@ -886,22 +899,26 @@ export default function GoonQuestOverlay({
   const forgeHonorRef = useRef(forgeHonor);
   forgeHonorRef.current = forgeHonor;
   const autoHonorLastRun = useRef(0);
+  const automaticHonorStatus = useRef({ storytellerBusy, honorBusy, count: guild.ledger.generatedHonors.length });
+  automaticHonorStatus.current = { storytellerBusy, honorBusy, count: guild.ledger.generatedHonors.length };
   useEffect(() => {
     if (!autoHonorGeneration || !combatPlaybackActive || !storytellerReady) return;
     const timer = setInterval(() => {
-      if (storytellerBusy || honorBusy || guild.ledger.generatedHonors.length >= 8 ||
-        Date.now() - autoHonorLastRun.current < 30 * 60_000) return;
+      const current = automaticHonorStatus.current;
+      if (current.storytellerBusy || current.honorBusy || current.count >= 8 ||
+        Date.now() - autoHonorLastRun.current < honorCooldownMinutes * 60_000) return;
       autoHonorLastRun.current = Date.now();
       void forgeHonorRef.current().catch(() => undefined);
     }, 30_000);
     return () => clearInterval(timer);
-  }, [autoHonorGeneration, combatPlaybackActive, guild.ledger.generatedHonors.length, honorBusy, storytellerBusy, storytellerReady]);
+  }, [autoHonorGeneration, combatPlaybackActive, storytellerReady, honorCooldownMinutes]);
 
   const generatedFull = guild.ledger.generatedHonors.length >= 8
     && !guild.ledger.generatedHonors.some((honor) => guild.ledger.claimedHonorIds.includes(honor.id));
 
   const chatLayer = (
     <PawstarChat
+      cooldownSeconds={chatCooldownSeconds}
       visible={chatVisible || chatOpen}
       onClose={() => { setChatOpen(false); onChatClose?.(); }}
       petName={state.petName || 'Pawstar'}

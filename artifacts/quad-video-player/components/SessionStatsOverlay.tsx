@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { writeSetting } from '@/hooks/useSavedSetting';
 import { Feather } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -43,15 +44,10 @@ function useSessionStatsSettings() {
   useEffect(load, [load]);
   useEffect(() => {
     if (!ready || !writable.current) return;
-    const snapshot = JSON.stringify(settings);
-    const timer = setTimeout(() => {
-      AsyncStorage.setItem(SESSION_STATS_OVERLAY_KEY, snapshot)
-        .catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not save stats overlay settings.'));
-    }, 250);
-    return () => clearTimeout(timer);
+    void writeSetting(SESSION_STATS_OVERLAY_KEY, settings)
+      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not save stats overlay settings.'));
   }, [ready, settings]);
   const reset = useCallback(() => {
-    AsyncStorage.removeItem(SESSION_STATS_OVERLAY_KEY).catch(() => undefined);
     writable.current = true;
     setSettings({ ...DEFAULT_SESSION_STATS });
     setError('');

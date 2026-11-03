@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clampAiCooldown, type AiCooldownKey } from '@/lib/local-story';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -185,6 +186,9 @@ export function useLocalStoryModel() {
   }, []);
   const setAutomationPreference = useCallback((key: 'autoQuestGeneration' | 'autoHonorGeneration' | 'autoCheerGeneration', enabled: boolean) => {
     setPreferences((current) => ({ ...current, [key]: enabled }));
+  }, []);
+  const setCooldown = useCallback((key: AiCooldownKey, value: number) => {
+    setPreferences((current) => ({ ...current, [key]: clampAiCooldown(key, value) }));
   }, []);
 
   const importModel = useCallback(async () => {
@@ -535,6 +539,7 @@ export function useLocalStoryModel() {
     generateCombatPlan,
     setCombatPreference,
     setAutomationPreference,
+    setCooldown,
     suggestEnemyTags,
     preferences,
     preferencesReady,

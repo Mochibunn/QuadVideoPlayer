@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
+import { useSavedSetting } from '@/hooks/useSavedSetting';
 import AudioTrackEngine, { type AudioTrack, type AudioTrackStatus } from './AudioTrackEngine';
 import TrackVolumeControl from './TrackVolumeControl';
 import { hasVideoExtension, isBackgroundMediaFile } from '@/lib/media-formats';
@@ -24,8 +25,19 @@ type Props = {
   onCountChange: (count: number) => void;
 };
 
+type TrackPreferences = Record<string, { volume: number; muted: boolean }>;
+function parseTrackPreferences(value: unknown): TrackPreferences {
+  if (!value || typeof value !== 'object') return {};
+  return Object.fromEntries(Object.entries(value).flatMap(([uri, item]) => {
+    if (!item || typeof item !== 'object' || typeof item.volume !== 'number' || !Number.isFinite(item.volume)) return [];
+    return [[uri, { volume: Math.max(0, Math.min(2, item.volume)), muted: item.muted === true }]];
+  }));
+}
+
 export default function BackgroundAudioMixer({ visible, onClose, onCountChange }: Props) {
   const colors = useColors();
+  const [preferences, setPreferences, preferencesReady] = useSavedSetting<TrackPreferences>(
+    'goon-quest.audio-track-preferences', {}, parseTrackPreferences);
   const [tracks, setTracks] = useState<AudioTrack[]>([]);
   const [audioSession, setAudioSession] = useState(0);
   const registry = useSessionRegistry();
@@ -64,11 +76,18 @@ export default function BackgroundAudioMixer({ visible, onClose, onCountChange }
   }, []);
 
   const updateTrack = (id: string, update: Partial<AudioTrack>) => {
+    const track = tracks.find((item) => item.id === id);
+    if (track && (update.volume !== undefined || update.muted !== undefined)) {
+      setPreferences((current) => ({ ...current, [track.uri]: {
+        volume: update.volume ?? track.volume,
+        muted: update.muted ?? track.muted,
+      } }));
+    }
     setTracks((current) => current.map((track) => track.id === id ? { ...track, ...update } : track));
   };
 
   const addTracks = async () => {
-    if (isPicking) return;
+    if (isPicking || !preferencesReady) return;
     setIsPicking(true);
     try {
       const result = await pickMediaFiles();
@@ -88,9 +107,9 @@ export default function BackgroundAudioMixer({ visible, onClose, onCountChange }
             id: asset.uri,
             uri: asset.uri,
             name: asset.name,
-            volume: 0.25,
+            volume: preferences[asset.uri]?.volume ?? 0.25,
             paused: false,
-            muted: false,
+            muted: preferences[asset.uri]?.muted ?? false,
             status: 'loading',
             error: '',
             retry: 0,

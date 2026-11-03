@@ -8,6 +8,21 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.18.6',
+    title: 'Raven’s Quad Escape & the Memory Goblin',
+    date: 'November 3, 2026',
+    summary: 'Reach the quad-view controls again and keep more of your den preferences.',
+    changes: [
+      'Video headers now follow the measured global toolbar height, including full-screen videos from either row.',
+      'Return to quad stream is now a labeled button in the global toolbar.',
+      'Automatically save slideshow setup, stream volume and mute, shared volume, per-file background audio levels, enemy selection and count, quest batch size, manual BPM, and Auto chat.',
+      'Border and reward settings save on every change instead of waiting for a cancellable delay.',
+      'Saved background audio levels apply when adding those files again; reopening the app does not start audio by itself.',
+      'Added saved cooldown sliders for Pawstar chat, automatic quests, honors, cheer notes, and the AI combat director under Local storyteller.',
+      'RPG buttons and reward symbols now use the uploaded Raven Fantasy Icons by Caio / Clockwork Raven Studios (clockworkraven.itch.io/raven-fantasy-icons). Playback controls keep familiar transport symbols.',
+    ],
+  },
+  {
     version: '1.18.5',
     title: 'Pawstar Escapes the Timer Trap',
     date: 'November 3, 2026',

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useRef, useState, useEffect } from 'react';
-import { DEFAULT_SLIDESHOW, snapshotSlideshow, type Slideshow } from '@/lib/slideshow';
+import { DEFAULT_SLIDESHOW, parseSlideshow, snapshotSlideshow, type Slideshow } from '@/lib/slideshow';
+import { useSavedSetting } from './useSavedSetting';
 
 export type SlideshowRuntime = { index: number; steps?: number; next?: () => void };
 type ContextValue = {
@@ -9,7 +10,8 @@ type ContextValue = {
 };
 const Context = createContext<ContextValue | null>(null);
 export function SlideshowProvider({ children }: { children: React.ReactNode }) {
-  const [slideshow, setSlideshow] = useState<Slideshow>({ ...DEFAULT_SLIDESHOW, pool: [] });
+  const [slideshow, setSlideshow] = useSavedSetting<Slideshow>('goon-quest.slideshow',
+    { ...DEFAULT_SLIDESHOW, pool: [] }, parseSlideshow);
   const [revision, setRevision] = useState(0);
   const runtime = useRef(new Map<string, SlideshowRuntime>());
   useEffect(() => {

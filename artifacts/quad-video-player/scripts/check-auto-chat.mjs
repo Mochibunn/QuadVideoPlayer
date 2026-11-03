@@ -70,6 +70,28 @@ test('busy model postpones a due reply without restarting its cooldown', async (
   stop();
 });
 
+test('custom chat cooldown is measured after completion and can change for later replies', async () => {
+  const time = clock();
+  let cooldown = 10_000;
+  let calls = 0;
+  const stop = startAutoChatLoop({
+    ready: () => true, run: async () => { calls++; },
+    cooldownMs: () => cooldown, onError: assert.fail,
+  }, time.schedule);
+  await time.advance(0);
+  assert.equal(calls, 1);
+  await time.advance(9_999);
+  assert.equal(calls, 1);
+  cooldown = 60_000;
+  await time.advance(1);
+  assert.equal(calls, 2);
+  await time.advance(59_999);
+  assert.equal(calls, 2);
+  await time.advance(1);
+  assert.equal(calls, 3);
+  stop();
+});
+
 test('slow inference never overlaps and closing prevents another reply', async () => {
   const time = clock();
   let finish;

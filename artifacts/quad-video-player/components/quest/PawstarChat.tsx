@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
+import { useSavedSetting } from '@/hooks/useSavedSetting';
 import {
   Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions,
 } from 'react-native';
@@ -14,6 +15,7 @@ import { startAutoChatLoop } from '@/lib/auto-chat-loop';
 type ChatEntry = ChatMessage & { hidden?: boolean };
 
 type Props = {
+  cooldownSeconds?: number;
   visible: boolean;
   onClose: () => void;
   petName: string;
@@ -29,6 +31,7 @@ type Props = {
 
 /** Compact, translucent comment-stream chat that leaves the four videos visible. */
 export default function PawstarChat({
+  cooldownSeconds = 30,
   visible, onClose, petName, modelReady, modelBusy, modelError, rolePrompt, onRolePromptChange, onResetRole, onSend, onExchange,
 }: Props) {
   const colors = useColors();
@@ -39,7 +42,7 @@ export default function PawstarChat({
   const [roleOpen, setRoleOpen] = useState(false);
   const [roleDraft, setRoleDraft] = useState(rolePrompt);
   const [waiting, setWaiting] = useState(false);
-  const [autoTalk, setAutoTalk] = useState(false);
+  const [autoTalk, setAutoTalk] = useSavedSetting('goon-quest.pawstar-auto-chat', false, (value) => value === true);
   const [notice, setNotice] = useState('');
   const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const sending = useRef(false);
@@ -52,6 +55,7 @@ export default function PawstarChat({
     if (!visible || !autoTalk) return;
     let active = true;
     const stop = startAutoChatLoop({
+      cooldownMs: () => cooldownSeconds * 1_000,
       ready: () => {
         const current = latest.current;
         return current.modelReady && !current.modelBusy && !sending.current && !!current.onSend;
@@ -86,7 +90,7 @@ export default function PawstarChat({
       },
     });
     return () => { active = false; stop(); };
-  }, [autoTalk, visible]);
+  }, [autoTalk, visible, cooldownSeconds]);
 
   if (!visible) return null;
 
@@ -126,7 +130,7 @@ export default function PawstarChat({
   const panelWidth = Math.min(380, width - 24);
   const listHeight = Math.max(72, Math.min(220, height * 0.32));
   const status = !modelReady ? 'Model not loaded' : waiting ? `${petName} is typing` :
-    modelBusy ? 'Model busy' : autoTalk ? 'Auto · 30s cooldown' : 'Local model';
+    modelBusy ? 'Model busy' : autoTalk ? `Auto · ${cooldownSeconds}s cooldown` : 'Local model';
 
   return (
     <View pointerEvents="box-none" style={styles.layer}>

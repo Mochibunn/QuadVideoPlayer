@@ -1,5 +1,7 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSavedSetting } from '@/hooks/useSavedSetting';
+import GameIcon from '@/components/GameIcon';
 import { Directory } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
@@ -211,7 +213,7 @@ function ActionButton({
         pressed && !disabled && styles.pressedButton,
       ]}
     >
-      <Feather
+      <GameIcon
         name={icon}
         size={compact ? 17 : 18}
         color={primary ? colors.primaryForeground : colors.foreground}
@@ -257,8 +259,10 @@ function VideoTile({
   onPlaybackProgress,
   onPlaybackEnded,
   stopAtEnd,
+  toolbarHeight,
 }: {
   asset: VideoAsset;
+  toolbarHeight: number;
   pool: VideoAsset[];
   index: number;
   bpmByVideoId: Record<string, VideoBpmReport>;
@@ -289,8 +293,11 @@ function VideoTile({
   const [currentAsset, setCurrentAsset] = useState(asset);
   const bpm = bpmByVideoId[currentAsset.id]?.bpm ?? null;
   const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(initialSnapshot?.muted ?? false);
-  const [individualVolume, setIndividualVolume] = useState(initialSnapshot?.volume ?? START_VOLUME);
+  const [isMuted, setIsMuted] = useSavedSetting(`goon-quest.stream-${index}.muted`,
+    initialSnapshot?.muted ?? false, (value) => initialSnapshot?.muted ?? (typeof value === 'boolean' ? value : false));
+  const [individualVolume, setIndividualVolume] = useSavedSetting(`goon-quest.stream-${index}.volume`,
+    initialSnapshot?.volume ?? START_VOLUME,
+    (value) => initialSnapshot?.volume ?? (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : START_VOLUME));
   const volume = linkedVolume ? sharedVolume : individualVolume;
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -645,7 +652,7 @@ function VideoTile({
         styles.tileHeader,
         {
           backgroundColor: colors.playbackOverlay,
-          top: index < 2 ? 60 + insets.top : 0,
+          top: focusIndex !== null || index < 2 ? toolbarHeight : 0,
           paddingLeft: 10 + (index % 2 === 0 ? insets.left : 0),
           paddingRight: 10 + (index % 2 === 1 ? insets.right : 0),
         },
@@ -812,7 +819,9 @@ export default function QuadVideoPlayerScreen() {
   const [controlsHideSeconds, setControlsHideSeconds] = useState(DEFAULT_CONTROLS_HIDE_SECONDS);
   const audioMode = getVideoAudioMode(normalizeEnabled, syncEnabled);
   const [playbackSettingsLoaded, setPlaybackSettingsLoaded] = useState(false);
-  const [sharedVolume, setSharedVolume] = useState(START_VOLUME);
+  const [sharedVolume, setSharedVolume] = useSavedSetting('goon-quest.shared-volume', START_VOLUME,
+    (value) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : START_VOLUME);
+  const [toolbarHeight, setToolbarHeight] = useState(0);
   const [backgroundTrackCount, setBackgroundTrackCount] = useState(0);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | null>(null);
@@ -1024,19 +1033,21 @@ export default function QuadVideoPlayerScreen() {
   const openStoryQuestCountRef = useRef(openStoryQuestCount);
   openStoryQuestCountRef.current = openStoryQuestCount;
   const autoQuestLastRun = useRef(0);
+  const automaticModelBusy = useRef(localStory.busy);
+  automaticModelBusy.current = localStory.busy;
   useEffect(() => {
     if (!isPlaybackActive || !localStory.modelLoaded || !localStory.preferences.autoQuestGeneration) return;
     const timer = setInterval(() => {
-      if (Date.now() - autoQuestLastRun.current < 15 * 60_000 || openStoryQuestCountRef.current >= 2 ||
-        localStory.busy !== null) return;
+      if (Date.now() - autoQuestLastRun.current < localStory.preferences.questCooldownMinutes * 60_000 || openStoryQuestCountRef.current >= 2 ||
+        automaticModelBusy.current !== null) return;
       autoQuestLastRun.current = Date.now();
       void generateStoryQuestRef.current().then((generated) => {
         if (generated) playerRpg.addStoryQuest(generated.quest);
       }).catch(() => undefined);
     }, 30_000);
     return () => clearInterval(timer);
-  }, [isPlaybackActive, localStory.busy, localStory.modelLoaded,
-    localStory.preferences.autoQuestGeneration, playerRpg.addStoryQuest]);
+  }, [isPlaybackActive, localStory.modelLoaded,
+    localStory.preferences.autoQuestGeneration, localStory.preferences.questCooldownMinutes, playerRpg.addStoryQuest]);
   const [generatedCheers, setGeneratedCheers] = useState<string[]>([]);
   const [generatingCheers, setGeneratingCheers] = useState(false);
   const [generatedAchievements, setGeneratedAchievements] = useState<PlayerAchievement[]>([]);
@@ -1107,17 +1118,19 @@ export default function QuadVideoPlayerScreen() {
     } finally { setGeneratingCheers(false); }
   }, [cheersSeed, generatedCheers, generatingCheers, localStory.busy, localStory.generateCelebrations, localStory.modelLoaded]);
   const autoCheerLastRun = useRef(0);
+  const automaticCheers = useRef({ generateCheers, generatingCheers, count: generatedCheers.length });
+  automaticCheers.current = { generateCheers, generatingCheers, count: generatedCheers.length };
   useEffect(() => {
     if (!isPlaybackActive || !localStory.modelLoaded || !localStory.preferences.autoCheerGeneration) return;
     const timer = setInterval(() => {
-      if (generatedCheers.length >= 5 || generatingCheers || localStory.busy !== null ||
-        Date.now() - autoCheerLastRun.current < 30 * 60_000) return;
+      if (automaticCheers.current.count >= 5 || automaticCheers.current.generatingCheers || automaticModelBusy.current !== null ||
+        Date.now() - autoCheerLastRun.current < localStory.preferences.cheerCooldownMinutes * 60_000) return;
       autoCheerLastRun.current = Date.now();
-      void generateCheers().catch(() => undefined);
+      void automaticCheers.current.generateCheers().catch(() => undefined);
     }, 30_000);
     return () => clearInterval(timer);
-  }, [generateCheers, generatedCheers.length, generatingCheers, isPlaybackActive, localStory.busy,
-    localStory.modelLoaded, localStory.preferences.autoCheerGeneration]);
+  }, [isPlaybackActive,
+    localStory.modelLoaded, localStory.preferences.autoCheerGeneration, localStory.preferences.cheerCooldownMinutes]);
   const lastSpokenCelebration = useRef<string | null>(null);
   const speakDialogue = useCallback((message: string) => {
     if (!playExtras.ready || !playExtras.settings.speakDialogue || !message.trim()) return;
@@ -1618,7 +1631,9 @@ export default function QuadVideoPlayerScreen() {
         }}
         onTouchCancel={controls.release}
       >
-        <FadingControls visible={!inPip && (!hasVideos || controls.visible)} style={hasVideos ? [
+        <FadingControls
+          onLayout={(event) => setToolbarHeight(event.nativeEvent.layout.height)}
+          visible={!inPip && (!hasVideos || controls.visible)} style={hasVideos ? [
           styles.toolbarOverlay,
           {
             backgroundColor: colors.playbackOverlay,
@@ -1683,7 +1698,6 @@ export default function QuadVideoPlayerScreen() {
                 />
                 {singleStreamIndex !== null && (
                   <ActionButton
-                    compact
                     icon="grid"
                     label="Return to quad stream"
                     onPress={() => setSingleStreamIndex(null)}
@@ -1776,6 +1790,7 @@ export default function QuadVideoPlayerScreen() {
                 <VideoTile
                   key={playbackId}
                   asset={asset}
+                  toolbarHeight={toolbarHeight}
                   pool={pool}
                   index={index}
                   bpmByVideoId={videoBpmById}
@@ -2179,6 +2194,7 @@ export default function QuadVideoPlayerScreen() {
                     onTest={() => void localStory.testPrompt()}
                     onCombatPreferenceChange={localStory.setCombatPreference}
                     onAutomationPreferenceChange={localStory.setAutomationPreference}
+                    onCooldownChange={localStory.setCooldown}
                   />
                 )}
                 {settingsCategory === 'heart-rate' && <HeartRateSettings />}
@@ -2370,6 +2386,9 @@ export default function QuadVideoPlayerScreen() {
         storytellerError={localStory.error}
         onMiniGameWin={viewing.recordMiniGameWin}
         autoHonorGeneration={localStory.preferences.autoHonorGeneration}
+        honorCooldownMinutes={localStory.preferences.honorCooldownMinutes}
+        chatCooldownSeconds={localStory.preferences.chatCooldownSeconds}
+        combatCooldownSeconds={localStory.preferences.combatCooldownSeconds}
         visible={questVisible}
         onClose={() => setQuestVisible(false)}
         pool={slideshow.pool}

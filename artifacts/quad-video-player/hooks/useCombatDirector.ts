@@ -11,6 +11,7 @@ export type DirectorActor = { id: string; name: string; hp: number; maxHp: numbe
 export type FetchEnemyTagImages = (sourceId: string, tag: string, signal: AbortSignal) => Promise<RemoteMedia[]>;
 
 type Options = {
+  cooldownSeconds?: number;
   runId: number;
   runActive: boolean;
   paused: boolean;
@@ -204,7 +205,7 @@ export function useCombatDirector(options: Options) {
       enabled: o.aiEnabled && !!o.generatePlan, modelLoaded: o.modelLoaded, storytellerBusy: o.storytellerBusy,
       paused: o.paused, runActive: o.runActive, hasLiving: living.length > 0,
     };
-    if (!canRequestPlan(clock.current, gate, Date.now()) || !o.generatePlan) return;
+    if (!canRequestPlan(clock.current, gate, Date.now(), (o.cooldownSeconds ?? 20) * 1_000) || !o.generatePlan) return;
     const allowTags = o.autoTagsEnabled && !!o.enemySource && !!o.fetchTagImages && hunt.current.accepted.length < MAX_RUN_TAGS;
     const source = o.enemySource;
     const request: CombatAiRequest = {

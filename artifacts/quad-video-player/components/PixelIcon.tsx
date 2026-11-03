@@ -1,5 +1,6 @@
 import React from 'react';
-import { View } from 'react-native';
+import { Image, View } from 'react-native';
+import { RAVEN_ICONS } from './GameIcon';
 
 const PIXELS: Record<string, string[]> = {
   paw: ['10001', '11111', '10101', '01110', '00100'],
@@ -15,6 +16,10 @@ export default function PixelIcon({ name, color, size = 20 }: {
   color: string;
   size?: number;
 }) {
+  if (RAVEN_ICONS[name]) {
+    return <Image source={RAVEN_ICONS[name]} resizeMode="contain" accessible={false}
+      style={{ width: size, height: size }} />;
+  }
   const cells = PIXELS[name] ?? PIXELS.star;
   const pixel = size / 5;
   return (

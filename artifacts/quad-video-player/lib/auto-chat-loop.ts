@@ -11,6 +11,7 @@ export function startAutoChatLoop(
     ready: () => boolean;
     run: () => Promise<void>;
     onError: (error: unknown) => void;
+    cooldownMs?: () => number;
   },
   schedule: Schedule = scheduleTimeout,
 ): () => void {
@@ -35,7 +36,7 @@ export function startAutoChatLoop(
       return;
     }
     // The cooldown starts after completion, not while inference is running.
-    queue(30_000);
+    queue(Math.max(5_000, Math.min(300_000, options.cooldownMs?.() ?? 30_000)));
   };
   queue(0);
   return () => { active = false; cancelTimer(); };

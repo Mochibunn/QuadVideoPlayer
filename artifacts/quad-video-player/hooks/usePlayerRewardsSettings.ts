@@ -28,17 +28,13 @@ export function usePlayerRewardsSettings() {
   }, []);
 
   useEffect(() => {
-    if (!ready || !writable.current || error) return;
+    if (!ready || !writable.current) return;
     const snapshot = JSON.stringify(settings);
-    const timer = setTimeout(() => {
-      writeQueue.current = writeQueue.current.catch(() => undefined).then(() =>
-        AsyncStorage.setItem(PLAYER_REWARDS_KEY, snapshot)).catch((reason) => {
-        writable.current = false;
-        setError(reason instanceof Error ? reason.message : 'Could not save border settings.');
-      });
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [error, ready, settings]);
+    writeQueue.current = writeQueue.current.catch(() => undefined).then(() =>
+      AsyncStorage.setItem(PLAYER_REWARDS_KEY, snapshot)).then(() => setError('')).catch((reason) => {
+      setError(reason instanceof Error ? reason.message : 'Could not save border settings.');
+    });
+  }, [ready, settings]);
 
   const update = useCallback((patch: Partial<PlayerRewardsSettings>) => {
     setSettings((current) => ({ ...current, ...patch }));

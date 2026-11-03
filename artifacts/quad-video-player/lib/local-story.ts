@@ -2,6 +2,19 @@ import type { StoryQuestObjective } from '@/lib/player-rpg';
 
 export const LOCAL_STORY_SETTINGS_KEY = 'goon-quest.local-story.v1';
 export const MAX_STORY_PROMPT_LENGTH = 4_000;
+export const AI_COOLDOWNS = {
+  chatCooldownSeconds: { label: 'Pawstar Auto chat', unit: 'seconds', min: 5, max: 300, step: 5, initial: 30 },
+  questCooldownMinutes: { label: 'Automatic quests', unit: 'minutes', min: 1, max: 60, step: 1, initial: 15 },
+  honorCooldownMinutes: { label: 'Automatic guild honors', unit: 'minutes', min: 1, max: 60, step: 1, initial: 30 },
+  cheerCooldownMinutes: { label: 'Automatic cheer notes', unit: 'minutes', min: 1, max: 60, step: 1, initial: 30 },
+  combatCooldownSeconds: { label: 'AI combat director', unit: 'seconds', min: 5, max: 120, step: 5, initial: 20 },
+} as const;
+export type AiCooldownKey = keyof typeof AI_COOLDOWNS;
+export function clampAiCooldown(key: AiCooldownKey, value: unknown): number {
+  const spec = AI_COOLDOWNS[key];
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(spec.min, Math.min(spec.max, Math.round(value / spec.step) * spec.step)) : spec.initial;
+}
 
 export const DEFAULT_STORY_PROMPT = [
   'You are Pawstar, a clever, affectionate beastfolk familiar in a cozy pixel-fantasy RPG.',
@@ -12,6 +25,11 @@ export const DEFAULT_STORY_PROMPT = [
 ].join(' ');
 
 export type LocalStoryPreferences = {
+  chatCooldownSeconds: number;
+  questCooldownMinutes: number;
+  honorCooldownMinutes: number;
+  cheerCooldownMinutes: number;
+  combatCooldownSeconds: number;
   modelUri: string | null;
   modelName: string;
   modelBytes: number;
@@ -37,6 +55,11 @@ export type StoryQuestNarrative = {
 
 export function emptyLocalStoryPreferences(): LocalStoryPreferences {
   return {
+    chatCooldownSeconds: 30,
+    questCooldownMinutes: 15,
+    honorCooldownMinutes: 30,
+    cheerCooldownMinutes: 30,
+    combatCooldownSeconds: 20,
     modelUri: null,
     modelName: '',
     modelBytes: 0,
@@ -65,6 +88,11 @@ export function parseLocalStoryPreferences(raw: string | null): LocalStoryPrefer
     const modelUri = typeof data.modelUri === 'string' && data.modelUri.startsWith('file://')
       ? data.modelUri : null;
     return {
+      chatCooldownSeconds: clampAiCooldown('chatCooldownSeconds', data.chatCooldownSeconds),
+      questCooldownMinutes: clampAiCooldown('questCooldownMinutes', data.questCooldownMinutes),
+      honorCooldownMinutes: clampAiCooldown('honorCooldownMinutes', data.honorCooldownMinutes),
+      cheerCooldownMinutes: clampAiCooldown('cheerCooldownMinutes', data.cheerCooldownMinutes),
+      combatCooldownSeconds: clampAiCooldown('combatCooldownSeconds', data.combatCooldownSeconds),
       modelUri,
       modelName: modelUri && typeof data.modelName === 'string'
         ? data.modelName.replace(/[\u0000-\u001f]/g, '').slice(0, 140) : '',

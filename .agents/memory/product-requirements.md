@@ -3,6 +3,14 @@ name: Product requirements
 description: User-stated platform, tablet, and visual requirements.
 ---
 
+All settings should save automatically whenever they change, independently of
+the explicit Save session action.
+
+**Why:** The user explicitly requested “save all settings every time.”
+
+**How to apply:** New preference controls need automatic persistence and startup
+restoration, not just inclusion in a manually captured session.
+
 The user wants a native Android app, not a web app, for a 2960×1848, 239 ppi tablet powered by MediaTek Dimensity 9400+. The UI should be OLED-dark and use #6b5cb1 as its default primary color.
 
 **Why:** The user explicitly specified the target hardware and corrected the platform and color direction.

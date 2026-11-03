@@ -14,10 +14,10 @@ export type DirectorGate = {
 };
 
 /** Sampled inference: one request at a time, at least 20s after the previous one finished. */
-export function canRequestPlan(clock: DirectorClock, gate: DirectorGate, now: number): boolean {
+export function canRequestPlan(clock: DirectorClock, gate: DirectorGate, now: number, cooldownMs = COMBAT_REQUEST_GAP_MS): boolean {
   if (!gate.enabled || !gate.modelLoaded || gate.storytellerBusy || gate.paused || !gate.runActive || !gate.hasLiving) return false;
   if (clock.inFlight) return false;
-  return clock.lastCompletedAt === null || now - clock.lastCompletedAt >= COMBAT_REQUEST_GAP_MS;
+  return clock.lastCompletedAt === null || now - clock.lastCompletedAt >= Math.max(5_000, Math.min(120_000, cooldownMs));
 }
 
 /** Hard epoch: leave, new run, source change, unload, disable. Soft epoch: pause, run end. */

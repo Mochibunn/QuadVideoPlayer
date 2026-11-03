@@ -6,8 +6,11 @@ import { useColors } from '@/hooks/useColors';
 import { MAX_STORY_PROMPT_LENGTH, type CombatPreferenceKey, type LocalStoryPreferences } from '@/lib/local-story';
 import type { LocalStoryBusy } from '@/hooks/useLocalStoryModel';
 import SettingSwitch from '@/components/SettingSwitch';
+import TouchSlider from '@/components/TouchSlider';
+import { AI_COOLDOWNS, type AiCooldownKey } from '@/lib/local-story';
 
 type Props = {
+  onCooldownChange?: (key: AiCooldownKey, value: number) => void;
   preferences: LocalStoryPreferences;
   ready: boolean;
   modelLoaded: boolean;
@@ -27,7 +30,7 @@ type Props = {
 };
 
 const COMBAT_TOGGLES: { key: CombatPreferenceKey; label: string; detail: string; needsDirector?: boolean }[] = [
-  { key: 'combatAiEnabled', label: 'AI combat director', detail: 'Picks enemy movement patterns, pace and focus about every 20 seconds. Without a model, enemies use labeled random motion.' },
+  { key: 'combatAiEnabled', label: 'AI combat director', detail: 'Picks enemy movement patterns, pace and focus at your chosen cooldown. Without a model, enemies use labeled random motion.' },
   { key: 'combatSpeechEnabled', label: 'Enemy speech balloons', detail: 'Short taunts near living enemies and last words where they fall.', needsDirector: true },
   { key: 'combatProfanityEnabled', label: 'Fantasy swearing', detail: 'Lets taunts curse. Off keeps the banter clean.', needsDirector: true },
   { key: 'combatAutoTagsEnabled', label: 'Auto tag hunts', detail: 'Mid-fight, the model may add up to 3 new tags per run to the selected Rule34/e621 enemy source. Images join future spawns only; your saved search, blacklist and rating filter stay untouched.', needsDirector: true },
@@ -56,6 +59,7 @@ export default function LocalStorySettings({
   onTest,
   onCombatPreferenceChange,
   onAutomationPreferenceChange,
+  onCooldownChange,
 }: Props) {
   const colors = useColors();
   const working = busy !== null;
@@ -222,6 +226,27 @@ export default function LocalStorySettings({
 
       <View style={styles.buttonRow}>
         {button('Test the character voice', 'message-circle', onTest, !modelLoaded || working)}
+      </View>
+      <View>
+        <Text style={[styles.sectionKicker, { color: colors.primary }]}>AI COOLDOWNS</Text>
+        <Text style={[styles.description, { color: colors.mutedForeground }]}>
+          Minimum wait between automatic requests. A busy model waits its turn; reserve limits still apply.
+          Short waits use more battery and can slow video playback.
+        </Text>
+        {(Object.keys(AI_COOLDOWNS) as AiCooldownKey[]).map((key) => {
+          const spec = AI_COOLDOWNS[key];
+          return <View key={key}>
+            <Text style={[styles.label, { color: colors.foreground }]}>
+              {spec.label} · {preferences[key]} {spec.unit}
+            </Text>
+            <TouchSlider accessibilityLabel={`${spec.label} cooldown in ${spec.unit}`}
+              style={{ width: '100%', height: 44 }} value={preferences[key]}
+              minimumValue={spec.min} maximumValue={spec.max} step={spec.step}
+              minimumTrackTintColor={colors.primary} maximumTrackTintColor={colors.muted}
+              thumbTintColor={colors.primary} disabled={!ready || !onCooldownChange}
+              onSlidingComplete={(value) => onCooldownChange?.(key, value)} />
+          </View>;
+        })}
       </View>
       {testResult ? (
         <View style={[styles.resultBubble, { backgroundColor: colors.card, borderColor: colors.primary }]}>

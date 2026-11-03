@@ -322,3 +322,31 @@ mtime_ms = 1793711171209
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/bb9420c1-cf8b-4743-9a03-e8753eed52aa/c8c800ba-d8e1-442b-99d4-18afc25c5d18"
 storage_version_token = "1793711184409540"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "OOyw6B1mrKT2XLjLD_mB6"
+uri = "file://generated-artifacts/android/goon-quest-v1.18.6-phone-tablet-download.zip"
+type = "unspecified"
+title = "Goon Quest v1.18.6 — Phone & tablet APK"
+description = "Extract the ZIP and install the APK over your existing app. Includes the quad-view control fix, automatic settings saves, Raven Fantasy icons, and adjustable AI cooldowns."
+logical_id = "79f361b8-cbe1-43d2-80f3-edc6c9643156"
+content_hash = "sha256:32eb41b9e147aa6558c352ec1bca676cb78fb3e19ae26e0f41376bcc2db94c3a"
+size = 61151883
+mtime_ms = 1793734310654
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/79f361b8-cbe1-43d2-80f3-edc6c9643156/a1333087-da56-4a34-9b7f-ce55e56d5085"
+storage_version_token = "1793734332961811"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "vhngH3IOc-v8sIl1xtaPy"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.18.6.apk"
+type = "unspecified"
+title = "Goon Quest Link v1.18.6 — Watch APK"
+description = "Optional matching Galaxy Watch companion build. Install only on the watch; no new watch-specific fixes are included in this release."
+logical_id = "6e05e48d-1415-43e9-9d1f-b1a93390b01e"
+content_hash = "sha256:f7de3b74456ea246b5fa3c29804ae02906a58225714598f3f2a709ea9337043b"
+size = 4250601
+mtime_ms = 1793734293862
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/6e05e48d-1415-43e9-9d1f-b1a93390b01e/68770bbd-c5f6-4634-be7f-7b50cb0a661c"
+storage_version_token = "1793734333797545"
+content_type = "application/octet-stream"
