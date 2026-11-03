@@ -10,13 +10,7 @@ import { SessionRegistryProvider } from '@/hooks/useSessionRegistry';
 import CrashReportNotice from '@/components/CrashReportNotice';
 import { SlideshowProvider } from '@/hooks/useSlideshow';
 import { OnlineSourcesProvider } from '@/hooks/useOnlineSources';
-import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-  useFonts,
-} from '@expo-google-fonts/inter';
+import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 
@@ -37,10 +31,8 @@ export default function RootLayout() {
   const [showWelcome, setShowWelcome] = useState(true);
   const finishWelcome = useCallback(() => setShowWelcome(false), []);
   const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    YosterIsland: require('../assets/fonts/yoster-island.ttf'),
+    Pixelta: require('../assets/fonts/pixelta.ttf'),
   });
 
   useEffect(() => {

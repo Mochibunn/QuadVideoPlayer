@@ -1,8 +1,9 @@
 import { Feather } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AccessibilityInfo, ActivityIndicator, BackHandler, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions,
+  AccessibilityInfo, ActivityIndicator, BackHandler, Modal, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions,
 } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
@@ -987,7 +988,7 @@ export default function GoonQuestOverlay({
               </View>
               <View>
                 <Text style={[styles.eyebrow, { color: colors.primary }]}>THE MOONLIT GUILD</Text>
-                <Text style={[styles.title, { color: colors.foreground }]}>GOON QUEST</Text>
+                <Text style={[styles.title, { color: colors.foreground, fontFamily: 'Pixelta' }]}>GOON QUEST</Text>
                 <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
                   Your den stays open while the streams keep rolling.
                 </Text>

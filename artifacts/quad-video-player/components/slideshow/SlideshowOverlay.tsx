@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useSlideshow, type SlideshowRuntime } from '@/hooks/useSlideshow';
 import { useColors } from '@/hooks/useColors';
 import { useOnlineSources } from '@/hooks/useOnlineSources';

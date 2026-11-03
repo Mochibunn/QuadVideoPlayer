@@ -14,9 +14,9 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
 import {
   getSamsungHealthBridge,

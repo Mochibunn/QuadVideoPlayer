@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
 import { MAX_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
 import TouchSlider from './TouchSlider';

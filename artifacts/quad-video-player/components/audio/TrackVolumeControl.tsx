@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
 
 type Props = {

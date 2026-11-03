@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Pressable, TextInput, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
 import { connectReddit, disconnectReddit, redditAccountName } from '@/lib/reddit-account';

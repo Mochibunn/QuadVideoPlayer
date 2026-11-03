@@ -7,9 +7,9 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
 import AudioTrackEngine, { type AudioTrack, type AudioTrackStatus } from './AudioTrackEngine';
 import TrackVolumeControl from './TrackVolumeControl';

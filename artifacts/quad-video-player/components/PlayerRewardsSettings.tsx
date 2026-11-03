@@ -1,6 +1,7 @@
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import SettingSwitch from '@/components/SettingSwitch';
 import TouchSlider from '@/components/TouchSlider';
 import { useColors } from '@/hooks/useColors';

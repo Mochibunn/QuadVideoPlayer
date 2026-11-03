@@ -1,12 +1,16 @@
 import { Feather } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions,
+  Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions,
 } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { appendChat, cleanChatText, type ChatMessage } from '@/lib/pawstar-chat';
 import { MAX_CHAT_ROLE_LENGTH } from '@/lib/guild-ledger';
+
+type ChatEntry = ChatMessage & { hidden?: boolean };
 
 type Props = {
   visible: boolean;
@@ -29,25 +33,57 @@ export default function PawstarChat({
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [draft, setDraft] = useState('');
   const [roleOpen, setRoleOpen] = useState(false);
   const [roleDraft, setRoleDraft] = useState(rolePrompt);
   const [waiting, setWaiting] = useState(false);
+  const [autoTalk, setAutoTalk] = useState(false);
   const [notice, setNotice] = useState('');
-  const [keyboard, setKeyboard] = useState(0);
   const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const sending = useRef(false);
 
   useEffect(() => { if (!roleOpen) setRoleDraft(rolePrompt); }, [roleOpen, rolePrompt]);
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvent, (event) => setKeyboard(event.endCoordinates.height));
-    const hide = Keyboard.addListener(hideEvent, () => setKeyboard(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
+    if (!visible || !autoTalk || !modelReady || modelBusy || waiting || !onSend) return;
+    const timer = setTimeout(() => {
+      if (sending.current) return;
+      sending.current = true;
+      setWaiting(true);
+      setNotice('');
+      const prompt = messages.length
+        ? 'Continue this conversation with one short, new in-character thought. Keep it connected to what was said and avoid repeating earlier lines.'
+        : `Start a friendly, in-character conversation as ${petName}. Say one short opening line.`;
+      const nextHistory: ChatEntry[] = [
+        ...messages,
+        { role: 'user' as const, content: prompt, hidden: true },
+      ].slice(-40);
+      setMessages(nextHistory);
+      void onSend(nextHistory, rolePrompt)
+        .then((reply) => {
+          if (reply) {
+            setMessages((current) => [...current, { role: 'assistant' as const, content: reply }].slice(-40));
+            onExchange?.();
+          } else {
+            setNotice(modelError || `${petName} could not continue. Check the local model status.`);
+            setAutoTalk(false);
+          }
+        })
+        .catch((error: unknown) => {
+          setNotice(error instanceof Error ? error.message : `${petName} could not continue.`);
+          setAutoTalk(false);
+        })
+        .finally(() => {
+          sending.current = false;
+          setWaiting(false);
+        });
+    }, 30_000);
+    return () => clearTimeout(timer);
+  }, [
+    autoTalk, messages, modelBusy, modelError, modelReady, onExchange, onSend,
+    petName, rolePrompt, visible, waiting,
+  ]);
 
   if (!visible) return null;
 
@@ -76,6 +112,8 @@ export default function PawstarChat({
       } else {
         setNotice(modelError || `${petName} could not answer. Check the local model status.`);
       }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : `${petName} could not answer.`);
     } finally {
       sending.current = false;
       setWaiting(false);
@@ -83,24 +121,42 @@ export default function PawstarChat({
   };
 
   const panelWidth = Math.min(380, width - 24);
-  const listHeight = Math.max(120, Math.min(260, (height - keyboard) * 0.36));
-  const bottom = (keyboard ? keyboard + 8 : insets.bottom + 12);
+  const listHeight = Math.max(72, Math.min(220, height * 0.32));
   const status = !modelReady ? 'Model not loaded' : waiting ? `${petName} is typing` : modelBusy ? 'Model busy' : 'Local model';
 
   return (
     <View pointerEvents="box-none" style={styles.layer}>
-      <View pointerEvents="box-none" style={[styles.panel, { width: panelWidth, bottom, left: 12 + insets.left }]}>
+      <KeyboardAvoidingView
+        pointerEvents="box-none"
+        behavior="padding"
+        keyboardVerticalOffset={0}
+        style={styles.keyboardAvoider}
+      >
+      <View style={[styles.panel, { width: panelWidth, marginLeft: 12 + insets.left, marginBottom: insets.bottom + 8 }]}>
         <View style={styles.header}>
           <View style={[styles.statusDot, { backgroundColor: modelReady ? colors.primary : colors.destructive }]} />
-          <Text style={[styles.headerText, { color: colors.foreground }]}>{petName}</Text>
-          <Text style={[styles.headerMeta, { color: colors.mutedForeground }]}>{status}</Text>
-          <View style={{ flex: 1 }} />
+          <Text style={[styles.headerText, { color: colors.foreground, fontFamily: 'Pixelta' }]} numberOfLines={1}>{petName}</Text>
+          <Text style={[styles.headerMeta, { color: colors.mutedForeground }]} numberOfLines={1}>{status}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={autoTalk ? 'Turn continuous Pawstar chat off' : 'Turn continuous Pawstar chat on'}
+            accessibilityState={{ checked: autoTalk }}
+            hitSlop={4}
+            onPress={() => { setAutoTalk((value) => !value); setNotice(''); }}
+            style={[
+              styles.autoToggle,
+              { borderColor: autoTalk ? colors.primary : colors.border, backgroundColor: autoTalk ? colors.accent : 'transparent' },
+            ]}
+          >
+            <Feather name={autoTalk ? 'activity' : 'repeat'} size={12} color={autoTalk ? colors.primary : colors.mutedForeground} />
+            <Text style={[styles.autoToggleText, { color: autoTalk ? colors.primary : colors.mutedForeground }]}>Auto</Text>
+          </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Edit Pawstar role prompt" hitSlop={8}
             onPress={() => setRoleOpen((value) => !value)} style={styles.iconButton}>
             <Feather name="sliders" size={14} color={roleOpen ? colors.primary : colors.foreground} />
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Clear chat" hitSlop={8}
-            onPress={() => { setMessages([]); setNotice(''); }} style={styles.iconButton}>
+            onPress={() => { setAutoTalk(false); setMessages([]); setNotice(''); }} style={styles.iconButton}>
             <Feather name="trash-2" size={14} color={colors.foreground} />
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Close chat" hitSlop={8}
@@ -117,7 +173,7 @@ export default function PawstarChat({
               value={roleDraft}
               onChangeText={(text) => setRoleDraft(text.slice(0, MAX_CHAT_ROLE_LENGTH))}
               multiline
-              style={[styles.roleInput, { color: colors.foreground, borderColor: colors.border }]}
+              style={[styles.roleInput, { color: colors.foreground, borderColor: colors.border, fontFamily: 'YosterIsland' }]}
               placeholderTextColor={colors.mutedForeground}
               placeholder="Describe how Pawstar should talk"
             />
@@ -136,14 +192,14 @@ export default function PawstarChat({
         )}
 
         <ScrollView ref={scrollRef} style={{ maxHeight: listHeight }} contentContainerStyle={styles.list}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
           {!messages.length && (
             <Text style={[styles.comment, styles.emptyText, { color: colors.mutedForeground }]}>
               Say hi. {petName} answers from your local model; nothing leaves this device.
             </Text>
           )}
-          {messages.map((message, index) => (
+          {messages.filter((message) => !message.hidden).map((message, index) => (
             <View key={index} style={styles.commentRow}>
               <Text style={[styles.comment, { color: colors.foreground }]}>
                 <Text style={{ color: message.role === 'assistant' ? colors.primary : colors.mutedForeground, fontWeight: '900' }}>
@@ -159,7 +215,7 @@ export default function PawstarChat({
         </ScrollView>
         {!!notice && <Text accessibilityRole="alert" style={[styles.notice, { color: colors.destructive }]}>{notice}</Text>}
 
-        <View style={[styles.inputRow, { borderColor: colors.border }]}>
+        <View style={[styles.inputRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <TextInput
             accessibilityLabel={`Message ${petName}`}
             value={draft}
@@ -167,10 +223,11 @@ export default function PawstarChat({
             placeholder={modelReady ? `Talk to ${petName}` : 'Load a model to chat'}
             placeholderTextColor={colors.mutedForeground}
             maxLength={500}
+            selectionColor={colors.primary}
             returnKeyType="send"
             onSubmitEditing={() => void send()}
             blurOnSubmit={false}
-            style={[styles.input, { color: colors.foreground }]}
+            style={[styles.input, { color: colors.foreground, fontFamily: 'YosterIsland' }]}
           />
           <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={waiting || !draft.trim()}
             onPress={() => void send()}
@@ -179,21 +236,25 @@ export default function PawstarChat({
           </Pressable>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   layer: { ...StyleSheet.absoluteFill, zIndex: 120, elevation: 120 },
-  panel: { position: 'absolute', gap: 6 },
+  keyboardAvoider: { ...StyleSheet.absoluteFill, justifyContent: 'flex-end', alignItems: 'flex-start' },
+  panel: { gap: 6, maxWidth: '100%' },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', width: '100%',
+    flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', width: '100%',
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.42)',
   },
   statusDot: { width: 7, height: 7, borderRadius: 2 },
-  headerText: { fontSize: 12, fontWeight: '900', letterSpacing: 0.6 },
-  headerMeta: { fontSize: 10 },
+  headerText: { fontSize: 12, fontWeight: '900', letterSpacing: 0.3, flexShrink: 1 },
+  headerMeta: { fontSize: 10, flexShrink: 1 },
   iconButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  autoToggle: { height: 28, borderRadius: 14, borderWidth: 1, paddingHorizontal: 7, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  autoToggleText: { fontSize: 10, fontWeight: '800' },
   list: { gap: 5, paddingVertical: 2 },
   commentRow: { alignSelf: 'flex-start', maxWidth: '100%', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: 'rgba(0,0,0,0.38)' },
   comment: {
@@ -204,9 +265,12 @@ const styles = StyleSheet.create({
   notice: { fontSize: 11, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.6)' },
   inputRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 22,
-    paddingLeft: 14, paddingRight: 4, minHeight: 44, backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingLeft: 14, paddingRight: 4, minHeight: 48, zIndex: 2, elevation: 2,
   },
-  input: { flex: 1, fontSize: 13, paddingVertical: 8 },
+  input: {
+    flex: 1, fontSize: 13, minHeight: 42, height: 42, lineHeight: 20, paddingVertical: 0,
+    includeFontPadding: false, textAlignVertical: 'center', backgroundColor: 'transparent',
+  },
   send: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   roleBox: { borderWidth: 1, borderRadius: 12, padding: 8, gap: 6, backgroundColor: 'rgba(0,0,0,0.72)' },
   roleLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },

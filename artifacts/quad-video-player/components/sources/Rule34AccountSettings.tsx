@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
 import {
   readRule34Credentials, removeRule34Credentials, saveRule34Credentials,

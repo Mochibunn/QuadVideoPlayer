@@ -231,6 +231,7 @@ async function controls({ stored = null, choices = [], writeFails = false, reada
     '@react-native-async-storage/async-storage': storage,
     '@expo/vector-icons': { Feather: 'Icon' },
     'react-native': rn,
+    '@/components/GameText': { GameText: 'Text' },
     '@/hooks/useColors': { useColors: () => ({}) },
     '@/lib/sessions': codec,
     '@/lib/session-media': {

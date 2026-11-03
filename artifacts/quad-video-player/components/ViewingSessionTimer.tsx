@@ -1,6 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SessionMilestoneConfetti from '@/components/SessionMilestoneConfetti';
 import PixelIcon from '@/components/PixelIcon';

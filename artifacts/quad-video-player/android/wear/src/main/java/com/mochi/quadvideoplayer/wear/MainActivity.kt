@@ -8,6 +8,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +30,8 @@ class MainActivity : Activity() {
   private lateinit var trackingButton: Button
   private lateinit var motionButton: Button
   private lateinit var permissionHelpText: TextView
+  private lateinit var gameTypeface: Typeface
+  private lateinit var displayTypeface: Typeface
   private var stateReceiverRegistered = false
 
   private val stateReceiver = object : BroadcastReceiver() {
@@ -68,6 +74,8 @@ class MainActivity : Activity() {
   private fun buildScreen() {
     val density = resources.displayMetrics.density
     fun dp(value: Int) = (value * density).toInt()
+    gameTypeface = Typeface.createFromAsset(assets, "fonts/yoster-island.ttf")
+    displayTypeface = Typeface.createFromAsset(assets, "fonts/pixelta.ttf")
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
@@ -82,6 +90,7 @@ class MainActivity : Activity() {
     statusText = TextView(this).apply {
       text = "Heart rate is off"
       textSize = 14f
+      typeface = gameTypeface
       gravity = Gravity.CENTER
       setTextColor(android.graphics.Color.WHITE)
       setPadding(dp(8), dp(8), dp(8), dp(8))
@@ -90,8 +99,9 @@ class MainActivity : Activity() {
       text = "Start tracking"
       isAllCaps = false
       minHeight = dp(48)
+      typeface = gameTypeface
       setTextColor(android.graphics.Color.WHITE)
-      backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.rgb(107, 92, 177))
+      stylePillButton(this, android.graphics.Color.rgb(107, 92, 177), density)
       setOnClickListener {
         if (HeartRateTrackingState.active) stopTracking() else requestPermissionsAndStart()
       }
@@ -99,6 +109,7 @@ class MainActivity : Activity() {
     permissionHelpText = TextView(this).apply {
       text = "Tap to review permissions"
       textSize = 10f
+      typeface = gameTypeface
       gravity = Gravity.CENTER
       setTextColor(android.graphics.Color.rgb(170, 170, 180))
       setPadding(dp(8), dp(7), dp(8), dp(8))
@@ -108,6 +119,7 @@ class MainActivity : Activity() {
     root.addView(TextView(this).apply {
       text = "GOON QUEST LINK · ${packageManager.getPackageInfo(packageName, 0).versionName}"
       textSize = 12f
+      typeface = displayTypeface
       gravity = Gravity.CENTER
       setTextColor(android.graphics.Color.rgb(185, 173, 240))
       setPadding(dp(2), dp(2), dp(2), dp(6))
@@ -125,8 +137,9 @@ class MainActivity : Activity() {
       text = "Start wrist controls"
       isAllCaps = false
       minHeight = dp(48)
+      typeface = gameTypeface
       setTextColor(android.graphics.Color.WHITE)
-      backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.rgb(57, 45, 92))
+      stylePillButton(this, android.graphics.Color.rgb(57, 45, 92), density)
       setOnClickListener {
         if (MotionTrackingState.active) stopService(Intent(this@MainActivity, MotionTrackingService::class.java))
         else startMotionControls()
@@ -139,6 +152,7 @@ class MainActivity : Activity() {
     root.addView(TextView(this).apply {
       text = "Small wrist movements only. Keep space around you. Controls stop after 15 minutes."
       textSize = 10f
+      typeface = gameTypeface
       gravity = Gravity.CENTER
       setTextColor(android.graphics.Color.rgb(170, 170, 180))
       setPadding(dp(8), dp(8), dp(8), dp(12))
@@ -148,6 +162,21 @@ class MainActivity : Activity() {
       clipToPadding = false
       addView(root)
     })
+  }
+
+  private fun stylePillButton(button: Button, color: Int, density: Float) {
+    fun pill(fillColor: Int) = GradientDrawable().apply {
+      shape = GradientDrawable.RECTANGLE
+      cornerRadius = 40f * density
+      setColor(fillColor)
+    }
+    button.background = RippleDrawable(
+      android.content.res.ColorStateList.valueOf(Color.argb(58, 255, 255, 255)),
+      pill(color),
+      pill(Color.WHITE),
+    )
+    button.backgroundTintList = null
+    button.setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
   }
 
   private fun requestPermissionsAndStart() {

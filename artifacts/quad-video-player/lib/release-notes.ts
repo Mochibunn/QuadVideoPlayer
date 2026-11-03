@@ -8,6 +8,18 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.18.4',
+    title: 'Yoster Yaps in Pill Mode',
+    date: 'November 3, 2026',
+    summary: 'Retro type, rounded watch controls, and a chatty familiar who can keep the conversation going.',
+    changes: [
+      'Applied Yoster across the game UI and Pixelta to major display headings.',
+      'Rounded the Galaxy Watch controls into accessible pill buttons and matched the watch typography to the app.',
+      'Added an opt-in Auto chat control that generates a new Pawstar line about every 30 seconds while chat is open.',
+      'Moved chat keyboard handling to a keyboard-aware layout and strengthened input contrast, cursor visibility, and touch layering.',
+    ],
+  },
+  {
     version: '1.18.3',
     title: 'Pawprint Pixel Pulse',
     date: 'November 3, 2026',

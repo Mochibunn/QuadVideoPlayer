@@ -1,7 +1,8 @@
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
 import { useSlideshow } from '@/hooks/useSlideshow';
 import { pickMediaFiles } from '@/lib/media-picker';

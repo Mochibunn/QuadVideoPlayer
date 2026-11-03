@@ -2,8 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent,
+  Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type LayoutChangeEvent,
 } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import SettingSwitch from '@/components/SettingSwitch';
 import TouchSlider from '@/components/TouchSlider';
 import { useColors } from '@/hooks/useColors';

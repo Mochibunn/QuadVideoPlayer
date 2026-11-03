@@ -1,6 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
 import { MAX_STORY_PROMPT_LENGTH, type CombatPreferenceKey, type LocalStoryPreferences } from '@/lib/local-story';
 import type { LocalStoryBusy } from '@/hooks/useLocalStoryModel';

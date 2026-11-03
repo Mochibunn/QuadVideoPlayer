@@ -1,7 +1,8 @@
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
 import type { CombatControlScheme } from '@/lib/input-controls';
 import { COMBAT_HIT_SLOP, combatPress } from '@/components/quest/press';

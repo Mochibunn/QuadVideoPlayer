@@ -218,6 +218,7 @@ test('real overlay layers advance independently and stop timers/animations on re
     'expo-image': { Image: 'Image' },
     'react-native': { Animated: animated, Easing: { linear: 'linear' }, Text: 'Text', View: 'View',
       StyleSheet: { create: (v) => v, absoluteFill: {} } },
+    '@/components/GameText': { GameText: 'Text' },
     '@/hooks/useSlideshow': { useSlideshow: () => ({ slideshow: group, runtime, revision: 0 }) },
     '@/hooks/useOnlineSources': { useOnlineSources: () => ({ sources: [], results: {}, ensureLoaded() {} }) },
     '@/hooks/useColors': { useColors: () => ({ mutedForeground: 'muted' }) },

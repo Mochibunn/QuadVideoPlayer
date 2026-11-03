@@ -10,3 +10,4 @@
 - [RPG progression](player-rpg.md) — The user wants quests, streaks, skill perks, an earnable shop, a companion, and lewd-themed rewards.
 - [Samsung heart-rate bridge](samsung-heart-rate-bridge.md) — Live tablet heart rate must survive watch UI backgrounding and relay through the paired phone.
 - [Beat tempo input](beat-tempo.md) — Beat-driven encounters use manual BPM or tap-to-estimate, rather than Spotify sync.
+- [App font licensing](app-font-licensing.md) — The user confirmed Pixelta is commercially licensed for Goon Quest.

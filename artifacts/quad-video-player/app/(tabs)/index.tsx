@@ -21,9 +21,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ColorContext, useColors } from '@/hooks/useColors';
 import { useAutoHideControls } from '@/hooks/useAutoHideControls';
@@ -1599,7 +1599,7 @@ export default function QuadVideoPlayerScreen() {
           <View pointerEvents="none" style={styles.brandBlock}>
             <PixelFamiliar size={44} motion={false} label="Goon Quest pixel familiar" />
             <View>
-              <Text style={[styles.brandName, { color: colors.foreground }]}>
+              <Text style={[styles.brandName, { color: colors.foreground, fontFamily: 'Pixelta' }]}>
                 GOON QUEST
               </Text>
               <Text style={[styles.brandMeta, { color: colors.mutedForeground }]}>

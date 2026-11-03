@@ -3,10 +3,10 @@ import {
   AccessibilityInfo,
   Animated,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
 } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { getThemeColors } from '@/constants/colors';
 import PixelFamiliar from '@/components/PixelFamiliar';
 
@@ -98,6 +98,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.foreground,
+    fontFamily: 'Pixelta',
     fontSize: 25,
     fontWeight: '900',
     letterSpacing: 2.4,

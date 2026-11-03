@@ -45,6 +45,12 @@ Optional local-AI generation for quests, honors, and cheers must remain off by d
 
 **How to apply:** Only run background generation when the player enables it, a model is loaded, and playback is active; keep batch sizes, open quest counts, and generation intervals bounded.
 
+Continuous Pawstar chat is an explicit in-chat option and must stop generating when the chat overlay is hidden.
+
+**Why:** The player asked for ongoing dialogue, but should remain in control of local-model activity and playback resources.
+
+**How to apply:** Keep auto-chat off by default, generate one bounded message at a time on a cooldown, and stop on model errors.
+
 When expanding persisted RPG state, accept known older save versions and initialize new mechanics without discarding existing progression.
 
 **Why:** RPG progress is stored locally and must survive feature and app-version updates.

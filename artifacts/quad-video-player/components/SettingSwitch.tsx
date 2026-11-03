@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import { useColors } from '@/hooks/useColors';
 
 /** Always show the actual boolean state, independent of Android switch styling. */

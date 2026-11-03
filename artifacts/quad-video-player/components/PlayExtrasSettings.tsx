@@ -1,7 +1,8 @@
 import { Feather } from '@expo/vector-icons';
 import * as Speech from 'expo-speech';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { GameText as Text } from '@/components/GameText';
 import SettingSwitch from '@/components/SettingSwitch';
 import TouchSlider from '@/components/TouchSlider';
 import { useColors } from '@/hooks/useColors';

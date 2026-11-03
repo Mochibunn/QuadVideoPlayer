@@ -252,3 +252,31 @@ mtime_ms = 1793705481794
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/569dc9bf-50f6-45ff-a748-83fc9fb7f4d7/31d8f56a-ff87-4bd5-a76d-6ebdc17dae75"
 storage_version_token = "1793705607166910"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "maIs8sLdgBek1cae5TzS5"
+uri = "file://generated-artifacts/android/goon-quest-v1.18.4-phone-tablet-download.zip"
+type = "unspecified"
+title = "Goon Quest v1.18.4 — Phone & Tablet APK"
+description = "Signed Android arm64 APK package for sideloading. Package: com.mochi.quadvideoplayer."
+logical_id = "28b9950d-23b2-4e12-b066-3b16e8b771d0"
+content_hash = "sha256:8899a01d9d38e00fe9b463e975814826d7a706f216f76ec844b6f5a0b5eb076a"
+size = 61296512
+mtime_ms = 1793709201190
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/28b9950d-23b2-4e12-b066-3b16e8b771d0/6b5d6372-d8ee-40e8-90df-92427e077700"
+storage_version_token = "1793709523071083"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "0byhoyNQjbTmSiNE2jl2J"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.18.4.apk"
+type = "unspecified"
+title = "Goon Quest Link v1.18.4 — Watch APK"
+description = "Signed Wear OS companion APK for sideloading. Includes the updated rounded-pill interface and bundled fonts."
+logical_id = "64d63b3e-f500-4c3c-8041-6e9a92252340"
+content_hash = "sha256:5a784a39c031128f22048a86aa3d636b6dec25c26e69eafd5e56aaf6c2e030ef"
+size = 4250581
+mtime_ms = 1793709194774
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/64d63b3e-f500-4c3c-8041-6e9a92252340/c5ab0a19-b31c-48ad-8543-c1e65ad3ba05"
+storage_version_token = "1793709523866617"
+content_type = "application/octet-stream"
