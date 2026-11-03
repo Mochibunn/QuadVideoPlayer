@@ -129,6 +129,7 @@ function PinToggle({ pinned, disabled, onPress, label, colors }: {
       disabled={disabled && !pinned} onPress={onPress} hitSlop={6}
       style={[styles.pinButton, { borderColor: pinned ? colors.primary : colors.border, opacity: disabled && !pinned ? 0.4 : 1 }]}>
       <Feather name="map-pin" size={13} color={pinned ? colors.primary : colors.mutedForeground} />
+      <Text style={{ color: pinned ? colors.primary : colors.mutedForeground, fontSize: 11 }}>{pinned ? 'Pinned' : 'Pin'}</Text>
     </Pressable>
   );
 }
@@ -1674,7 +1675,7 @@ const styles = StyleSheet.create({
   skillText: { fontSize: 10, fontWeight: '700' },
   leaveButton: { minHeight: 38, paddingHorizontal: 10, borderWidth: 1, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   footerNote: { textAlign: 'center', fontSize: 10, lineHeight: 15 },
-  pinButton: { width: 32, height: 32, borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  pinButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 7, gap: 3, borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   batchHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   batchProgress: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

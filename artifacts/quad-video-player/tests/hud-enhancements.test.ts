@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { borderStrips } from '../lib/border-geometry.ts';
 import {
   celebrationLineForMinute, celebrationLinesFrom, clampBorderThickness, clampTextureScale, effectiveBorderThickness,
-  nextCheerMinute, parsePlayerRewards,
+  mergeGeneratedCheers, nextCheerMinute, parsePlayerRewards,
 } from '../lib/player-rewards.ts';
 import {
   applyPositionPreset, DEFAULT_SESSION_STATS, heartSummary, overlayOrigin, parseSessionStatsSettings,
@@ -60,4 +60,11 @@ test('heart summary never invents data', () => {
   assert.equal(heartSummary(undefined).text, '—');
   assert.equal(heartSummary({ min: 0, max: 0, sum: 0, count: 0 }).text, '—');
   assert.equal(heartSummary({ min: 60, max: 120, sum: 270, count: 3 }).text, '60 / 90 / 120 bpm');
+});
+
+test('generated cheers exclude echoed seeds, deduplicate and keep older variations', () => {
+  assert.deepEqual(mergeGeneratedCheers('Original note', [' Original note ', 'Fresh', 'fresh', ' '], ['Older', 'Fresh']),
+    ['Fresh', 'Older']);
+  assert.equal(mergeGeneratedCheers('Seed', Array.from({ length: 40 }, (_, i) => `Note ${i}`)).length, 32);
+  assert.deepEqual(mergeGeneratedCheers('Seed', ['seed']), []);
 });

@@ -88,6 +88,7 @@ export default function ViewingSessionTimer({
   const cheerLines = celebrationLinesFrom(celebrationLines, DEFAULT_CONGRATS_TEXT);
   const cheerLinesRef = useRef(cheerLines);
   cheerLinesRef.current = cheerLines;
+  const cheerLinesKey = JSON.stringify(cheerLines);
   const activeId = store.active?.id ?? null;
   const currentMinute = Math.floor(liveElapsed / 60_000);
   useEffect(() => {
@@ -104,9 +105,10 @@ export default function ViewingSessionTimer({
       cheerBaseline.current.minute = next;
       setCheer({ minute: next, text: celebrationLineForMinute(cheerLinesRef.current, next) });
     } else {
-      setCheer((previous) => previous ?? { minute: currentMinute, text: celebrationLineForMinute(cheerLinesRef.current, currentMinute) });
+      const text = celebrationLineForMinute(cheerLinesRef.current, currentMinute);
+      setCheer((previous) => previous?.text === text && previous.minute === currentMinute ? previous : { minute: currentMinute, text });
     }
-  }, [activeId, currentMinute, playingLive, showMinuteCheers]);
+  }, [activeId, currentMinute, playingLive, showMinuteCheers, cheerLinesKey]);
   const [generateError, setGenerateError] = useState('');
 
   if (!visible && !celebration && !milestone && !cheer && !leaderboardVisible && !finishRecap) return null;

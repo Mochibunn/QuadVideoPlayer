@@ -217,6 +217,17 @@ export function parsePlayerRewards(raw: string | null): PlayerRewardsSettings {
 }
 
 /** Celebration lines from free text or a provided list; never empty. */
+export function mergeGeneratedCheers(seed: string, incoming: readonly string[], previous: readonly string[] = []): string[] {
+  const seen = new Set(messagesForCongratText(seed).map((line) => line.trim().toLowerCase()));
+  return [...incoming, ...previous].flatMap((raw) => {
+    const line = raw.trim().slice(0, 140);
+    const key = line.toLowerCase();
+    if (!line || seen.has(key)) return [];
+    seen.add(key);
+    return [line];
+  }).slice(0, 32);
+}
+
 export function celebrationLinesFrom(lines: readonly string[] | undefined, seedText: string): string[] {
   const provided = (lines ?? []).map((line) => line.trim().slice(0, 140)).filter(Boolean);
   return provided.length ? provided : messagesForCongratText(seedText);

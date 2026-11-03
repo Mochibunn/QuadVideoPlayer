@@ -74,7 +74,7 @@ import { pickMediaFiles } from '@/lib/media-picker';
 import { DEFAULT_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
 import { readDownloadsVideos } from '@/lib/downloads-library';
 import { getVideoAudioMode } from '@/lib/audio-mode';
-import { congratulationsFor, effectiveBorderThickness, isBorderUnlocked, isThemeUnlocked, messagesForCongratText, themeUnlockLevels } from '@/lib/player-rewards';
+import { celebrationLineForMinute, congratulationsFor, effectiveBorderThickness, isBorderUnlocked, isThemeUnlocked, mergeGeneratedCheers, messagesForCongratText, themeUnlockLevels } from '@/lib/player-rewards';
 import { hasVideoExtension, isVideoFile, mediaPlaybackError, videoSourceForUri } from '@/lib/media-formats';
 import {
   applyVideoWatchHistory, formatLastPlayed, pickInitialVideos, pickNextVideo,
@@ -979,10 +979,6 @@ export default function QuadVideoPlayerScreen() {
   const frameThickness = playerRewards.settings.borderEnabled &&
     isBorderUnlocked(playerRewards.settings.borderStyle, viewing.xp, playerRewards.settings.allRewardsUnlocked)
     ? effectiveBorderThickness(playerRewards.settings.borderStyle, playerRewards.settings.borderThickness) : 0;
-  const congratulationsMessage = congratulationsFor(
-    playerRewards.settings.congratsText,
-    viewing.milestone ?? viewing.celebration ?? 0,
-  );
   const playExtras = usePlayExtrasSettings();
   const generateStoryQuest = useCallback(
     () => localStory.generateStoryQuest(playerRpg.state),
@@ -991,29 +987,43 @@ export default function QuadVideoPlayerScreen() {
   const [generatedCheers, setGeneratedCheers] = useState<string[]>([]);
   const [generatingCheers, setGeneratingCheers] = useState(false);
   const cheersSeed = playerRewards.settings.congratsText;
+  const cheersSeedRef = useRef(cheersSeed);
+  cheersSeedRef.current = cheersSeed;
+  const cheerRevision = useRef(0);
+  const cheerLines = generatedCheers.length ? [...generatedCheers, ...messagesForCongratText(cheersSeed)] : messagesForCongratText(cheersSeed);
+  const congratulationsMessage = generatedCheers.length
+    ? celebrationLineForMinute(generatedCheers, Math.max(0, Math.floor((viewing.milestone ?? viewing.celebration ?? 0) / 600_000) - 1))
+    : congratulationsFor(cheersSeed, viewing.milestone ?? viewing.celebration ?? 0);
   const cheerStorageKey = 'goon-quest.generated-celebrations.v1';
   useEffect(() => {
     let active = true;
+    const revision = ++cheerRevision.current;
+    setGeneratedCheers([]);
     AsyncStorage.getItem(cheerStorageKey).then((raw) => {
-      if (!raw || !active) return;
+      if (!raw || !active || revision !== cheerRevision.current) return;
       const saved = JSON.parse(raw) as { seed?: string; lines?: unknown[] };
       if (saved.seed === cheersSeed && Array.isArray(saved.lines)) setGeneratedCheers(saved.lines
         .filter((line): line is string => typeof line === 'string' && line.trim().length > 0).slice(0, 32).map((line) => line.slice(0, 220)));
       else setGeneratedCheers([]);
-    }).catch(() => { if (active) setGeneratedCheers([]); });
+    }).catch(() => { if (active && revision === cheerRevision.current) setGeneratedCheers([]); });
     return () => { active = false; };
   }, [cheersSeed]);
   const generateCheers = useCallback(async () => {
     if (!localStory.modelLoaded) throw new Error('Load a local storyteller model first.');
     if (localStory.busy || generatingCheers) throw new Error('The storyteller is busy. Try again once it finishes.');
+    ++cheerRevision.current;
     setGeneratingCheers(true);
     try {
-      const lines = await localStory.generateCelebrations(cheersSeed);
-      if (!lines.length) throw new Error('The model did not return usable encouragement. Try again.');
+      const incoming = await localStory.generateCelebrations(cheersSeed);
+      if (cheersSeedRef.current !== cheersSeed) throw new Error('Your seed text changed. Generate again for the new text.');
+      const fresh = mergeGeneratedCheers(cheersSeed, incoming);
+      if (!fresh.length) throw new Error('No new usable notes returned. Check the storyteller error or try generating again.');
+      const lines = mergeGeneratedCheers(cheersSeed, fresh, generatedCheers);
+      if (!fresh.some((line) => !generatedCheers.includes(line))) throw new Error('The model repeated saved notes. Try again for new ones.');
       await AsyncStorage.setItem(cheerStorageKey, JSON.stringify({ seed: cheersSeed, lines }));
-      setGeneratedCheers(lines);
+      if (cheersSeedRef.current === cheersSeed) setGeneratedCheers(lines);
     } finally { setGeneratingCheers(false); }
-  }, [cheersSeed, generatingCheers, localStory.busy, localStory.generateCelebrations, localStory.modelLoaded]);
+  }, [cheersSeed, generatedCheers, generatingCheers, localStory.busy, localStory.generateCelebrations, localStory.modelLoaded]);
   const lastSpokenCelebration = useRef<string | null>(null);
   const speakDialogue = useCallback((message: string) => {
     if (!playExtras.ready || !playExtras.settings.speakDialogue || !message.trim()) return;
@@ -1780,7 +1790,7 @@ export default function QuadVideoPlayerScreen() {
           onClose={() => setStandingsVisible(false)}
           showButton={false}
           showMinuteCheers={playerRewards.settings.minuteCheersEnabled}
-          celebrationLines={[...messagesForCongratText(cheersSeed), ...generatedCheers]}
+          celebrationLines={cheerLines}
           onGenerateCelebrations={generateCheers}
           generatingCelebrations={generatingCheers || localStory.busy !== null}
           store={viewing.store}
@@ -2041,6 +2051,7 @@ export default function QuadVideoPlayerScreen() {
                     <PlayerRewardsSettings settings={playerRewards.settings} update={playerRewards.update}
                       xp={viewing.xp} ready={playerRewards.ready} error={playerRewards.error}
                       onGenerateCelebrations={generateCheers}
+                      generatedCelebrations={generatedCheers}
                       generatingCelebrations={generatingCheers || localStory.busy !== null} />
                     <PlayerRpgDashboard state={playerRpg.state} ready={playerRpg.ready}
                       error={playerRpg.error} onRetry={() => void playerRpg.retry()}

@@ -30,6 +30,7 @@ export default function PlayerRewardsSettings({
   error,
   onGenerateCelebrations,
   generatingCelebrations = false,
+  generatedCelebrations = [],
 }: {
   settings: PlayerRewardsSettings;
   update: (patch: Partial<PlayerRewardsSettings>) => void;
@@ -39,6 +40,7 @@ export default function PlayerRewardsSettings({
   /** Optional: regenerates the cheer lines (e.g. via the local story model). */
   onGenerateCelebrations?: () => Promise<void>;
   generatingCelebrations?: boolean;
+  generatedCelebrations?: readonly string[];
 }) {
   const colors = useColors();
   const level = levelForExperience(xp);
@@ -334,6 +336,14 @@ export default function PlayerRewardsSettings({
         </Pressable>
       )}
       {!!generateError && <Text style={[styles.error, { color: colors.destructive }]}>{generateError}</Text>}
+      <Text accessibilityLiveRegion="polite" style={[styles.description, { color: colors.mutedForeground }]}>
+        {generatingCelebrations ? 'The local model is writing notes…' : generatedCelebrations.length
+          ? `${generatedCelebrations.length} AI notes saved. These play before your original notes, including at milestones.`
+          : 'No AI notes saved for this seed. Load a local model, then tap Generate new cheers. Generation is manual.'}
+      </Text>
+      {generatedCelebrations.slice(0, 3).map((line, index) => (
+        <Text key={`${index}-${line}`} style={[styles.description, { color: colors.foreground }]}>{line}</Text>
+      ))}
       {!!error && <Text style={[styles.error, { color: colors.destructive }]}>{error}</Text>}
     </View>
   );
