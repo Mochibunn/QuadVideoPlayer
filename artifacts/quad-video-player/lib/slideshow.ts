@@ -4,12 +4,12 @@ export type SlideshowInstance = {
   sourceId?: string;
   opacity: number; x: number; y: number; bounce: boolean; shuffle: boolean; seconds: number; speed: number;
 };
-export type Slideshow = { enabled: boolean; pool: SlideshowImage[]; instances: SlideshowInstance[] };
+export type Slideshow = { enabled: boolean; avoidOverlap: boolean; pool: SlideshowImage[]; instances: SlideshowInstance[] };
 export const DEFAULT_INSTANCE: SlideshowInstance = {
   id: 'slideshow-1', enabled: true, index: 0, scale: 30, opacity: 0.8,
   x: 50, y: 50, bounce: true, shuffle: false, seconds: 8, speed: 20,
 };
-export const DEFAULT_SLIDESHOW: Slideshow = { enabled: false, pool: [], instances: [{ ...DEFAULT_INSTANCE }] };
+export const DEFAULT_SLIDESHOW: Slideshow = { enabled: false, avoidOverlap: false, pool: [], instances: [{ ...DEFAULT_INSTANCE }] };
 function bounded(value: unknown, fallback: number, min: number, max: number) {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
 }
@@ -43,7 +43,7 @@ export function parseSlideshow(value: unknown): Slideshow {
       seconds: Math.round(bounded(item.seconds, 8, 1, 60)), speed: bounded(item.speed, 20, 5, 80),
     };
   });
-  return { enabled: v.enabled === true, pool, instances };
+  return { enabled: v.enabled === true, avoidOverlap: v.avoidOverlap === true, pool, instances };
 }
 export function addSlideshow(s: Slideshow): Slideshow {
   let number = s.instances.length + 1;

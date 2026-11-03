@@ -86,6 +86,12 @@ export default function SlideshowPanel({ visible, onClose, onManageSources }: {
                 <SettingSwitch label="Show all image slideshows" value={group.enabled} disabled={picking}
                   onValueChange={(enabled) => setSlideshow((old) => ({ ...old, enabled }))} />
               </View>
+              <View style={styles.row}>
+                {text('Bubble collision mode')}
+                <SettingSwitch label="Make images and enemies bounce off each other" value={group.avoidOverlap} disabled={picking}
+                  onValueChange={(avoidOverlap) => setSlideshow((old) => ({ ...old, avoidOverlap }))} />
+              </View>
+              {group.avoidOverlap && text('Images and combat enemies move as screen bubbles, bounce off each other, and reflect off the screen edges. Slideshow images shrink automatically when you have several active. This overrides individual DVD bounce and AI-directed enemy movement while enabled.', true)}
               <Pressable accessibilityRole="button" disabled={picking} onPress={addInstance}
                 style={[styles.button, { backgroundColor: colors.primary }]}>
                 <Text style={{ color: colors.primaryForeground }}>Add bouncing slideshow</Text>

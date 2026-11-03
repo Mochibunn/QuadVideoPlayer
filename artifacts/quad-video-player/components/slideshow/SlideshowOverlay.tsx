@@ -5,6 +5,7 @@ import { useSlideshow, type SlideshowRuntime } from '@/hooks/useSlideshow';
 import { useColors } from '@/hooks/useColors';
 import { useOnlineSources } from '@/hooks/useOnlineSources';
 import { bounceKeyframes, nextSlideshowIndex, shouldPrefetchSlideshowPage, slideshowBounds, type SlideshowImage, type SlideshowInstance } from '@/lib/slideshow';
+import { bubbleWorld } from '@/lib/bubble-physics';
 
 const ONLINE_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -16,6 +17,11 @@ export default function SlideshowOverlay({ active }: { active: boolean }) {
   const activeSourceKey = active && s.enabled
     ? [...new Set(s.instances.filter((item) => item.enabled && item.sourceId).map((item) => item.sourceId!))].join('\u0000')
     : '';
+  const visibleInstances = active && s.enabled ? s.instances.filter((item) => item.enabled) : [];
+  const collidableImageCount = visibleInstances.filter((item) => item.sourceId
+    ? (online.results[item.sourceId]?.images.length ?? 0) > 0 : s.pool.length > 0).length;
+  const collisionScale = s.avoidOverlap && collidableImageCount > 1
+    ? Math.min(1, 0.9 / Math.sqrt(collidableImageCount)) : 1;
   useEffect(() => {
     if (!activeSourceKey) return;
     const sourceIds = activeSourceKey.split('\u0000');
@@ -28,11 +34,11 @@ export default function SlideshowOverlay({ active }: { active: boolean }) {
   return (
     <View pointerEvents="none" style={styles.overlay}
       onLayout={(event) => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}>
-      {active && s.enabled && size.width > 0 && s.instances.filter((item) => item.enabled).map((instance) => (
+      {active && s.enabled && size.width > 0 && visibleInstances.map((instance) => (
         instance.sourceId ? (
           <React.Fragment key={`${revision}:${instance.id}:${instance.sourceId}`}>
             {online.results[instance.sourceId]?.images.length ? (
-              <SlideshowLayer instance={instance} pool={online.results[instance.sourceId].images}
+              <SlideshowLayer instance={instance} avoidOverlap={s.avoidOverlap} collisionScale={collisionScale} pool={online.results[instance.sourceId].images}
                 width={size.width} height={size.height} runtime={runtime} />
             ) : (
               <View style={{ position: 'absolute', left: 12, top: 12 + s.instances.indexOf(instance) * 26 }}>
@@ -44,15 +50,15 @@ export default function SlideshowOverlay({ active }: { active: boolean }) {
               </View>
             )}
           </React.Fragment>
-        ) : <SlideshowLayer key={`${revision}:${instance.id}:local`} instance={instance} pool={s.pool}
+        ) : <SlideshowLayer key={`${revision}:${instance.id}:local`} instance={instance} avoidOverlap={s.avoidOverlap} collisionScale={collisionScale} pool={s.pool}
           width={size.width} height={size.height} runtime={runtime} />
       ))}
     </View>
   );
 }
 
-const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, height, runtime }: {
-  instance: SlideshowInstance; pool: SlideshowImage[]; width: number; height: number;
+const SlideshowLayer = memo(function SlideshowLayer({ instance: s, avoidOverlap, collisionScale, pool, width, height, runtime }: {
+  instance: SlideshowInstance; avoidOverlap: boolean; collisionScale: number; pool: SlideshowImage[]; width: number; height: number;
   runtime: React.RefObject<Map<string, SlideshowRuntime>>;
 }) {
   const online = useOnlineSources();
@@ -103,7 +109,7 @@ const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, 
   }, [index, steps, pool.length, s.sourceId, sourceResult?.hasMore, sourceResult?.loading, online.refresh]);
   const [failedUri, setFailedUri] = useState<string | null>(null);
   const position = useRef(new Animated.ValueXY()).current;
-  const bounds = slideshowBounds(width, height, s);
+  const bounds = slideshowBounds(width, height, avoidOverlap ? { ...s, scale: s.scale * collisionScale } : s);
   const image = pool[index % Math.max(1, pool.length)];
   useEffect(() => { setFailedUri(null); }, [image?.uri, s.enabled]);
   useEffect(() => {
@@ -113,8 +119,18 @@ const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, 
   }, [pool.length, s.seconds, s.sourceId, sourceResult?.hasMore, advance]);
   useEffect(() => {
     position.stopAnimation();
+    if (!image) return;
+    if (avoidOverlap) {
+      const speed = Math.max(35, s.speed * 5);
+      const angle = Math.random() * Math.PI * 2;
+      return bubbleWorld.register({
+        id: `slideshow:${s.id}`, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
+        minX: 0, maxX: width, minY: 0, maxY: height,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      }, (next) => position.setValue(next));
+    }
     position.setValue({ x: 0, y: 0 });
-    if (!s.bounce || !image) return;
+    if (!s.bounce) return;
     const animateAxis = (value: Animated.Value, start: number, max: number, speed: number) => {
       if (max <= 0) return null;
       return Animated.loop(Animated.timing(value, {
@@ -128,7 +144,8 @@ const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, 
     ].filter((animation): animation is Animated.CompositeAnimation => animation !== null);
     animations.forEach((animation) => animation.start());
     return () => { animations.forEach((animation) => animation.stop()); position.stopAnimation(); };
-  }, [s.bounce, s.speed, s.x, s.y, s.scale, width, height, !!image, position]);
+  }, [avoidOverlap, collisionScale, s.bounce, s.id, s.speed, s.x, s.y, s.scale, width, height,
+    bounds.x, bounds.y, bounds.width, bounds.height, !!image, position]);
 
   return (
     <>
@@ -136,8 +153,8 @@ const SlideshowLayer = memo(function SlideshowLayer({ instance: s, pool, width, 
         <Animated.View style={{
           position: 'absolute', width: bounds.width, height: bounds.height, opacity: s.opacity,
           transform: [
-            { translateX: s.bounce ? position.x.interpolate(bounceKeyframes(bounds.x, bounds.maxX)) : bounds.x },
-            { translateY: s.bounce ? position.y.interpolate(bounceKeyframes(bounds.y, bounds.maxY)) : bounds.y },
+            { translateX: avoidOverlap ? position.x : s.bounce ? position.x.interpolate(bounceKeyframes(bounds.x, bounds.maxX)) : bounds.x },
+            { translateY: avoidOverlap ? position.y : s.bounce ? position.y.interpolate(bounceKeyframes(bounds.y, bounds.maxY)) : bounds.y },
           ],
         }}>
           {failedUri !== image.uri && (

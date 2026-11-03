@@ -196,3 +196,31 @@ mtime_ms = 1793701598142
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/1ec06467-ad23-4f0e-9a90-996fdaa31218/f76dd569-124a-4b73-9b20-1cb3637a3784"
 storage_version_token = "1793701620258405"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "0F_Zyf0kKUo7DO93D-4RE"
+uri = "file://generated-artifacts/android/goon-quest-v1.18.2-phone-tablet-download.zip"
+type = "unspecified"
+title = "Goon Quest 1.18.2 — Phone / Tablet"
+description = "Extract the ZIP and install the APK over your current app; do not uninstall. Adds optional bubble collisions for slideshow images and combat enemies."
+logical_id = "8e1de518-9c54-4c6d-bbe6-7bd755e42c07"
+content_hash = "sha256:8228edb52126ec2ce26d625eeb66c4d6c7e6a90aa5b691041b3dfdc2ee02ef7c"
+size = 61108177
+mtime_ms = 1793702919894
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/8e1de518-9c54-4c6d-bbe6-7bd755e42c07/f4963457-643b-4492-ae1b-280d236874a9"
+storage_version_token = "1793702940528752"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "9y8ELGMuHexinj4CJTNa7"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.18.2.apk"
+type = "unspecified"
+title = "Goon Quest Link 1.18.2 — Watch"
+description = "Matching companion build; no watch-side changes are required for bubble mode."
+logical_id = "7d6072af-6b27-4fb5-8cbe-144aa101339a"
+content_hash = "sha256:ef9924c24ae53a89dc0b1af6bddeb8d409cc38c6e4ab2fa40ee065290b24b898"
+size = 4223466
+mtime_ms = 1793702908734
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/7d6072af-6b27-4fb5-8cbe-144aa101339a/4578653b-0307-4207-b8a1-a72a8769b729"
+storage_version_token = "1793702941325580"
+content_type = "application/octet-stream"

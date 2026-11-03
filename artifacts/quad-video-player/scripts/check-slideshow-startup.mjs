@@ -222,6 +222,7 @@ test('real overlay layers advance independently and stop timers/animations on re
     '@/hooks/useOnlineSources': { useOnlineSources: () => ({ sources: [], results: {}, ensureLoaded() {} }) },
     '@/hooks/useColors': { useColors: () => ({ mutedForeground: 'muted' }) },
     '@/lib/slideshow': slide,
+    '@/lib/bubble-physics': { bubbleWorld: { register() { return () => {}; } } },
   };
   const source = await readFile(new URL('../components/slideshow/SlideshowOverlay.tsx', import.meta.url), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: {

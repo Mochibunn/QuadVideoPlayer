@@ -8,6 +8,17 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.18.2',
+    title: 'Bubble Pop Bumper Pals',
+    date: 'November 3, 2026',
+    summary: 'Images and foes can now ricochet around the screen without stacking on top of each other.',
+    changes: [
+      'Added an optional Bubble collision mode in slideshow settings for bouncing slideshow images and combat enemies.',
+      'Sprites collide with one another and reflect from screen edges; the mode is off by default.',
+      'Collision mode temporarily replaces individual DVD bounce and AI-directed enemy paths; turn it off to restore them.',
+    ],
+  },
+  {
     version: '1.18.1',
     title: 'Cheerful Pins & Paw Prints',
     date: 'November 3, 2026',

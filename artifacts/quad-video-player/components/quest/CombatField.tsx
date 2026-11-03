@@ -10,6 +10,8 @@ import {
   type MotionBounds, type MotionDirective,
 } from '@/lib/enemy-motion';
 import type { EnemySpeechEvent } from '@/lib/combat-ai';
+import { bubbleWorld } from '@/lib/bubble-physics';
+import { useSlideshow } from '@/hooks/useSlideshow';
 
 type SpriteAnchor = { x: number; y: number; size: number; final: boolean };
 
@@ -192,7 +194,7 @@ function TauntBubble({
 }
 
 function EnemySprite({
-  enemy, size, bounds, index, count, paused, calm, controlScheme, onHit, onImageFailed,
+  enemy, size, bounds, index, count, paused, calm, avoidOverlap, controlScheme, onHit, onImageFailed,
   directive, taunt, positions, fieldWidth, fieldHeight,
 }: {
   directive?: MotionDirective;
@@ -207,6 +209,7 @@ function EnemySprite({
   count: number;
   paused: boolean;
   calm: boolean;
+  avoidOverlap: boolean;
   controlScheme: CombatControlScheme;
   onHit: (id: string) => void;
   onImageFailed: (id: string, uri: string) => void;
@@ -262,7 +265,7 @@ function EnemySprite({
 
   // Independent wandering path.
   useEffect(() => {
-    if (paused || dead) return;
+    if (paused || dead || avoidOverlap) return;
     let cancelled = false;
     let hold: ReturnType<typeof setTimeout> | null = null;
     let animation: Animated.CompositeAnimation | null = null;
@@ -301,7 +304,27 @@ function EnemySprite({
         reportRef.current(position.current, deadRef.current);
       });
     };
-  }, [calm, dead, paused, rotation, xy]);
+  }, [avoidOverlap, calm, dead, paused, rotation, xy]);
+
+  // In shared bubble mode, the global physics world handles both slideshow images and enemies.
+  useEffect(() => {
+    if (!avoidOverlap || paused || dead || !loaded) return;
+    const initial = clampToBounds(position.current, bounds);
+    position.current = initial;
+    xy.setValue(initial);
+    const angle = Math.random() * Math.PI * 2;
+    const speed = calm ? 55 + Math.random() * 45 : 115 + Math.random() * 110;
+    return bubbleWorld.register({
+      id: `enemy:${enemy.id}`, x: initial.x, y: initial.y, width: size, height: size,
+      minX: bounds.minX, maxX: bounds.maxX + size,
+      minY: bounds.minY, maxY: bounds.maxY + size,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+    }, (next) => {
+      position.current = next;
+      xy.setValue(next);
+      reportRef.current(next);
+    });
+  }, [avoidOverlap, paused, dead, loaded, calm, bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, size, enemy.id, xy]);
 
   // BPM pulse (or a gentle breath when no tempo is known).
   useEffect(() => {
@@ -541,6 +564,7 @@ export default function CombatField({
   hud: CombatHudProps;
 }) {
   const colors = useColors();
+  const { slideshow } = useSlideshow();
   const [field, setField] = useState({ width: 0, height: 0 });
   const [collapsed, setCollapsed] = useState(false);
   const onLayout = (event: LayoutChangeEvent) => {
@@ -560,7 +584,8 @@ export default function CombatField({
     <View pointerEvents="box-none" style={styles.field} onLayout={onLayout}>
       {field.width > 0 && enemies.map((enemy, index) => (
         <EnemySprite key={enemy.id} enemy={enemy} size={size} bounds={bounds} index={index} count={enemies.length}
-          paused={paused} calm={calm} controlScheme={controlScheme} onHit={onHit} onImageFailed={onImageFailed}
+          paused={paused} calm={calm} avoidOverlap={slideshow.avoidOverlap}
+          controlScheme={controlScheme} onHit={onHit} onImageFailed={onImageFailed}
           directive={directives[enemy.id]} taunt={taunts.get(enemy.id)} positions={positions} fieldWidth={field.width} fieldHeight={field.height} />
       ))}
       <SpeechLayer speech={speech} positions={positions} liveIds={liveIds} />
