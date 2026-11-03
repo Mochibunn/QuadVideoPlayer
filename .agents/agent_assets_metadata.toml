@@ -168,3 +168,31 @@ mtime_ms = 1793669790363
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/256895dc-8507-49e1-b3db-d9db1e67fba0/d31643c6-ad46-4c75-963e-a72d3775aaec"
 storage_version_token = "1793669807901559"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "e7JVZ8YMo8q7U_2OVmqNP"
+uri = "file://generated-artifacts/android/goon-quest-v1.18.1-phone-tablet-download.zip"
+type = "unspecified"
+title = "Goon Quest 1.18.1 — Phone / Tablet"
+description = "Extract the ZIP, then install the APK over your existing Goon Quest app. Includes cheer fixes and clearer quest/honor pins."
+logical_id = "d10af598-fb1e-4921-9e75-ab3a6cf76e19"
+content_hash = "sha256:ba1afae2d553c628e25aaa19bf6b846d2da6313b484aafd94427f9f0e8f463d9"
+size = 61109547
+mtime_ms = 1793701609690
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/d10af598-fb1e-4921-9e75-ab3a6cf76e19/41e9ea0a-e07e-4d5d-808e-0403717b1869"
+storage_version_token = "1793701619468723"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "3V4kNWOaLUJ5BN0G2wwFN"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.18.1.apk"
+type = "unspecified"
+title = "Goon Quest Link 1.18.1 — Watch"
+description = "Matching Wear OS companion APK. Optional for this update; the watch connection protocol is unchanged."
+logical_id = "1ec06467-ad23-4f0e-9a90-996fdaa31218"
+content_hash = "sha256:6d6c38d640eda11aef37ecd06dd1ea5763cb51b22f3c72362c5bb6567f988788"
+size = 4223462
+mtime_ms = 1793701598142
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/1ec06467-ad23-4f0e-9a90-996fdaa31218/f76dd569-124a-4b73-9b20-1cb3637a3784"
+storage_version_token = "1793701620258405"
+content_type = "application/octet-stream"

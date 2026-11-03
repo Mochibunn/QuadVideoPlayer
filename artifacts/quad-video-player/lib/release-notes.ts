@@ -8,6 +8,19 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.18.1',
+    title: 'Cheerful Pins & Paw Prints',
+    date: 'November 3, 2026',
+    summary: 'Fresh guild cheers get their turn, and progress pins are easier to find.',
+    changes: [
+      'Generated cheer notes now play before seed notes and appear in ten-minute milestone messages.',
+      'The active minute cheer refreshes after generation without waiting for the next minute.',
+      'Rewards settings show saved AI note counts and previews; generation remains manual with a loaded local model.',
+      'Deduplicate generated notes, reject seed echoes and repeated batches, and retain older saved variations.',
+      'Quest and honor progress controls have visible Pin/Pinned labels and larger touch targets.',
+    ],
+  },
+  {
     version: '1.18.0',
     title: 'Chatty Paws & Rainbow Raids',
     date: 'November 3, 2026',
