@@ -280,3 +280,45 @@ mtime_ms = 1793709194774
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/64d63b3e-f500-4c3c-8041-6e9a92252340/c5ab0a19-b31c-48ad-8543-c1e65ad3ba05"
 storage_version_token = "1793709523866617"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "XKOy_2mOqwYS10vWFNROr"
+uri = "file://generated-artifacts/android/goon-quest-v1.18.5-phone-tablet-download.zip"
+type = "unspecified"
+title = "Goon Quest v1.18.5 — Phone / Tablet"
+description = "Extract the ZIP, then install the arm64 APK. Includes the auto-chat fix and video playback diagnostic report."
+logical_id = "d812741c-6164-48c3-9de2-10dcda95c592"
+content_hash = "sha256:e0c334532b79e701e317e1175263cecae3c26222753b4ba67c17795bc45361f4"
+size = 61309105
+mtime_ms = 1793711123001
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/d812741c-6164-48c3-9de2-10dcda95c592/31934749-a9e3-44e1-9cea-3ffb6416380d"
+storage_version_token = "1793711182812194"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "u8RQuck_brFOQYPuswgy4"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.18.5.apk"
+type = "unspecified"
+title = "Goon Quest Link v1.18.5 — Watch APK"
+description = "Install on the watch only. Version code 39; same application ID and signing certificate as the previous build."
+logical_id = "8eb5b2f1-977d-422e-890a-b0557db05f16"
+content_hash = "sha256:1dc6b5d87a0b3e70c4ca85e8761fd904dfd62c95a2bf06ab7e6677b72b91bd3d"
+size = 4250601
+mtime_ms = 1793711055785
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/8eb5b2f1-977d-422e-890a-b0557db05f16/95ab4566-7304-4836-8076-9bd8b0bd71bf"
+storage_version_token = "1793711183681938"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "gyrGfdbRnGcv_NmE9Ngis"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.18.5-install-kit.zip"
+type = "unspecified"
+title = "Optional Watch ADB Install Kit"
+description = "Contains the same watch APK plus instructions and a watch-target-checking installer script. Uses non-streaming installation and preserves app data."
+logical_id = "bb9420c1-cf8b-4743-9a03-e8753eed52aa"
+content_hash = "sha256:586eb55db67763b789c04f26ac2aac342bcce5f54d263e6b48a354a3545a8131"
+size = 1523455
+mtime_ms = 1793711171209
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/bb9420c1-cf8b-4743-9a03-e8753eed52aa/c8c800ba-d8e1-442b-99d4-18afc25c5d18"
+storage_version_token = "1793711184409540"
+content_type = "application/octet-stream"

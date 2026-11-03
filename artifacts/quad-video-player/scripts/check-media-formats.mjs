@@ -60,7 +60,9 @@ test('folder discovery is case insensitive and uses actual filename extensions',
   assert.equal(media.hasVideoExtension('movie.mkv.backup'), false);
 });
 
-test('playback errors explain codec limitations and preserve native details', () => {
-  assert.match(media.mediaPlaybackError(), /codec not supported/);
+test('playback errors distinguish lost access from decoder failures without guessing', () => {
+  assert.match(media.mediaPlaybackError(), /check file access/);
+  assert.match(media.mediaPlaybackError('SecurityException: Permission denied'), /Select this file again/);
+  assert.match(media.mediaPlaybackError('Decoder initialization failed'), /could not decode/);
   assert.match(media.mediaPlaybackError('Decoder initialization failed'), /Decoder initialization failed/);
 });

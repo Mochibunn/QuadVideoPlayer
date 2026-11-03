@@ -2,7 +2,7 @@
   "expo": {
     "name": "Goon Quest",
     "slug": "quad-video-player",
-    "version": "1.18.4",
+    "version": "1.18.5",
     "platforms": [
       "ios",
       "android"
@@ -19,7 +19,7 @@
       "supportsTablet": false
     },
     "android": {
-      "versionCode": 38,
+      "versionCode": 39,
       "package": "com.mochi.quadvideoplayer",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/goon-quest-icon.png",

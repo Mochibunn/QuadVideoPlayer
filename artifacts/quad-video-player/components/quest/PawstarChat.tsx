@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { appendChat, cleanChatText, type ChatMessage } from '@/lib/pawstar-chat';
 import { MAX_CHAT_ROLE_LENGTH } from '@/lib/guild-ledger';
+import { startAutoChatLoop } from '@/lib/auto-chat-loop';
 
 type ChatEntry = ChatMessage & { hidden?: boolean };
 
@@ -42,48 +43,50 @@ export default function PawstarChat({
   const [notice, setNotice] = useState('');
   const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const sending = useRef(false);
+  const latest = useRef({ messages, modelReady, modelBusy, modelError, onSend, onExchange, rolePrompt, petName });
+  latest.current = { messages, modelReady, modelBusy, modelError, onSend, onExchange, rolePrompt, petName };
 
   useEffect(() => { if (!roleOpen) setRoleDraft(rolePrompt); }, [roleOpen, rolePrompt]);
 
   useEffect(() => {
-    if (!visible || !autoTalk || !modelReady || modelBusy || waiting || !onSend) return;
-    const timer = setTimeout(() => {
-      if (sending.current) return;
-      sending.current = true;
-      setWaiting(true);
-      setNotice('');
-      const prompt = messages.length
-        ? 'Continue this conversation with one short, new in-character thought. Keep it connected to what was said and avoid repeating earlier lines.'
-        : `Start a friendly, in-character conversation as ${petName}. Say one short opening line.`;
-      const nextHistory: ChatEntry[] = [
-        ...messages,
-        { role: 'user' as const, content: prompt, hidden: true },
-      ].slice(-40);
-      setMessages(nextHistory);
-      void onSend(nextHistory, rolePrompt)
-        .then((reply) => {
-          if (reply) {
-            setMessages((current) => [...current, { role: 'assistant' as const, content: reply }].slice(-40));
-            onExchange?.();
-          } else {
-            setNotice(modelError || `${petName} could not continue. Check the local model status.`);
-            setAutoTalk(false);
-          }
-        })
-        .catch((error: unknown) => {
-          setNotice(error instanceof Error ? error.message : `${petName} could not continue.`);
-          setAutoTalk(false);
-        })
-        .finally(() => {
+    if (!visible || !autoTalk) return;
+    let active = true;
+    const stop = startAutoChatLoop({
+      ready: () => {
+        const current = latest.current;
+        return current.modelReady && !current.modelBusy && !sending.current && !!current.onSend;
+      },
+      run: async () => {
+        const current = latest.current;
+        if (!current.onSend) return;
+        sending.current = true;
+        setWaiting(true);
+        setNotice('');
+        const prompt = current.messages.length
+          ? 'Continue this conversation with one short, new in-character thought. Keep it connected to what was said and avoid repeating earlier lines.'
+          : `Start a friendly, in-character conversation as ${current.petName}. Say one short opening line.`;
+        const nextHistory: ChatEntry[] = [
+          ...current.messages, { role: 'user' as const, content: prompt, hidden: true },
+        ].slice(-40);
+        setMessages(nextHistory);
+        try {
+          const reply = await current.onSend(nextHistory, current.rolePrompt);
+          if (!active) return;
+          if (!reply) throw new Error(latest.current.modelError || `${current.petName} could not continue. Check the local model status.`);
+          setMessages((history) => [...history, { role: 'assistant' as const, content: reply }].slice(-40));
+          latest.current.onExchange?.();
+        } finally {
           sending.current = false;
           setWaiting(false);
-        });
-    }, 30_000);
-    return () => clearTimeout(timer);
-  }, [
-    autoTalk, messages, modelBusy, modelError, modelReady, onExchange, onSend,
-    petName, rolePrompt, visible, waiting,
-  ]);
+        }
+      },
+      onError: (error) => {
+        setNotice(error instanceof Error ? error.message : `${latest.current.petName} could not continue.`);
+        setAutoTalk(false);
+      },
+    });
+    return () => { active = false; stop(); };
+  }, [autoTalk, visible]);
 
   if (!visible) return null;
 
@@ -122,7 +125,8 @@ export default function PawstarChat({
 
   const panelWidth = Math.min(380, width - 24);
   const listHeight = Math.max(72, Math.min(220, height * 0.32));
-  const status = !modelReady ? 'Model not loaded' : waiting ? `${petName} is typing` : modelBusy ? 'Model busy' : 'Local model';
+  const status = !modelReady ? 'Model not loaded' : waiting ? `${petName} is typing` :
+    modelBusy ? 'Model busy' : autoTalk ? 'Auto · 30s cooldown' : 'Local model';
 
   return (
     <View pointerEvents="box-none" style={styles.layer}>

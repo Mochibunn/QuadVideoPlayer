@@ -49,7 +49,7 @@ Continuous Pawstar chat is an explicit in-chat option and must stop generating w
 
 **Why:** The player asked for ongoing dialogue, but should remain in control of local-model activity and playback resources.
 
-**How to apply:** Keep auto-chat off by default, generate one bounded message at a time on a cooldown, and stop on model errors.
+**How to apply:** Keep auto-chat off by default, generate one bounded message at a time on a cooldown, and stop on model errors. Keep its deadline independent of session-stat renders and changing callback identities: otherwise frequent updates can restart the timer forever.
 
 When expanding persisted RPG state, accept known older save versions and initialize new mechanics without discarding existing progression.
 

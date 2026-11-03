@@ -20,6 +20,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   View,
 } from 'react-native';
@@ -77,6 +78,7 @@ import { getVideoAudioMode } from '@/lib/audio-mode';
 import { mergeGeneratedAchievements, parseGeneratedAchievements, playerAchievements, type PlayerAchievement } from '@/lib/player-achievements';
 import { celebrationLineForMinute, congratulationsFor, effectiveBorderThickness, isBorderUnlocked, isThemeUnlocked, mergeGeneratedCheers, messagesForCongratText, themeUnlockLevels } from '@/lib/player-rewards';
 import { hasVideoExtension, isVideoFile, mediaPlaybackError, videoSourceForUri } from '@/lib/media-formats';
+import { inspectVideoPlayback } from '@/lib/video-diagnostics';
 import {
   applyVideoWatchHistory, formatLastPlayed, pickInitialVideos, pickNextVideo,
   parseVideoWatchHistory, VIDEO_WATCH_HISTORY_KEY,
@@ -292,6 +294,7 @@ function VideoTile({
   const volume = linkedVolume ? sharedVolume : individualVolume;
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [diagnosing, setDiagnosing] = useState(false);
   const [volumeTrackRect, setVolumeTrackRect] = useState({ x: 0, width: 0 });
   const volumeTrackRef = useRef<React.ComponentRef<typeof View>>(null);
   const [playbackProgress, setPlaybackProgress] = useState({ currentTime: 0, duration: 0 });
@@ -549,6 +552,26 @@ function VideoTile({
     }
   };
 
+  const showPlaybackDetails = async () => {
+    if (diagnosing) return;
+    setDiagnosing(true);
+    const inspectedAsset = currentAssetRef.current;
+    try {
+      const details = await inspectVideoPlayback(inspectedAsset.uri);
+      const report = `${inspectedAsset.name}\n\n${details}\n\nNative playback error:\n${errorMessage}`;
+      Alert.alert('Video playback details', report, [
+        { text: 'Close', style: 'cancel' },
+        { text: 'Share report', onPress: () => {
+          void Share.share({ message: report }).catch(() => Alert.alert('Could not share report', report));
+        } },
+      ]);
+    } catch (error) {
+      Alert.alert('Could not inspect video', error instanceof Error ? error.message : String(error));
+    } finally {
+      setDiagnosing(false);
+    }
+  };
+
   return (
     <View
       style={[
@@ -589,6 +612,15 @@ function VideoTile({
             >
               {errorMessage}
             </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Show playback details for stream ${index + 1}`}
+              disabled={diagnosing}
+              onPress={() => void showPlaybackDetails()}
+              style={[styles.retryButton, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.retryText, { color: colors.accentForeground }]}>{diagnosing ? 'Inspecting…' : 'Details'}</Text>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Retry stream ${index + 1}`}

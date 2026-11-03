@@ -19,6 +19,10 @@ class DownloadsMediaModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("DownloadsMedia")
+    AsyncFunction("inspectVideoPlayback") { uri: String ->
+      val context = appContext.reactContext ?: throw IllegalStateException("Android context unavailable.")
+      VideoPlaybackDiagnostics.inspect(context, uri)
+    }
     Events("pipChanged", "pipClosed")
     OnCreate {
       appContext.reactContext?.let { CrashReports.install(it) }

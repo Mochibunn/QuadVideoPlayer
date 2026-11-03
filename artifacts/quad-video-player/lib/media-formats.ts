@@ -49,6 +49,10 @@ export function videoSourceForUri(uri: string) {
 }
 
 export function mediaPlaybackError(details?: string): string {
-  const explanation = 'Could not play this file. It may be inaccessible, damaged, or use a codec not supported by Android. An .mp4 extension does not identify the codec inside.';
+  const explanation = /permission|eacces|securityexception|filenotfound|enoent|no such file/i.test(details ?? '')
+    ? 'File access failed. Select this file again to renew access, or open Details.'
+    : /decoder|mediacodec|unsupported|decoding/i.test(details ?? '')
+      ? 'Android could not decode this stream. Open Details to check the codec and decoder availability.'
+      : 'Playback failed. Open Details to check file access and video/audio codecs.';
   return details ? `${explanation}\n${details}` : explanation;
 }

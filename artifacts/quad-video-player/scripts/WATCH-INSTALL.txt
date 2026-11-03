@@ -1,0 +1,26 @@
+Goon Quest Link - watch update
+
+The watch APK must be installed ON THE WATCH, not opened in the phone's package
+installer. The phone/tablet APK is a different build with the same application ID
+so Wear OS Data Layer can communicate. Do not rename either package.
+
+If an installer is stuck, cancel its pending transfer/install first. Do not
+uninstall Goon Quest as a first step: uninstalling removes local app data.
+If the built-in watch installer keeps spinning, restart the watch after cancelling
+the pending install, then try the new APK. If it still hangs, use adb below to get
+a concrete Android package-manager result instead of an indefinite progress bar.
+
+With the watch connected through Android's wireless debugging:
+1. On your computer, run "adb devices" and identify the watch serial.
+2. Use:
+   adb -s WATCH_SERIAL install --no-streaming -r goon-quest-watch-v1.18.5.apk
+   Or run the included install-watch.sh helper, which checks the target is a watch.
+3. Keep the watch awake until adb prints "Success".
+
+This updates the app without clearing its data. The new watch package uses the
+same application ID and signing certificate as the previous supplied build.
+No phone or watch uninstall is required for a normal update.
+
+If installation still fails, share the complete adb failure (INSTALL_FAILED_...)
+or the name and message of the installer app. A valid signed APK alone cannot
+diagnose a stalled file transfer or device package-manager error.

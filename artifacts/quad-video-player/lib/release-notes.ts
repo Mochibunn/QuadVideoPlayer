@@ -8,6 +8,19 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.18.5',
+    title: 'Pawstar Escapes the Timer Trap',
+    date: 'November 3, 2026',
+    summary: 'A reliable auto-chat clock and clearer reports when a video refuses to play.',
+    changes: [
+      'Auto chat now starts immediately when the model is ready and repeats 30 seconds after each completed reply.',
+      'Frequent session updates and changing callback references no longer reset the auto-chat deadline.',
+      'Added a Details action to failed videos with file-access checks, video/audio track formats, advertised Android decoders, and a shareable report.',
+      'Playback errors no longer assume that every failed file has an unsupported codec.',
+      'Updated the watch companion package version while retaining its package identity and signing certificate.',
+    ],
+  },
+  {
     version: '1.18.4',
     title: 'Yoster Yaps in Pill Mode',
     date: 'November 3, 2026',
