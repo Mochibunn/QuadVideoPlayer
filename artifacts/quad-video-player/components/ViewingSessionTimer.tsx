@@ -1,13 +1,17 @@
 import { Feather } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SessionMilestoneConfetti from '@/components/SessionMilestoneConfetti';
 import { useColors } from '@/hooks/useColors';
-import { experienceIntoLevel, levelForExperience, XP_PER_LEVEL } from '@/lib/player-rewards';
+import {
+  celebrationLineForMinute, celebrationLinesFrom, DEFAULT_CONGRATS_TEXT, experienceIntoLevel, levelForExperience,
+  nextCheerMinute, XP_PER_LEVEL,
+} from '@/lib/player-rewards';
+import { heartSummary } from '@/lib/session-stats-overlay';
 import { evaluatePlayerAchievements, playerRankTitle } from '@/lib/player-achievements';
 import {
-  elapsedViewingTime, formatViewingTime, localSessionDate, VIEWING_ACHIEVEMENT_MS,
+  elapsedViewingTime, formatViewingTime, localSessionDate, mergeHeartRateStats, VIEWING_ACHIEVEMENT_MS,
   type ViewingSessionStore,
 } from '@/lib/viewing-sessions';
 
@@ -28,48 +32,84 @@ type Props = {
   onRecapDismiss(): void;
   onEndSession(): void | Promise<void>;
   onRetry(): void;
+  /** Controlled leaderboard visibility (main toolbar). Falls back to internal state when omitted. */
+  open?: boolean;
+  onClose?: () => void;
+  /** Render the built-in stationary button. Default true. */
+  showButton?: boolean;
+  /** Per-minute cheer lines; falls back to the default seed. */
+  celebrationLines?: string[];
+  onGenerateCelebrations?: () => Promise<void>;
+  generatingCelebrations?: boolean;
+  showMinuteCheers?: boolean;
 };
+
+function CheerText({ text }: { text: string }) {
+  const offsets = [[-2, 0], [2, 0], [0, -2], [0, 2], [-1.5, -1.5], [1.5, 1.5], [-1.5, 1.5], [1.5, -1.5]];
+  return (
+    <View pointerEvents="none" style={styles.cheerWrap}>
+      <View>
+        {offsets.map(([x, y], i) => (
+          <Text key={i} numberOfLines={3} adjustsFontSizeToFit
+            style={[styles.cheer, styles.cheerStroke, { transform: [{ translateX: x }, { translateY: y }] }]}>{text}</Text>
+        ))}
+        <Text accessibilityLiveRegion="polite" numberOfLines={3} adjustsFontSizeToFit style={[styles.cheer, styles.cheerFill]}>{text}</Text>
+      </View>
+    </View>
+  );
+}
 
 export default function ViewingSessionTimer({
   store, totalVideoCount, visible, ready, error, isPlaying, celebration, milestone, xp, congratsMessage, finishRecap,
   onMilestoneDone,
   onCelebrateDone, onRecapDismiss, onEndSession, onRetry,
+  open, onClose, showButton = true, celebrationLines, onGenerateCelebrations, generatingCelebrations = false,
+  showMinuteCheers = true,
 }: Props) {
   const colors = useColors();
   const [now, setNow] = useState(Date.now());
-  const [leaderboardVisible, setLeaderboardVisible] = useState(false);
-  const [timerMove, setTimerMove] = useState(0);
-  const [timerSize, setTimerSize] = useState({ width: 0, height: 0 });
-  const timerOffset = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const { width, height } = useWindowDimensions();
+  const [internalOpen, setInternalOpen] = useState(false);
+  const leaderboardVisible = !!open || internalOpen;
+  const setLeaderboardVisible = (value: boolean) => {
+    setInternalOpen(value);
+    if (!value) onClose?.();
+  };
+  const [cheer, setCheer] = useState<{ minute: number; text: string } | null>(null);
+  const cheerBaseline = useRef<{ id: string; minute: number } | null>(null);
   const insets = useSafeAreaInsets();
   useEffect(() => {
     if (!store.active?.resumedAtMs) return;
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(tick);
   }, [store.active?.id, store.active?.resumedAtMs]);
+  const liveElapsed = store.active
+    ? elapsedViewingTime(isPlaying ? store.active : { ...store.active, resumedAtMs: null }, now) : 0;
+  const playingLive = isPlaying && !!store.active?.resumedAtMs;
+  const cheerLines = celebrationLinesFrom(celebrationLines, DEFAULT_CONGRATS_TEXT);
+  const cheerLinesRef = useRef(cheerLines);
+  cheerLinesRef.current = cheerLines;
+  const activeId = store.active?.id ?? null;
+  const currentMinute = Math.floor(liveElapsed / 60_000);
   useEffect(() => {
-    if (!visible) return;
-    const interval = setInterval(() => setTimerMove((current) => (current + 1) % 4), 60_000);
-    return () => clearInterval(interval);
-  }, [visible]);
-  const availableX = Math.max(0, width - timerSize.width - insets.left - insets.right - 28);
-  const availableY = Math.max(0, height - timerSize.height - insets.top - insets.bottom - 28);
-  const timerPositions = [
-    { x: 0, y: 0 },
-    { x: -availableX, y: -availableY },
-    { x: -availableX, y: 0 },
-    { x: 0, y: -availableY },
-  ];
-  useEffect(() => {
-    const animation = Animated.timing(timerOffset, {
-      toValue: timerPositions[timerMove], duration: 520, useNativeDriver: true,
-    });
-    animation.start();
-    return () => animation.stop();
-  }, [availableX, availableY, timerMove, timerOffset]);
+    if (!activeId || !showMinuteCheers) { cheerBaseline.current = null; setCheer(null); return; }
+    if (!cheerBaseline.current || cheerBaseline.current.id !== activeId) {
+      // Baseline on first sight (incl. restore) so old minutes never replay.
+      cheerBaseline.current = { id: activeId, minute: currentMinute };
+      if (playingLive) setCheer({ minute: currentMinute, text: celebrationLineForMinute(cheerLinesRef.current, currentMinute) });
+      return;
+    }
+    if (!playingLive) { setCheer(null); return; }
+    const next = nextCheerMinute(cheerBaseline.current.minute, currentMinute * 60_000, true);
+    if (next !== null) {
+      cheerBaseline.current.minute = next;
+      setCheer({ minute: next, text: celebrationLineForMinute(cheerLinesRef.current, next) });
+    } else {
+      setCheer((previous) => previous ?? { minute: currentMinute, text: celebrationLineForMinute(cheerLinesRef.current, currentMinute) });
+    }
+  }, [activeId, currentMinute, playingLive, showMinuteCheers]);
+  const [generateError, setGenerateError] = useState('');
 
-  if (!visible && !celebration && !milestone) return null;
+  if (!visible && !celebration && !milestone && !cheer && !leaderboardVisible && !finishRecap) return null;
   const elapsed = store.active
     ? elapsedViewingTime(isPlaying ? store.active : { ...store.active, resumedAtMs: null }, now)
     : null;
@@ -86,38 +126,38 @@ export default function ViewingSessionTimer({
     xp,
   });
   const unlockedAchievements = achievements.filter((achievement) => achievement.unlocked).length;
+  type HrCarrier = { heartRate?: unknown };
+  const storeExtra = store as typeof store & HrCarrier & { totalVideosWatched?: number };
+  const finishedVideos = typeof storeExtra.totalVideosWatched === 'number' && Number.isFinite(storeExtra.totalVideosWatched)
+    ? storeExtra.totalVideosWatched
+    : store.leaderboard.reduce((sum, entry) => sum + (entry.watchedVideoCount || 0), 0);
+  const lifetimeVideos = finishedVideos + (store.active?.watchedVideoIds.length ?? 0);
+  const totalHr = heartSummary(mergeHeartRateStats(store.heartRate, store.active?.heartRate));
+  const activeHr = heartSummary((store.active as HrCarrier | null)?.heartRate);
+  const recapHr = heartSummary((finishRecap as HrCarrier | null)?.heartRate);
+  const generate = async () => {
+    if (!onGenerateCelebrations) return;
+    setGenerateError('');
+    try { await onGenerateCelebrations(); }
+    catch (reason) { setGenerateError(reason instanceof Error ? reason.message : 'Could not generate new cheers.'); }
+  };
 
   return (
     <>
       <SessionMilestoneConfetti milestoneMs={milestone} message={congratsMessage} onDone={onMilestoneDone} />
-      {visible && (
-        <Animated.View
-          onLayout={(event) => {
-            const { width: measuredWidth, height: measuredHeight } = event.nativeEvent.layout;
-            setTimerSize((current) => current.width === measuredWidth && current.height === measuredHeight
-              ? current : { width: measuredWidth, height: measuredHeight });
-          }}
-          style={[
-            styles.floatingPosition,
-            { bottom: insets.bottom + 14, right: insets.right + 14 },
-            { transform: [{ translateX: timerOffset.x }, { translateY: timerOffset.y }] },
-          ]}
-        >
+      {!!cheer && playingLive && <CheerText key={cheer.minute} text={cheer.text} />}
+      {visible && showButton && (
+        <View style={[styles.floatingPosition, { bottom: insets.bottom + 14, right: insets.right + 14 }]}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={store.active?.resumedAtMs
-              ? `Playback timer ${formatViewingTime(elapsed ?? 0)}. Open personal leaderboard.`
-              : `Open playback leaderboard${best ? `. Best ${formatViewingTime(best.durationMs)}` : ''}.`}
+            accessibilityLabel="Open guild standings and session timer"
             onPress={() => setLeaderboardVisible(true)}
             style={[styles.floating, { backgroundColor: 'rgba(10,10,13,0.90)', borderColor: colors.primary }]}
           >
             <Feather name={store.active?.resumedAtMs ? 'clock' : 'award'} size={16} color={colors.primary} />
-            <Text numberOfLines={1} style={[styles.floatingText, { color: colors.foreground }]}>
-              {store.active?.resumedAtMs ? formatViewingTime(elapsed ?? 0)
-                : best ? `${formatViewingTime(best.durationMs)} · ${formatViewingTime(store.totalPlaybackMs)} total` : 'Play timer'}
-            </Text>
+            <Text numberOfLines={1} style={[styles.floatingText, { color: colors.foreground }]}>Guild</Text>
           </Pressable>
-        </Animated.View>
+        </View>
       )}
       <Modal visible={!!celebration || !!finishRecap || rankingVisible} transparent animationType="fade" onRequestClose={() => {
         if (celebration) { onCelebrateDone(); onRecapDismiss(); }
@@ -166,6 +206,7 @@ export default function ViewingSessionTimer({
                   {recapRank ? `Guild table place: #${recapRank}.` : 'Added to your all-time loop.'}
                   {'\n'}Finished {localSessionDate(finishRecap.finishedAtMs)}
                   {'\n'}Unique videos watched: {finishRecap.watchedVideoCount}
+                  {'\n'}Heart rate min / avg / max: {recapHr.text}
                   {'\n'}Videos in pool: {totalVideoCount}
                   {'\n'}All-time loop: {formatViewingTime(store.totalPlaybackMs)}
                 </Text>
@@ -227,6 +268,9 @@ export default function ViewingSessionTimer({
                       <Text style={[styles.date, { color: colors.mutedForeground }]}>
                         {store.active.watchedVideoIds.length} unique videos watched · {totalVideoCount} in pool
                       </Text>
+                      <Text style={[styles.date, { color: colors.mutedForeground }]}>
+                        Heart rate min / avg / max: {activeHr.text}
+                      </Text>
                       {!isPlaying && (
                         <Pressable accessibilityRole="button" onPress={() => void onEndSession()}
                           style={[styles.endButton, { borderColor: colors.border }]}>
@@ -239,6 +283,30 @@ export default function ViewingSessionTimer({
                   <View style={styles.totalRow}>
                     <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>All-time playback</Text>
                     <Text style={[styles.total, { color: colors.foreground }]}>{formatViewingTime(store.totalPlaybackMs)}</Text>
+                  </View>
+                  <View style={styles.totalRow}>
+                    <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>Total videos watched</Text>
+                    <Text style={[styles.total, { color: colors.foreground }]}>{lifetimeVideos}</Text>
+                  </View>
+                  <View style={styles.totalRow}>
+                    <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>All-time HR min / avg / max</Text>
+                    <Text style={[styles.total, { color: colors.foreground }]}>{totalHr.text}</Text>
+                  </View>
+                  <View style={[styles.xpCard, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                    <Text style={[styles.totalLabel, { color: colors.foreground }]}>Minute cheers</Text>
+                    <Text style={[styles.date, { color: colors.mutedForeground }]}>
+                      {cheerLines.length} lines rotate every active minute. Edit the seed in Settings, guild milestone notes.
+                    </Text>
+                    {!!generateError && <Text style={[styles.date, { color: colors.destructive }]}>{generateError}</Text>}
+                    <Pressable accessibilityRole="button" disabled={!onGenerateCelebrations || generatingCelebrations}
+                      accessibilityState={{ disabled: !onGenerateCelebrations || generatingCelebrations, busy: generatingCelebrations }}
+                      onPress={() => void generate()}
+                      style={[styles.endButton, { borderColor: colors.primary, opacity: !onGenerateCelebrations || generatingCelebrations ? 0.5 : 1 }]}>
+                      <Feather name="feather" size={14} color={colors.primary} />
+                      <Text style={[styles.endText, { color: colors.primary }]}>
+                        {generatingCelebrations ? 'Writing new cheers…' : 'Generate new cheers'}
+                      </Text>
+                    </Pressable>
                   </View>
                   <View style={styles.totalRow}>
                     <Text style={[styles.totalLabel, { color: colors.mutedForeground }]}>Videos in pool</Text>
@@ -302,6 +370,9 @@ export default function ViewingSessionTimer({
                           {entry.watchedVideoCount > 0 ? `${entry.watchedVideoCount} unique videos · ` : ''}
                           {localSessionDate(entry.finishedAtMs)}
                         </Text>
+                        <Text style={[styles.date, { color: colors.mutedForeground }]}>
+                          HR {heartSummary((entry as HrCarrier).heartRate).text}
+                        </Text>
                       </View>
                       {entry.durationMs >= VIEWING_ACHIEVEMENT_MS && <Feather name="award" size={20} color="#ffd248" />}
                     </View>
@@ -322,6 +393,10 @@ export default function ViewingSessionTimer({
 
 const styles = StyleSheet.create({
   floatingPosition: { position: 'absolute', zIndex: 30 },
+  cheerWrap: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center', paddingHorizontal: 18, zIndex: 85, elevation: 85 },
+  cheer: { width: '100%', textAlign: 'center', fontSize: 44, lineHeight: 52, fontWeight: '900' },
+  cheerStroke: { position: 'absolute', color: '#000000' },
+  cheerFill: { color: '#fff8fb', textShadowColor: 'rgba(0,0,0,0.9)', textShadowOffset: { width: 0, height: 4 }, textShadowRadius: 8 },
   floating: {
     minHeight: 42, maxWidth: '85%',
     flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 14, borderRadius: 24, borderWidth: 1,

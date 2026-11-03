@@ -140,3 +140,31 @@ mtime_ms = 1793656748231
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/c874acb6-68e3-4593-9318-d8588fe6a4db/05994cbe-80af-441f-8667-1c6e5bc300d4"
 storage_version_token = "1793656772541695"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "CRQKXGdqYL6YEfejMXoN2"
+uri = "file://generated-artifacts/android/goon-quest-v1.18.0-phone-tablet-download.zip"
+type = "unspecified"
+title = "Goon Quest 1.18.0 — Chatty Paws & Rainbow Raids"
+description = "Extract the APK and install over your existing tablet app—do not uninstall. Includes quest batches, Pawstar chat, tracked honors and pins, automatic BPM scanning, boss rework, customizable stats HUD, milestone achievements, and expanded frames. Same package and signing certificate; version 34 verified."
+logical_id = "03cfed1c-fdca-45c5-8c36-994d58020c84"
+content_hash = "sha256:179357b3f23d08ba30cf79d547e1d3f95be83507a2bf88a8618a957379bd1f16"
+size = 61108330
+mtime_ms = 1793669789034
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/03cfed1c-fdca-45c5-8c36-994d58020c84/cf32a0fe-b93b-453d-b47f-aae29e290a4f"
+storage_version_token = "1793669807091440"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "doXyI8pPrFQagiQYCyKVx"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.18.0.apk"
+type = "unspecified"
+title = "Goon Quest Link 1.18.0 — Watch Companion"
+description = "Matching watch companion build with verified signature. Wrist and heart-rate protocols are unchanged; your existing 1.17.0 companion remains compatible with the tablet update."
+logical_id = "256895dc-8507-49e1-b3db-d9db1e67fba0"
+content_hash = "sha256:a5d6079e7e9a5c2203c6430b17557c6328605676f1fe54ba936f9a380648e19e"
+size = 4223466
+mtime_ms = 1793669790363
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/256895dc-8507-49e1-b3db-d9db1e67fba0/d31643c6-ad46-4c75-963e-a72d3775aaec"
+storage_version_token = "1793669807901559"
+content_type = "application/octet-stream"

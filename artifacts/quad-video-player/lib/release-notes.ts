@@ -8,6 +8,27 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.18.0',
+    title: 'Chatty Paws & Rainbow Raids',
+    date: 'November 3, 2026',
+    summary: 'Pawstar joins your streams, bosses learn new tricks, and the guild gets a customizable HUD.',
+    changes: [
+      'Generate a chosen batch of quests sequentially with progress, cancellation, and journal-capacity checks.',
+      'Talk to Pawstar in a compact video-friendly chat overlay using your loaded local model and editable role prompt.',
+      'Added guild honors, model-forged tracked honors, and pinnable quest/honor progress above the videos.',
+      'Record session and lifetime video totals, plus recorded heart-rate min/average/max; older history stays readable.',
+      'Automatically scan up to 24 seconds of audio from each pool video, one decoder at a time, and cache BPM estimates.',
+      'Beat/boss selectors now follow the actual current clips; fullscreen buttons work and hidden players remain paused.',
+      'Boss fights now feature phases, timed weak points, telegraphed attacks, Guard/Dodge counters, focus, and paused-video freeze.',
+      'Choose 1–12 simultaneous enemies per wave. Combat taps respond on touch-down and video controls are locked during fights.',
+      'Ten-minute marks show an achievement pill and confetti; independent outlined full-width cheer text rotates every active minute.',
+      'Generate more cheer lines from your own message seed using the loaded model, or switch minute text off separately.',
+      'Timer, chat, and stats controls now live on the global toolbar. Customize transparent HUD metrics, color, size, and position.',
+      'Added scrolling trans flag, trans paws, and trans puzzle frames, 0.5–6x texture scale, and adjustable frame thickness.',
+      'Frames occupy dedicated layout gaps behind videos and controls instead of covering buttons or milestone popups.',
+    ],
+  },
+  {
     version: '1.17.0',
     title: 'Paw Parry Patrol',
     date: 'November 2, 2026',

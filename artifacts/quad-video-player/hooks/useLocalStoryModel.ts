@@ -25,7 +25,12 @@ import {
   storyQuestPrompt,
   type LocalStoryPreferences,
   type CombatPreferenceKey,
+  celebrationPrompt,
+  honorIdeaPrompt,
+  parseCelebrations,
+  parseHonorIdea,
 } from '@/lib/local-story';
+import { chatContext, chatSystemPrompt, parseChatReply, type ChatMessage } from '@/lib/pawstar-chat';
 
 export type LocalStoryBusy = 'importing' | 'loading' | 'unloading' | 'generating' | null;
 
@@ -41,6 +46,32 @@ const QUEST_RESPONSE_SCHEMA = {
         enemyLine: { type: 'string' },
       },
       required: ['title', 'description', 'enemyLine'],
+      additionalProperties: false,
+    },
+  },
+};
+
+const LINES_RESPONSE_SCHEMA = {
+  type: 'json_schema' as const,
+  json_schema: {
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: { lines: { type: 'array', items: { type: 'string' }, maxItems: 5 } },
+      required: ['lines'],
+      additionalProperties: false,
+    },
+  },
+};
+
+const HONOR_RESPONSE_SCHEMA = {
+  type: 'json_schema' as const,
+  json_schema: {
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: { title: { type: 'string' }, description: { type: 'string' } },
+      required: ['title', 'description'],
       additionalProperties: false,
     },
   },
@@ -270,7 +301,11 @@ export function useLocalStoryModel() {
 
   const complete = useCallback(async (
     userPrompt: string,
-    options: { nPredict: number; json?: boolean; tagSuggestions?: boolean; combatPlan?: boolean },
+    options: {
+      nPredict: number; json?: boolean; tagSuggestions?: boolean; combatPlan?: boolean;
+      schema?: typeof LINES_RESPONSE_SCHEMA | typeof HONOR_RESPONSE_SCHEMA;
+      systemPrompt?: string; history?: ChatMessage[];
+    },
   ) => {
     const context = contextRef.current;
     if (!context) throw new Error('Load your local model first.');
@@ -279,14 +314,16 @@ export function useLocalStoryModel() {
     try {
       await context.clearCache();
       const result = await context.completion({
-        messages: [
-          { role: 'system', content: preferences.systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
+        messages: options.history
+          ? [{ role: 'system', content: options.systemPrompt ?? preferences.systemPrompt }, ...options.history]
+          : [
+            { role: 'system', content: options.systemPrompt ?? preferences.systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
         n_predict: options.nPredict,
         temperature: 0.8,
         top_p: 0.9,
-        ...(options.combatPlan ? { response_format: COMBAT_RESPONSE_SCHEMA } :
+        ...(options.schema ? { response_format: options.schema } : options.combatPlan ? { response_format: COMBAT_RESPONSE_SCHEMA } :
           options.tagSuggestions ? { response_format: TAG_RESPONSE_SCHEMA } :
           options.json ? { response_format: QUEST_RESPONSE_SCHEMA } : {}),
       });
@@ -298,6 +335,10 @@ export function useLocalStoryModel() {
 
   const generateStoryQuest = useCallback(async (state: PlayerRpgState) => {
     if (!contextRef.current) return null;
+    if (completionBusy.current) {
+      setError('The local model is busy with another reply. Try again when it finishes.');
+      return null;
+    }
     setBusy('generating');
     setError('');
     try {
@@ -325,7 +366,7 @@ export function useLocalStoryModel() {
   }, [complete]);
 
   const generateCharacterLine = useCallback(async (scene: string) => {
-    if (!contextRef.current) return null;
+    if (!contextRef.current || completionBusy.current) return null;
     setBusy('generating');
     setError('');
     try {
@@ -383,7 +424,63 @@ export function useLocalStoryModel() {
     } finally { setBusy(null); }
   }, [complete]);
 
+  /** Shared guard: explicit errors for a missing model or an in-flight completion. */
+  const guarded = useCallback(async <T,>(run: () => Promise<T>): Promise<T | null> => {
+    if (!contextRef.current) {
+      setError('Load your GGUF model in Settings > Local storyteller first.');
+      return null;
+    }
+    if (completionBusy.current) {
+      setError('The local model is busy with another reply. Try again when it finishes.');
+      return null;
+    }
+    setBusy('generating');
+    setError('');
+    try {
+      return await run();
+    } catch (reason) {
+      setError(friendlyModelError(reason));
+      return null;
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  /** Bounded Pawstar conversation. rolePrompt overrides the stored storyteller prompt for chat only. */
+  const generateChatReply = useCallback((messages: ChatMessage[], rolePrompt?: string) => guarded(async () => {
+    const history = chatContext(messages);
+    if (!history.length) throw new Error('Write a message for Pawstar first.');
+    const text = await complete('', {
+      nPredict: 120, history, systemPrompt: chatSystemPrompt(rolePrompt, preferences.systemPrompt),
+    });
+    const reply = parseChatReply(text);
+    if (!reply) throw new Error('Pawstar returned an empty reply. Try again or another model.');
+    return reply;
+  }), [complete, guarded, preferences.systemPrompt]);
+
+  /** Non-graphic encouragement variations built from the user's own seed line. */
+  const generateCelebrations = useCallback(async (seed: string): Promise<string[]> => {
+    const lines = await guarded(async () => {
+      const text = await complete(celebrationPrompt(seed), { nPredict: 220, schema: LINES_RESPONSE_SCHEMA });
+      const parsed = parseCelebrations(text);
+      if (!parsed.length) throw new Error('The model returned no usable celebration lines.');
+      return parsed;
+    });
+    return lines ?? [];
+  }, [complete, guarded]);
+
+  /** Name and flavor only; the game assigns the tracked goal. */
+  const generateHonorIdea = useCallback((context: { className: string; companionName: string }) => guarded(async () => {
+    const text = await complete(honorIdeaPrompt(context), { nPredict: 120, schema: HONOR_RESPONSE_SCHEMA });
+    const idea = parseHonorIdea(text);
+    if (!idea) throw new Error('The model did not return a valid honor. Try again.');
+    return idea;
+  }), [complete, guarded]);
+
   return {
+    generateChatReply,
+    generateCelebrations,
+    generateHonorIdea,
     generateCombatPlan,
     setCombatPreference,
     suggestEnemyTags,

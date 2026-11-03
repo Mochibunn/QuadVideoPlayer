@@ -1,8 +1,7 @@
 import { Feather } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AccessibilityInfo, ActivityIndicator, Animated, BackHandler, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions,
+  AccessibilityInfo, ActivityIndicator, BackHandler, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -12,6 +11,22 @@ import {
   type RpgQuest, type StoryQuest,
 } from '@/lib/player-rpg';
 import { BOSS_HEALTH_PER_SECOND, bossHealthForRemainingSeconds } from '@/lib/boss-fight';
+import {
+  bossAbility, bossDefend, bossStrike, createBossState, stepBoss, type BossDefense, type BossState,
+} from '@/lib/boss-mechanics';
+import { applyEnemyHit, clampEnemyCount, MAX_DEN_ENEMIES, MIN_DEN_ENEMIES, planWaves } from '@/lib/combat-waves';
+import {
+  MAX_QUEST_BATCH, batchSummary, clampBatchCount, openStoryQuestSlots, runQuestBatch,
+} from '@/lib/quest-batch';
+import {
+  DEFAULT_CHAT_ROLE, MAX_PINS, addGeneratedHonor, bumpLedgerCounter, claimGuildHonor, evaluateGuildHonors,
+  metricLabels, prunePins, removeGeneratedHonor, togglePin, type HonorProgress, type LedgerCounterKey,
+} from '@/lib/guild-ledger';
+import type { ChatMessage } from '@/lib/pawstar-chat';
+import { useGuildLedger } from '@/hooks/useGuildLedger';
+import BossArena from '@/components/quest/BossArena';
+import PawstarChat from '@/components/quest/PawstarChat';
+import QuestPins, { type PinItem } from '@/components/quest/QuestPins';
 import { analyzeVideoBpm } from '@/lib/media-bpm';
 import type { SlideshowImage } from '@/lib/slideshow';
 import CombatField, { SpeechLayer, SpritePositions } from '@/components/quest/CombatField';
@@ -20,7 +35,7 @@ import { familiarCheer, GUILD_TIPS, pickLine } from '@/lib/quest-flavor';
 import { useCombatDirector } from '@/hooks/useCombatDirector';
 import { combineEnemyPool } from '@/lib/combat-director';
 import type { CombatAiPlan, CombatAiRequest } from '@/lib/combat-ai';
-import { shouldActivateCombatTap, type CombatControlScheme } from '@/lib/input-controls';
+import type { CombatControlScheme } from '@/lib/input-controls';
 
 type EnemyImage = Pick<SlideshowImage, 'uri' | 'name'> & { preview?: string };
 type DungeonVideo = { id: string; uri: string; name: string };
@@ -73,14 +88,25 @@ type Props = {
   combatAutoTagsEnabled?: boolean;
   combatProfanityEnabled?: boolean;
   onGenerateCombatPlan?: (request: CombatAiRequest) => Promise<CombatAiPlan | null>;
+  /** Parent-owned BPM results; preferred over results analyzed inside the overlay. */
+  videoBpmById?: Record<string, { bpm: number | null; confidence: number; error?: string }>;
+  /** Shows the Pawstar chat even when the quest board is hidden. */
+  chatVisible?: boolean;
+  onChatClose?: () => void;
+  /** True while a den run or boss fight is live; parent should lock video controls. Reset to false on exit/unmount. */
+  onCombatActiveChange?: (active: boolean) => void;
+  /** Local model chat; rolePrompt is the user-edited Pawstar role. */
+  onGenerateChatReply?: (messages: ChatMessage[], rolePrompt?: string) => Promise<string | null>;
+  /** Local model honor name/flavor; the game assigns the tracked goal. */
+  onGenerateHonorIdea?: (context: { className: string; companionName: string }) => Promise<{ title: string; description: string } | null>;
+  /** Latest local model error, shown in chat/honor failures. */
+  storytellerError?: string;
 };
 
-const DUNGEON_WAVES = 3;
 let nextEnemyId = 0;
 
-function createWave(pool: EnemyImage[], wave: number, bpm: number | null): Enemy[] {
-  if (!pool.length) return [];
-  const count = Math.min(4, 2 + wave);
+function createWave(pool: EnemyImage[], wave: number, bpm: number | null, count: number): Enemy[] {
+  if (!pool.length || count <= 0) return [];
   return Array.from({ length: count }, () => {
     const image = pool[Math.floor(Math.random() * pool.length)];
     return {
@@ -94,12 +120,28 @@ function createWave(pool: EnemyImage[], wave: number, bpm: number | null): Enemy
   });
 }
 
+function PinToggle({ pinned, disabled, onPress, label, colors }: {
+  pinned: boolean; disabled: boolean; onPress: () => void; label: string; colors: ReturnType<typeof useColors>;
+}) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityState={{ selected: pinned, disabled: disabled && !pinned }}
+      accessibilityLabel={pinned ? `Unpin ${label}` : `Pin ${label} above the videos`}
+      disabled={disabled && !pinned} onPress={onPress} hitSlop={6}
+      style={[styles.pinButton, { borderColor: pinned ? colors.primary : colors.border, opacity: disabled && !pinned ? 0.4 : 1 }]}>
+      <Feather name="map-pin" size={13} color={pinned ? colors.primary : colors.mutedForeground} />
+    </Pressable>
+  );
+}
+
 function QuestRow({
-  quest, onClaim, colors,
+  quest, onClaim, colors, pinned, pinDisabled, onTogglePin,
 }: {
   quest: RpgQuest;
   onClaim: () => void;
   colors: ReturnType<typeof useColors>;
+  pinned: boolean;
+  pinDisabled: boolean;
+  onTogglePin: () => void;
 }) {
   const canClaim = !quest.claimed && quest.progress >= quest.target;
   const ratio = Math.max(0, Math.min(1, quest.progress / quest.target));
@@ -118,6 +160,9 @@ function QuestRow({
           {Math.min(quest.progress, quest.target)} / {quest.target} {quest.unit} · {quest.rewardCoins} coins
         </Text>
       </View>
+      {!quest.claimed && (
+        <PinToggle pinned={pinned} disabled={pinDisabled} onPress={onTogglePin} label={quest.title} colors={colors} />
+      )}
       <Pressable accessibilityRole="button"
         accessibilityLabel={quest.claimed ? `${quest.title} claimed` : `Claim ${quest.title}`}
         disabled={!canClaim}
@@ -138,7 +183,8 @@ export default function GoonQuestOverlay({
   videos, videoIndex, videoProgress, videoIsPlaying, bossVideoEnded, onSelectVideo, onBeginBossVideo, onEndBossVideo,
   onBpmResult, calmMotion = false, combatPlaybackActive,
   combatAiEnabled = false, combatSpeechEnabled = true, combatAutoTagsEnabled = false, combatProfanityEnabled = true,
-  onGenerateCombatPlan,
+  onGenerateCombatPlan, videoBpmById, chatVisible = false, onChatClose, onCombatActiveChange,
+  onGenerateChatReply, onGenerateHonorIdea, storytellerError,
 }: Props) {
   const colors = useColors();
   const online = useOnlineSources();
@@ -169,17 +215,29 @@ export default function GoonQuestOverlay({
   const tapSequence = useRef<{ videoId: string; times: number[] }>({ videoId: '', times: [] });
   const [bossActive, setBossActive] = useState(false);
   const [bossResult, setBossResult] = useState<BossResult>(null);
-  const [bossHp, setBossHp] = useState(0);
-  const [bossMaxHp, setBossMaxHp] = useState(0);
-  const [bossCombo, setBossCombo] = useState(0);
-  const [bossBpm, setBossBpm] = useState<number | null>(null);
+  const [boss, setBoss] = useState<BossState | null>(null);
+  const bossRef = useRef<BossState | null>(null);
+  const bossVideoIdRef = useRef<string | null>(null);
+  const [denEnemyCount, setDenEnemyCount] = useState(3);
+  const [wavePlan, setWavePlan] = useState<number[]>(() => planWaves(3));
+  const enemiesRef = useRef<Enemy[]>([]);
+  const [batchCount, setBatchCount] = useState(1);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+  const [batchNotice, setBatchNotice] = useState('');
+  const batchRunning = useRef(false);
+  const batchCancel = useRef(false);
+  const mountedRef = useRef(true);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [honorBusy, setHonorBusy] = useState(false);
+  const [honorNotice, setHonorNotice] = useState('');
+  const [showClaimedHonors, setShowClaimedHonors] = useState(false);
+  const guild = useGuildLedger();
+  const updateLedger = guild.update;
   const [bossImage, setBossImage] = useState<EnemyImage | null>(null);
   const [bossMessage, setBossMessage] = useState('');
   const [storyLine, setStoryLine] = useState('');
   const [storyError, setStoryError] = useState('');
   const bossResultRef = useRef<BossResult>(null);
-  const bossHpRef = useRef(0);
-  const bossPulse = useRef(new Animated.Value(0)).current;
   const enemyLineBusy = useRef(false);
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cooldownTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -193,7 +251,8 @@ export default function GoonQuestOverlay({
     .sort((a, b) => Number(b.dungeonEnemy === true) - Number(a.dungeonEnemy === true));
   const selectedEnemySource = enemySources.find((source) => source.id === selectedEnemySourceId);
   const selectedVideo = videos[videoIndex];
-  const selectedBeatResult = selectedVideo ? beatResults[selectedVideo.id] : undefined;
+  const selectedBeatResult = selectedVideo
+    ? videoBpmById?.[selectedVideo.id] ?? beatResults[selectedVideo.id] : undefined;
   const selectedBpm = selectedBeatResult?.bpm ?? null;
   const manualBpm = selectedVideo ? manualBpmByVideoId[selectedVideo.id] ?? null : null;
   const effectiveSelectedBpm = manualBpm ?? selectedBpm;
@@ -312,11 +371,21 @@ export default function GoonQuestOverlay({
     }
   };
 
+  const bump = useCallback((key: LedgerCounterKey, amount = 1) => {
+    updateLedger((current) => bumpLedgerCounter(current, key, amount));
+  }, [updateLedger]);
+
   const resolveBoss = useCallback((result: Exclude<BossResult, null>) => {
     if (bossResultRef.current) return;
     bossResultRef.current = result;
     setBossResult(result);
+    const finalBoss = bossRef.current;
+    if (finalBoss) {
+      bump('bossCounters', finalBoss.counters);
+      bump('weakpointHits', finalBoss.weakHits);
+    }
     if (result === 'victory') {
+      bump('bossVictories');
       onCombatProgress({ defeats: 1, dungeons: 1 });
       setBossMessage('Boss defeated before the video ended.');
       onDialogue(`${activeClass.name} defeats the dungeon boss in time. The guild marks a clear.`);
@@ -325,82 +394,112 @@ export default function GoonQuestOverlay({
       onDialogue('The dungeon boss escaped when its video ended. The rest of your session is still intact.');
     }
     onEndBossVideo();
-  }, [activeClass.name, onCombatProgress, onDialogue, onEndBossVideo]);
+  }, [activeClass.name, bump, onCombatProgress, onDialogue, onEndBossVideo]);
 
-  const finishBossView = () => {
+  const finishBossView = useCallback(() => {
     setBossActive(false);
     setBossResult(null);
+    setBoss(null);
+    bossRef.current = null;
+    bossVideoIdRef.current = null;
     bossResultRef.current = null;
     onEndBossVideo();
+  }, [onEndBossVideo]);
+
+  const commitBoss = (next: BossState) => {
+    if (bossResultRef.current) return;
+    bossRef.current = next;
+    setBoss(next);
+    if (next.hp <= 0) resolveBoss('victory');
   };
 
   useEffect(() => {
     if (bossActive && bossVideoEnded && !bossResultRef.current) resolveBoss('escaped');
   }, [bossActive, bossVideoEnded, resolveBoss]);
 
+  // The boss clock only runs while its video is actually playing.
   useEffect(() => {
-    if (!bossActive || bossResult || !bossBpm) {
-      bossPulse.setValue(0);
-      return;
-    }
-    const beatDuration = 60_000 / bossBpm;
-    const animation = Animated.loop(Animated.sequence([
-      Animated.timing(bossPulse, {
-        toValue: 1, duration: Math.max(70, beatDuration * 0.18), useNativeDriver: true,
-      }),
-      Animated.timing(bossPulse, {
-        toValue: 0, duration: Math.max(80, beatDuration * 0.82), useNativeDriver: true,
-      }),
-    ]));
-    animation.start();
-    return () => animation.stop();
-  }, [bossActive, bossBpm, bossPulse, bossResult]);
+    if (!bossActive || bossResult || !videoIsPlaying) return;
+    let last = Date.now();
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const dt = now - last;
+      last = now;
+      const current = bossRef.current;
+      if (!current || bossResultRef.current) return;
+      const next = stepBoss(current, dt);
+      if (next !== current) {
+        bossRef.current = next;
+        setBoss(next);
+      }
+    }, 100);
+    return () => clearInterval(timer);
+  }, [bossActive, bossResult, videoIsPlaying]);
+
+  // If the boss video leaves the parent list, end the encounter instead of pointing at a stale asset.
+  const videoIdsKey = videos.map((video) => video.id).join('|');
+  useEffect(() => {
+    const ids = new Set(videoIdsKey ? videoIdsKey.split('|') : []);
+    if (bossActive && bossVideoIdRef.current && !ids.has(bossVideoIdRef.current)) finishBossView();
+    const prune = <T,>(record: Record<string, T>) => {
+      const keys = Object.keys(record);
+      if (keys.every((key) => ids.has(key))) return record;
+      return Object.fromEntries(keys.filter((key) => ids.has(key)).map((key) => [key, record[key]])) as Record<string, T>;
+    };
+    setBeatResults(prune);
+    setManualBpmByVideoId(prune);
+    setBeatLoadingId((current) => current && !ids.has(current) ? null : current);
+  }, [bossActive, finishBossView, videoIdsKey]);
 
   useEffect(() => {
     if (!bossActive) return;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      setBossActive(false);
-      setBossResult(null);
-      bossResultRef.current = null;
-      onEndBossVideo();
+      finishBossView();
       return true;
     });
     return () => subscription.remove();
-  }, [bossActive, onEndBossVideo]);
+  }, [bossActive, finishBossView]);
 
   const beginBossFight = (syncToBeat: boolean) => {
     if (!selectedVideo || !videoIsPlaying || bossMaxHpForVideo <= 0 || inDungeon) return;
+    const bpm = syncToBeat ? effectiveSelectedBpm : null;
+    const initial = createBossState({ maxHp: bossMaxHpForVideo, remainingSeconds, bpm });
     bossResultRef.current = null;
-    bossHpRef.current = bossMaxHpForVideo;
-    setBossMaxHp(bossMaxHpForVideo);
-    setBossHp(bossMaxHpForVideo);
-    setBossCombo(0);
+    bossRef.current = initial;
+    bossVideoIdRef.current = selectedVideo.id;
+    setBoss(initial);
     setBossResult(null);
-    setBossBpm(syncToBeat ? effectiveSelectedBpm : null);
     setBossImage(enemyPool.length ? enemyPool[Math.floor(Math.random() * enemyPool.length)] : null);
-    setBossMessage(syncToBeat && effectiveSelectedBpm
-      ? `Beat sync ${effectiveSelectedBpm} BPM · ${bossMaxHpForVideo} HP for ${Math.ceil(remainingSeconds)}s remaining`
-      : `Boss health scales with ${Math.ceil(remainingSeconds)}s of video time remaining.`);
+    setBossMessage('');
     setBossActive(true);
     onBeginBossVideo(videoIndex);
-    onDialogue(syncToBeat && effectiveSelectedBpm
-      ? `The boss is tuned to ${effectiveSelectedBpm} beats per minute. Strike in time and use your skills before the video ends.`
-      : 'A dungeon boss fills the screen. Defeat it before the video ends.');
-  };
-
-  const damageBoss = (damage: number, message: string) => {
-    if (!bossActive || bossVideoEnded || bossResultRef.current) return;
-    const nextHp = Math.max(0, bossHpRef.current - damage);
-    bossHpRef.current = nextHp;
-    setBossHp(nextHp);
-    setBossMessage(message);
-    if (nextHp === 0) resolveBoss('victory');
+    onDialogue(bpm
+      ? `The boss is tuned to ${bpm} beats per minute. Hit the glowing weak point on the beat, and guard or dodge its telegraphs.`
+      : 'A dungeon boss fills the screen. Hit its weak point when it glows, and guard or dodge when it winds up.');
   };
 
   const tapBoss = () => {
-    const nextCombo = bossCombo + 1;
-    setBossCombo(nextCombo);
-    damageBoss(1 + Math.min(2, Math.floor(nextCombo / 18)), `Strike landed · combo ${nextCombo}`);
+    const current = bossRef.current;
+    if (!current || !bossActive || bossVideoEnded || !videoIsPlaying) return;
+    commitBoss(bossStrike(current).state);
+  };
+
+  const defendBoss = (defense: BossDefense) => {
+    const current = bossRef.current;
+    if (!current || !videoIsPlaying) return;
+    commitBoss(bossDefend(current, defense));
+  };
+
+  const castBoss = (kind: 'skill' | 'spell') => {
+    const current = bossRef.current;
+    if (!current || !videoIsPlaying) return;
+    const result = kind === 'skill'
+      ? bossAbility(current, 'skill', activeClass.skillDamage, activeClass.skill)
+      : bossAbility(current, 'spell', activeClass.spellDamage, activeClass.spell);
+    if (!result.damage) return;
+    onCombatProgress({ spells: 1 });
+    bump('spellsCast');
+    commitBoss(result.state);
   };
 
   useEffect(() => {
@@ -434,10 +533,26 @@ export default function GoonQuestOverlay({
     return () => { mounted = false; subscription.remove(); };
   }, []);
 
-  useEffect(() => () => {
-    if (transitionTimer.current) clearTimeout(transitionTimer.current);
-    cooldownTimers.current.forEach(clearTimeout);
+  const combatActiveRef = useRef(onCombatActiveChange);
+  combatActiveRef.current = onCombatActiveChange;
+  const combatActive = inDungeon || bossActive;
+  useEffect(() => { combatActiveRef.current?.(combatActive); }, [combatActive]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      batchCancel.current = true;
+      if (transitionTimer.current) clearTimeout(transitionTimer.current);
+      cooldownTimers.current.forEach(clearTimeout);
+      combatActiveRef.current?.(false);
+    };
   }, []);
+
+  const updateEnemies = (next: Enemy[]) => {
+    enemiesRef.current = next;
+    setEnemies(next);
+  };
 
   useEffect(() => {
     if (!visible) return;
@@ -452,11 +567,11 @@ export default function GoonQuestOverlay({
     const usableLeft = enemyPool.some((image) => !failedEnemyUris.current.has(image.preview ?? image.uri));
     if (!usableLeft || enemies.every((enemy) => enemy.vanished)) {
       setInDungeon(false);
-      setEnemies([]);
+      updateEnemies([]);
       setDungeonMessage('None of the enemy images could load. The run ended without a reward; choose another source.');
       return;
     }
-    if (wave < DUNGEON_WAVES) {
+    if (wave < wavePlan.length) {
       setDungeonMessage(adultMode
         ? `Wave ${wave} down. Keep edging; the next adult pinups are coming.`
         : `Wave ${wave} quieted. The next chamber opens.`);
@@ -472,22 +587,24 @@ export default function GoonQuestOverlay({
           return;
         }
         setWave(nextWave);
-        setEnemies(createWave(usable, nextWave, dungeonBpm));
+        updateEnemies(createWave(usable, nextWave, dungeonBpm, wavePlan[nextWave - 1] ?? 1));
         setDungeonMessage('');
         transitionTimer.current = null;
         transitionHandled.current = false;
       }, 900);
     } else {
       setDungeonMessage(adultMode
-        ? 'Three waves down. You kept your hand moving and saved the finish for after the final target. +20 coins'
+        ? 'Every wave down. You kept your hand moving and saved the finish for after the final target. +20 coins'
         : 'Den cleared. +20 coins');
       setInDungeon(false);
       onCombatProgress({ dungeons: 1 });
+      bump('dungeonClears');
       onDialogue(adultMode
         ? 'You cleared the horde without breaking your rhythm. Now you can let yourself come and collect the guild reward.'
         : 'Den cleared. The restless portraits are quiet, and the guild purse is yours.');
     }
-  }, [adultMode, combatPausedNow, dungeonBpm, enemies, enemyPool, inDungeon, onCombatProgress, onDialogue, wave]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adultMode, bump, combatPausedNow, dungeonBpm, enemies, enemyPool, inDungeon, onCombatProgress, onDialogue, wave, wavePlan]);
 
   // Pausing freezes a pending wave transition; it re-arms after resuming.
   useEffect(() => {
@@ -514,19 +631,21 @@ export default function GoonQuestOverlay({
     setCombo(0);
     setRunId((value) => value + 1);
     spritePositions.clear();
+    const plan = planWaves(denEnemyCount);
+    setWavePlan(plan);
     setWave(1);
     setDungeonBpm(effectiveSelectedBpm);
-    setEnemies(createWave(enemyPool, 1, effectiveSelectedBpm));
+    updateEnemies(createWave(enemyPool, 1, effectiveSelectedBpm, plan[0]));
     setInDungeon(true);
     setDungeonMessage('');
     onDialogue(adultMode
-      ? `Three waves of adult pinups are bouncing through the den${effectiveSelectedBpm ? ` at ${effectiveSelectedBpm} BPM` : ''}. Keep stroking, edge between taps, and finish the horde before you finish yourself.`
+      ? `${plan.length === 1 ? 'A wave' : `${plan.length} waves`} of adult pinups are bouncing through the den${effectiveSelectedBpm ? ` at ${effectiveSelectedBpm} BPM` : ''}. Keep stroking, edge between taps, and finish the horde before you finish yourself.`
       : `The moonlit den stirs${effectiveSelectedBpm ? ` to ${effectiveSelectedBpm} BPM` : ''}. Tap each portrait before it bounds away.`);
   };
 
   const handleEnemyImageFailed = (enemyId: string, uri: string) => {
     failedEnemyUris.current.add(uri);
-    setEnemies((current) => current.map((enemy) => {
+    updateEnemies(enemiesRef.current.map((enemy) => {
       if (enemy.id !== enemyId || enemy.hp <= 0) return enemy;
       const options = enemyPool.filter((image) => !failedEnemyUris.current.has(image.preview ?? image.uri));
       if (!options.length) return { ...enemy, hp: 0, vanished: true };
@@ -535,15 +654,14 @@ export default function GoonQuestOverlay({
     }));
   };
 
-  const hitEnemy = (enemyId: string, damage: number, message?: string) => {
-    if (combatPausedNow) return;
-    const current = enemies;
-    const target = current.find((enemy) => enemy.id === enemyId);
-    if (!target || target.hp <= 0) return;
-    const next = current.map((enemy) => enemy.id === enemyId
-      ? { ...enemy, hp: Math.max(0, enemy.hp - damage) } : enemy);
-    const defeated = target.hp <= damage ? 1 : 0;
-    setEnemies(next);
+  const hitEnemy = (enemyId: string, damage: number, message?: string): boolean => {
+    if (combatPausedNow) return false;
+    // Reads the synchronously updated ref so two taps in one frame cannot both land on a dead target.
+    const hit = applyEnemyHit(enemiesRef.current, enemyId, damage);
+    if (!hit) return false;
+    const target = hit.defeated ?? enemiesRef.current.find((enemy) => enemy.id === enemyId)!;
+    const defeated = hit.defeated ? 1 : 0;
+    updateEnemies(hit.next);
     if (defeated) director.reportDefeats([target.id]);
     if (defeated) {
       onCombatProgress({ defeats: defeated });
@@ -567,27 +685,59 @@ export default function GoonQuestOverlay({
     } else if (message) {
       setDungeonMessage(message);
     }
+    return true;
   };
 
   const tapTarget = (enemyId: string) => {
     if (combatPausedNow) return;
-    setCombo((value) => value + 1);
-    hitEnemy(enemyId, 1);
+    if (hitEnemy(enemyId, 1)) setCombo((value) => value + 1);
   };
 
-  const createAiQuest = async () => {
+  const storySlots = openStoryQuestSlots(state.storyQuests);
+  const batchLimit = Math.max(1, Math.min(MAX_QUEST_BATCH, storySlots));
+  const effectiveBatch = clampBatchCount(batchCount, storySlots);
+
+  const runAiQuestBatch = async () => {
+    if (batchRunning.current || storytellerBusy) return;
     setStoryError('');
-    const generated = await onGenerateStoryQuest();
-    if (!generated) {
-      setStoryError('The model did not return a quest. Check its status in Storyteller AI settings.');
+    setBatchNotice('');
+    if (!storytellerReady) {
+      setStoryError('No local model is loaded. Load a GGUF model in Settings > Local storyteller.');
       return;
     }
-    if (!onAddStoryQuest(generated.quest)) {
+    if (!effectiveBatch) {
       setStoryError('Your quest journal is full. Claim a completed storyteller quest first.');
       return;
     }
-    setStoryLine(generated.enemyLine);
-    onDialogue(`${generated.quest.title} added to your guild ledger.`);
+    batchRunning.current = true;
+    batchCancel.current = false;
+    setBatchProgress({ done: 0, total: effectiveBatch });
+    let lastLine = '';
+    try {
+      const { added, stop } = await runQuestBatch({
+        count: effectiveBatch,
+        generate: async () => {
+          const generated = await onGenerateStoryQuest();
+          if (generated) lastLine = generated.enemyLine;
+          return generated;
+        },
+        add: (generated) => onAddStoryQuest(generated.quest),
+        isCancelled: () => batchCancel.current,
+        onProgress: (done, total) => { if (mountedRef.current) setBatchProgress({ done, total }); },
+      });
+      if (added.length) bump('questsForged', added.length);
+      if (!mountedRef.current) return;
+      if (lastLine && added.length) setStoryLine(lastLine);
+      const summary = batchSummary(added.length, effectiveBatch, stop);
+      if (stop === 'model' || stop === 'full') setStoryError(stop === 'model' && storytellerError ? `${summary} ${storytellerError}` : summary);
+      else setBatchNotice(summary);
+      if (added.length) onDialogue(added.length === 1
+        ? `${added[0].quest.title} added to your guild ledger.`
+        : `${added.length} new quests added to your guild ledger.`);
+    } finally {
+      batchRunning.current = false;
+      if (mountedRef.current) setBatchProgress(null);
+    }
   };
 
   const askFamiliar = async () => {
@@ -613,26 +763,13 @@ export default function GoonQuestOverlay({
     }
   };
 
-  const useBossSkill = () => {
-    if (!skillReady) return;
-    startCooldown('skill');
-    onCombatProgress({ spells: 1 });
-    damageBoss(6 + activeClass.skillDamage * 2, `${activeClass.skill} deals heavy damage.`);
-  };
-
-  const useBossSpell = () => {
-    if (!spellReady) return;
-    startCooldown('spell');
-    onCombatProgress({ spells: 1 });
-    damageBoss(10 + activeClass.spellDamage * 3, `${activeClass.spell} crashes into the boss.`);
-  };
-
   const useSkill = () => {
     if (!inDungeon || !skillReady || combatPausedNow) return;
-    const target = enemies.find((enemy) => enemy.hp > 0);
+    const target = enemiesRef.current.find((enemy) => enemy.hp > 0);
     if (!target) return;
     startCooldown('skill');
     onCombatProgress({ spells: 1 });
+    bump('spellsCast');
     hitEnemy(target.id, activeClass.skillDamage, `${activeClass.skill}!`);
     onDialogue(adultMode
       ? `${activeClass.name} unleashes ${activeClass.skill}. The heat spikes; keep edging until the den says you're done.`
@@ -641,16 +778,17 @@ export default function GoonQuestOverlay({
 
   const useSpell = () => {
     if (!inDungeon || !spellReady || combatPausedNow) return;
-    const living = enemies.filter((enemy) => enemy.hp > 0);
+    const living = enemiesRef.current.filter((enemy) => enemy.hp > 0);
     if (!living.length) return;
     startCooldown('spell');
     onCombatProgress({ spells: 1 });
+    bump('spellsCast');
     if (activeClass.areaSpell) {
-      const next = enemies.map((enemy) => enemy.hp > 0
+      const next = enemiesRef.current.map((enemy) => enemy.hp > 0
         ? { ...enemy, hp: Math.max(0, enemy.hp - activeClass.spellDamage) } : enemy);
       const fallen = living.filter((enemy) => enemy.hp <= activeClass.spellDamage);
       const defeated = fallen.length;
-      setEnemies(next);
+      updateEnemies(next);
       if (defeated) director.reportDefeats(fallen.map((enemy) => enemy.id));
       if (defeated) onCombatProgress({ defeats: defeated });
       setDungeonMessage(`${activeClass.spell} hits ${living.length} target${living.length === 1 ? '' : 's'}!`);
@@ -666,7 +804,7 @@ export default function GoonQuestOverlay({
     if (transitionTimer.current) clearTimeout(transitionTimer.current);
     transitionHandled.current = false;
     setInDungeon(false);
-    setEnemies([]);
+    updateEnemies([]);
     setRunId((value) => value + 1);
     setCombatPaused(false);
     setBoardOpen(false);
@@ -679,114 +817,109 @@ export default function GoonQuestOverlay({
     onClose();
   };
 
-  if (bossActive) {
-    const bossHealthRatio = bossMaxHp > 0 ? Math.max(0, bossHp / bossMaxHp) : 0;
+  const honors = useMemo(() => evaluateGuildHonors(state, guild.ledger), [guild.ledger, state]);
+  const questIdsKey = quests.map((quest) => quest.id).join('|');
+  const honorIdsKey = honors.map((honor) => honor.id).join('|');
+  useEffect(() => {
+    if (!guild.ready || !state.dayKey) return;
+    updateLedger((current) => prunePins(current, questIdsKey.split('|'), honorIdsKey.split('|')));
+  }, [guild.ready, honorIdsKey, questIdsKey, state.dayKey, updateLedger]);
+
+  const pinItems: PinItem[] = [
+    ...guild.ledger.pinnedQuestIds.flatMap((id): PinItem[] => {
+      const quest = quests.find((item) => item.id === id);
+      return quest && !quest.claimed ? [{
+        kind: 'quest', id, title: quest.title, progress: quest.progress, target: quest.target,
+        done: quest.progress >= quest.target,
+      }] : [];
+    }),
+    ...guild.ledger.pinnedHonorIds.flatMap((id): PinItem[] => {
+      const honor = honors.find((item) => item.id === id);
+      return honor && !honor.claimed ? [{
+        kind: 'honor', id, title: honor.title, progress: honor.progress, target: honor.target, done: honor.complete,
+      }] : [];
+    }),
+  ];
+
+  const toggleQuestPin = (kind: 'quest' | 'honor', id: string) => {
+    updateLedger((current) => togglePin(current, kind, id));
+  };
+
+  const claimHonor = (honor: HonorProgress) => {
+    updateLedger((current) => claimGuildHonor(current, state, honor.id));
+    onDialogue(`Guild honor earned: ${honor.title}.`);
+  };
+
+  const forgeHonor = async () => {
+    setHonorNotice('');
+    if (!onGenerateHonorIdea || !storytellerReady) {
+      setHonorNotice('No local model is loaded. Load a GGUF model in Settings > Local storyteller to forge honors.');
+      return;
+    }
+    if (storytellerBusy || honorBusy) {
+      setHonorNotice('The model is busy. Try again when the current reply finishes.');
+      return;
+    }
+    setHonorBusy(true);
+    try {
+      const idea = await onGenerateHonorIdea({ className: activeClass.name, companionName: state.petName });
+      if (!mountedRef.current) return;
+      if (!idea) {
+        setHonorNotice(storytellerError || 'The model did not return an honor. Check its status.');
+        return;
+      }
+      const id = `gen-honor-${Date.now().toString(36)}`;
+      if (!addGeneratedHonor(guild.ledger, state, idea, id)) {
+        setHonorNotice('The honor wall is full. Claim a forged honor or remove one first.');
+        return;
+      }
+      updateLedger((current) => addGeneratedHonor(current, state, idea, id) ?? current);
+      setHonorNotice(`${idea.title} joins the honor wall.`);
+    } finally {
+      if (mountedRef.current) setHonorBusy(false);
+    }
+  };
+
+  const generatedFull = guild.ledger.generatedHonors.length >= 8
+    && !guild.ledger.generatedHonors.some((honor) => guild.ledger.claimedHonorIds.includes(honor.id));
+
+  const chatLayer = (
+    <PawstarChat
+      visible={chatVisible || chatOpen}
+      onClose={() => { setChatOpen(false); onChatClose?.(); }}
+      petName={state.petName || 'Pawstar'}
+      modelReady={storytellerReady && !!onGenerateChatReply}
+      modelBusy={storytellerBusy}
+      modelError={storytellerError}
+      rolePrompt={guild.ledger.chatRolePrompt}
+      onRolePromptChange={(prompt) => updateLedger((current) => ({ ...current, chatRolePrompt: prompt }))}
+      onResetRole={() => updateLedger((current) => ({ ...current, chatRolePrompt: DEFAULT_CHAT_ROLE }))}
+      onSend={onGenerateChatReply}
+      onExchange={() => bump('chatMessages')}
+    />
+  );
+
+  if (bossActive && boss) {
     return (
-      <View style={styles.bossLayer}>
-        <View style={styles.bossScrim}>
-          <SafeAreaView style={styles.bossSafeArea}>
-            <View style={styles.bossTopBar}>
-              <View style={styles.bossVideoLabel}>
-                <Text style={[styles.bossKicker, { color: colors.primary }]}>VIDEO DUNGEON</Text>
-                <Text numberOfLines={1} style={[styles.bossVideoName, { color: colors.foreground }]}>
-                  {selectedVideo?.name ?? 'Active video'}
-                </Text>
-              </View>
-              <Pressable accessibilityRole="button" accessibilityLabel="Leave boss fight"
-                onPress={finishBossView}
-                style={[styles.bossExitButton, { borderColor: colors.border, backgroundColor: 'rgba(10,8,15,0.84)' }]}>
-                <Feather name="x" size={18} color={colors.foreground} />
-              </Pressable>
-            </View>
-
-            <View style={styles.bossCenter}>
-              <Animated.View style={[
-                styles.bossPortraitFrame,
-                {
-                  borderColor: colors.primary,
-                  transform: [{ scale: bossPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }],
-                },
-              ]}>
-                <Pressable accessibilityRole="button" accessibilityLabel="Tap to attack the boss"
-                  disabled={!!bossResult}
-                  onPress={controlScheme === 'touch' ? tapBoss : undefined}
-                  onPointerUp={controlScheme === 'spen' ? (event) => {
-                    if (shouldActivateCombatTap(controlScheme, event.nativeEvent.pointerType)) tapBoss();
-                  } : undefined}
-                  style={styles.bossPortraitButton}>
-                  {bossImage ? (
-                    <Image source={{ uri: bossImage.preview ?? bossImage.uri }} contentFit="cover" style={styles.bossPortrait} />
-                  ) : (
-                    <View style={[styles.bossPortraitFallback, { backgroundColor: colors.secondary }]}>
-                      <Feather name="shield" size={76} color={colors.primary} />
-                    </View>
-                  )}
-                </Pressable>
-              </Animated.View>
-              <Text style={[styles.bossName, { color: colors.foreground }]}>
-                {bossImage?.name.split(/\s+/).slice(0, 4).join(' ') || 'Moonlit Colossus'}
-              </Text>
-              <Text style={[styles.bossHint, { color: colors.mutedForeground }]}>
-                {bossResult ? 'The encounter is over.' : 'Tap the portrait to strike'}
-              </Text>
-            </View>
-
-            <View style={[styles.bossHud, { borderColor: colors.border, backgroundColor: 'rgba(10,8,15,0.92)' }]}>
-              {bossResult ? (
-                <View style={styles.bossResult}>
-                  <Text style={[styles.bossResultTitle, { color: colors.primary }]}>
-                    {bossResult === 'victory' ? 'BOSS DEFEATED' : 'BOSS ESCAPED'}
-                  </Text>
-                  <Text style={[styles.bossHint, { color: colors.foreground }]}>{bossMessage}</Text>
-                  <Pressable accessibilityRole="button" onPress={finishBossView}
-                    style={[styles.primaryButton, { backgroundColor: colors.primary }]}>
-                    <Feather name="arrow-left" size={16} color={colors.primaryForeground} />
-                    <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>Return to the quest board</Text>
-                  </Pressable>
-                </View>
-              ) : (
-                <>
-                  <View style={styles.bossHpHeader}>
-                    <Text style={[styles.bossKicker, { color: colors.foreground }]}>
-                      {bossHp.toLocaleString()} / {bossMaxHp.toLocaleString()} HP
-                    </Text>
-                    <Text style={[styles.bossKicker, { color: colors.primary }]}>
-                      {Math.ceil(remainingSeconds)}s LEFT
-                    </Text>
-                  </View>
-                  <View style={[styles.bossHpTrack, { backgroundColor: colors.card }]}>
-                    <View style={[styles.bossHpFill, { backgroundColor: colors.primary, width: `${bossHealthRatio * 100}%` }]} />
-                  </View>
-                  <Text style={[styles.bossStatus, { color: colors.mutedForeground }]}>
-                    {bossBpm ? `${bossBpm} BPM beat pulse · ` : ''}{bossMessage}
-                  </Text>
-                  <View style={styles.bossActionRow}>
-                    <Pressable accessibilityRole="button" disabled={!!bossResult}
-                      onPress={controlScheme === 'touch' ? tapBoss : undefined}
-                      onPointerUp={controlScheme === 'spen' ? (event) => {
-                        if (shouldActivateCombatTap(controlScheme, event.nativeEvent.pointerType)) tapBoss();
-                      } : undefined}
-                      style={[styles.bossAction, { borderColor: colors.primary, backgroundColor: colors.accent }]}>
-                      <Feather name="target" size={15} color={colors.primary} />
-                      <Text style={[styles.bossActionText, { color: colors.foreground }]}>Strike · combo {bossCombo}</Text>
-                    </Pressable>
-                    <Pressable accessibilityRole="button" disabled={!skillReady} onPress={useBossSkill}
-                      style={[styles.bossAction, { borderColor: colors.border, backgroundColor: colors.secondary, opacity: skillReady ? 1 : 0.45 }]}>
-                      <Feather name="crosshair" size={15} color={colors.primary} />
-                      <Text style={[styles.bossActionText, { color: colors.foreground }]}>{activeClass.skill} · {skillReady ? 'Ready' : 'Resting'}</Text>
-                    </Pressable>
-                    <Pressable accessibilityRole="button" disabled={!spellReady} onPress={useBossSpell}
-                      style={[styles.bossAction, { borderColor: colors.border, backgroundColor: colors.secondary, opacity: spellReady ? 1 : 0.45 }]}>
-                      <Feather name="zap" size={15} color={colors.primary} />
-                      <Text style={[styles.bossActionText, { color: colors.foreground }]}>{activeClass.spell} · {spellReady ? 'Ready' : 'Resting'}</Text>
-                    </Pressable>
-                  </View>
-                </>
-              )}
-            </View>
-          </SafeAreaView>
-        </View>
-      </View>
+      <BossArena
+        boss={boss}
+        result={bossResult}
+        resultMessage={bossMessage}
+        name={bossImage?.name.split(/\s+/).slice(0, 4).join(' ') || 'Moonlit Colossus'}
+        imageUri={bossImage ? bossImage.preview ?? bossImage.uri : null}
+        videoName={selectedVideo?.name ?? 'Active video'}
+        remainingSeconds={remainingSeconds}
+        playing={videoIsPlaying}
+        calm={calm}
+        controlScheme={controlScheme}
+        skillName={activeClass.skill}
+        spellName={activeClass.spell}
+        onStrike={tapBoss}
+        onDefend={defendBoss}
+        onSkill={() => castBoss('skill')}
+        onSpell={() => castBoss('spell')}
+        onExit={finishBossView}
+      />
     );
   }
 
@@ -800,7 +933,7 @@ export default function GoonQuestOverlay({
       onImageFailed={handleEnemyImageFailed}
       banner={dungeonMessage}
       hud={{
-        wave, waves: DUNGEON_WAVES, combo, bpm: dungeonBpm,
+        wave, waves: wavePlan.length, combo, bpm: dungeonBpm,
         message: dungeonMessage || 'Tap a restless portrait to strike.',
         skillName: activeClass.skill, spellName: activeClass.spell, skillReady, spellReady,
         paused: combatPausedNow, videoPaused: !combatVideoPlaying, canOpenBoard: visible,
@@ -823,6 +956,11 @@ export default function GoonQuestOverlay({
   return (
     <>
     {combatLayer}
+    {!inDungeon && (
+      <QuestPins items={pinItems} onUnpin={toggleQuestPin}
+        onOpen={() => setBoardOpen(true)} />
+    )}
+    {chatLayer}
     <Modal visible={visible && (!inDungeon || boardOpen)} transparent animationType="fade" onRequestClose={close}>
       <View style={styles.backdrop}>
         <SafeAreaView style={[styles.panel, { backgroundColor: colors.background, borderColor: colors.border, maxWidth: width > 1000 ? 980 : 760 }]}>
@@ -920,45 +1058,86 @@ export default function GoonQuestOverlay({
               </View>
               <Text style={[styles.muted, { color: colors.mutedForeground }]}>{quests.filter((quest) => !quest.claimed).length} to claim</Text>
             </View>
-            {storytellerReady && (
-              <View style={[styles.storyCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-                <View style={styles.storyCardHeading}>
-                  <Feather name="star" size={16} color={colors.primary} />
-                  <Text style={[styles.sectionKicker, { color: colors.primary }]}>PAWSTAR’S STORY FORGE</Text>
-                </View>
-                <Text style={[styles.muted, { color: colors.mutedForeground }]}>
-                  Quests are written locally and use goals the game can track and reward.
-                </Text>
-                <View style={styles.storyActions}>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Generate an AI quest"
-                    disabled={storytellerBusy} onPress={() => void createAiQuest()}
-                    style={[styles.storyAction, { backgroundColor: colors.primary, opacity: storytellerBusy ? 0.5 : 1 }]}>
-                    <Feather name="book-open" size={14} color={colors.primaryForeground} />
-                    <Text style={[styles.storyActionText, { color: colors.primaryForeground }]}>Dream a quest</Text>
-                  </Pressable>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Ask Pawstar for a line"
-                    disabled={storytellerBusy} onPress={() => void askFamiliar()}
-                    style={[styles.storyAction, { backgroundColor: colors.card, borderColor: colors.border, opacity: storytellerBusy ? 0.5 : 1 }]}>
-                    <Feather name="message-circle" size={14} color={colors.primary} />
-                    <Text style={[styles.storyActionText, { color: colors.foreground }]}>Ask Pawstar</Text>
-                  </Pressable>
-                </View>
-                {storytellerBusy && <ActivityIndicator size="small" color={colors.primary} />}
-                {storyLine ? (
-                  <View style={[styles.storyLineBubble, { backgroundColor: colors.card, borderColor: colors.primary }]}>
-                    <Text style={[styles.storyLineText, { color: colors.foreground }]}>{storyLine}</Text>
-                  </View>
-                ) : null}
-                {storyError ? (
-                  <Text accessibilityRole="alert" style={[styles.storyError, { color: colors.destructive }]}>
-                    {storyError}
-                  </Text>
-                ) : null}
+            <View style={[styles.storyCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+              <View style={styles.storyCardHeading}>
+                <Feather name="star" size={16} color={colors.primary} />
+                <Text style={[styles.sectionKicker, { color: colors.primary }]}>PAWSTAR'S STORY FORGE</Text>
               </View>
-            )}
+              <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+                {storytellerReady
+                  ? 'Quests are written locally, one at a time, and use goals the game can track and reward.'
+                  : 'Load a local GGUF model in Settings > Local storyteller to forge quests and chat with Pawstar.'}
+              </Text>
+              <View style={styles.batchHeader}>
+                <Text style={[styles.muted, { color: colors.foreground }]}>
+                  Forge {effectiveBatch || 0} quest{effectiveBatch === 1 ? '' : 's'}
+                </Text>
+                <Text style={[styles.muted, { color: storySlots ? colors.mutedForeground : colors.destructive }]}>
+                  {storySlots ? `${storySlots} of 10 journal slots open` : 'Journal full: claim a storyteller quest'}
+                </Text>
+              </View>
+              <StepSlider value={Math.min(batchCount, batchLimit)} min={1} max={MAX_QUEST_BATCH} limit={batchLimit}
+                disabled={!!batchProgress || !storySlots} onChange={setBatchCount} label="Quest batch size" colors={colors} />
+              {batchProgress && (
+                <View style={styles.batchProgress}>
+                  <View style={[styles.progressTrack, { backgroundColor: colors.muted, flex: 1, marginTop: 0 }]}>
+                    <View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${(batchProgress.done / batchProgress.total) * 100}%` }]} />
+                  </View>
+                  <Text style={[styles.muted, { color: colors.foreground }]}>
+                    {batchProgress.done}/{batchProgress.total}{batchCancel.current ? ' · stopping' : ''}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.storyActions}>
+                {batchProgress ? (
+                  <Pressable accessibilityRole="button" accessibilityLabel="Stop the quest batch after the current quest"
+                    onPress={() => { batchCancel.current = true; setBatchNotice('Stopping after the current quest finishes...'); }}
+                    style={[styles.storyAction, { backgroundColor: colors.card, borderColor: colors.destructive }]}>
+                    <Feather name="square" size={14} color={colors.destructive} />
+                    <Text style={[styles.storyActionText, { color: colors.foreground }]}>Stop batch</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Generate ${effectiveBatch} AI quests`}
+                    disabled={storytellerBusy || !storytellerReady || !effectiveBatch} onPress={() => void runAiQuestBatch()}
+                    style={[styles.storyAction, { backgroundColor: colors.primary, borderColor: colors.primary, opacity: storytellerBusy || !storytellerReady || !effectiveBatch ? 0.5 : 1 }]}>
+                    <Feather name="book-open" size={14} color={colors.primaryForeground} />
+                    <Text style={[styles.storyActionText, { color: colors.primaryForeground }]}>
+                      {effectiveBatch > 1 ? `Dream ${effectiveBatch} quests` : 'Dream a quest'}
+                    </Text>
+                  </Pressable>
+                )}
+                <Pressable accessibilityRole="button" accessibilityLabel="Ask Pawstar for a line"
+                  disabled={storytellerBusy || !storytellerReady || !!batchProgress} onPress={() => void askFamiliar()}
+                  style={[styles.storyAction, { backgroundColor: colors.card, borderColor: colors.border, opacity: storytellerBusy || !storytellerReady || batchProgress ? 0.5 : 1 }]}>
+                  <Feather name="message-circle" size={14} color={colors.primary} />
+                  <Text style={[styles.storyActionText, { color: colors.foreground }]}>Ask Pawstar</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Open Pawstar chat over the videos"
+                  onPress={() => { setChatOpen(true); close(); }}
+                  style={[styles.storyAction, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+                  <Feather name="message-square" size={14} color={colors.primary} />
+                  <Text style={[styles.storyActionText, { color: colors.foreground }]}>Chat over videos</Text>
+                </Pressable>
+              </View>
+              {storytellerBusy && !batchProgress && <ActivityIndicator size="small" color={colors.primary} />}
+              {!!batchNotice && <Text style={[styles.muted, { color: colors.primary }]}>{batchNotice}</Text>}
+              {storyLine ? (
+                <View style={[styles.storyLineBubble, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+                  <Text style={[styles.storyLineText, { color: colors.foreground }]}>{storyLine}</Text>
+                </View>
+              ) : null}
+              {storyError ? (
+                <Text accessibilityRole="alert" style={[styles.storyError, { color: colors.destructive }]}>
+                  {storyError}
+                </Text>
+              ) : null}
+            </View>
             <View style={styles.questList}>
               {quests.map((quest) => (
                 <QuestRow key={quest.id} quest={quest} colors={colors}
+                  pinned={guild.ledger.pinnedQuestIds.includes(quest.id)}
+                  pinDisabled={pinItems.length >= MAX_PINS * 2 || guild.ledger.pinnedQuestIds.length >= MAX_PINS}
+                  onTogglePin={() => toggleQuestPin('quest', quest.id)}
                   onClaim={() => {
                     if (onClaimQuest(quest.id)) onDialogue(adultMode
                       ? `${quest.title} claimed. ${quest.rewardCoins} coins added. Keep stroking; the next round is waiting.`
@@ -966,6 +1145,46 @@ export default function GoonQuestOverlay({
                   }} />
               ))}
             </View>
+
+            <View style={styles.sectionTitleLine}>
+              <View>
+                <Text style={[styles.sectionKicker, { color: colors.primary }]}>HONOR WALL</Text>
+                <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Guild honors</Text>
+              </View>
+              <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+                {honors.filter((honor) => honor.claimed).length}/{honors.length} earned
+              </Text>
+            </View>
+            <View style={styles.questList}>
+              {honors.filter((honor) => showClaimedHonors || !honor.claimed)
+                .sort((x, y) => Number(y.complete && !y.claimed) - Number(x.complete && !x.claimed) || y.ratio - x.ratio)
+                .map((honor) => (
+                  <HonorRow key={honor.id} honor={honor} colors={colors}
+                    pinned={guild.ledger.pinnedHonorIds.includes(honor.id)}
+                    pinDisabled={guild.ledger.pinnedHonorIds.length >= MAX_PINS}
+                    onTogglePin={() => toggleQuestPin('honor', honor.id)}
+                    onClaim={() => claimHonor(honor)}
+                    onRemove={honor.generated ? () => updateLedger((current) => removeGeneratedHonor(current, honor.id)) : undefined} />
+                ))}
+            </View>
+            <View style={styles.storyActions}>
+              <Pressable accessibilityRole="button" onPress={() => setShowClaimedHonors((value) => !value)}
+                style={[styles.sourceActionButton, { borderColor: colors.border }]}>
+                <Text style={[styles.sourceActionText, { color: colors.foreground }]}>
+                  {showClaimedHonors ? 'Hide earned honors' : 'Show earned honors'}
+                </Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Forge a new guild honor with the local model"
+                disabled={honorBusy || storytellerBusy || generatedFull} onPress={() => void forgeHonor()}
+                style={[styles.sourceActionButton, { borderColor: colors.primary, opacity: honorBusy || storytellerBusy || generatedFull ? 0.45 : 1 }]}>
+                {honorBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="award" size={14} color={colors.primary} />}
+                <Text style={[styles.sourceActionText, { color: colors.primary }]}>Forge an honor</Text>
+              </Pressable>
+            </View>
+            {!!honorNotice && <Text accessibilityRole="alert" style={[styles.muted, { color: colors.primary }]}>{honorNotice}</Text>}
+            <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+              Pin up to {MAX_PINS} quests and {MAX_PINS} honors; pins float above the videos even with this board closed.
+            </Text>
 
             <View style={[styles.dungeonCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
               <View>
@@ -1109,7 +1328,7 @@ export default function GoonQuestOverlay({
                   <Text style={[styles.sectionTitle, { color: colors.foreground }]}>The image den</Text>
                   <Text style={[styles.muted, { color: colors.mutedForeground }]}>
                     {enemyPool.length
-                      ? `${enemyPool.length} images ready · three restless waves`
+                      ? `${enemyPool.length} images ready · ${denEnemyCount} foes at once · ${planWaves(denEnemyCount).length} waves`
                       : 'Choose a local pool or load a tag search'}
                   </Text>
                 </View>
@@ -1225,6 +1444,18 @@ export default function GoonQuestOverlay({
                   )}
                 </View>
               </View>
+              {!inDungeon && (
+                <View style={{ gap: 6 }}>
+                  <View style={styles.batchHeader}>
+                    <Text style={[styles.muted, { color: colors.foreground }]}>Enemies on screen: {denEnemyCount}</Text>
+                    <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+                      Waves {planWaves(denEnemyCount).join(' / ')}
+                    </Text>
+                  </View>
+                  <StepSlider value={denEnemyCount} min={MIN_DEN_ENEMIES} max={MAX_DEN_ENEMIES} limit={MAX_DEN_ENEMIES}
+                    disabled={false} onChange={(value) => setDenEnemyCount(clampEnemyCount(value))} label="Enemy count" colors={colors} />
+                </View>
+              )}
               {!inDungeon ? (
                 <Pressable onPress={startDungeon} accessibilityRole="button" disabled={!enemyPool.length}
                   style={[styles.primaryButton, { backgroundColor: colors.primary, opacity: enemyPool.length ? 1 : 0.45 }]}>
@@ -1239,7 +1470,7 @@ export default function GoonQuestOverlay({
                     style={[styles.primaryButton, { backgroundColor: colors.primary, flexGrow: 1 }]}>
                     <Feather name="play" size={16} color={colors.primaryForeground} />
                     <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>
-                      Resume combat · wave {wave}/{DUNGEON_WAVES}
+                      Resume combat · wave {wave}/{wavePlan.length}
                     </Text>
                   </Pressable>
                   <Pressable accessibilityRole="button" onPress={leaveDungeon}
@@ -1258,6 +1489,90 @@ export default function GoonQuestOverlay({
     </Modal>
     <MotionMiniGame visible={visible && arcadeOpen} onClose={() => setArcadeOpen(false)} calm={calm} />
     </>
+  );
+}
+
+function StepSlider({ value, min, max, limit, disabled, onChange, label, colors }: {
+  value: number; min: number; max: number; limit: number; disabled: boolean;
+  onChange: (value: number) => void; label: string; colors: ReturnType<typeof useColors>;
+}) {
+  const steps = Array.from({ length: max - min + 1 }, (_, index) => min + index);
+  return (
+    <View accessible accessibilityRole="adjustable" accessibilityLabel={label}
+      accessibilityValue={{ min, max: limit, now: value }}
+      accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+      onAccessibilityAction={(event) => {
+        if (disabled) return;
+        if (event.nativeEvent.actionName === 'increment') onChange(Math.min(limit, value + 1));
+        if (event.nativeEvent.actionName === 'decrement') onChange(Math.max(min, value - 1));
+      }}
+      style={[styles.stepRow, { opacity: disabled ? 0.45 : 1 }]}>
+      <Pressable accessibilityElementsHidden importantForAccessibility="no" disabled={disabled || value <= min}
+        onPress={() => onChange(Math.max(min, value - 1))} hitSlop={6}
+        style={[styles.stepEnd, { borderColor: colors.border }]}>
+        <Feather name="minus" size={13} color={colors.foreground} />
+      </Pressable>
+      <View style={styles.stepTrack}>
+        {steps.map((step) => {
+          const allowed = step <= limit;
+          return (
+            <Pressable key={step} accessibilityElementsHidden importantForAccessibility="no"
+              disabled={disabled || !allowed} onPressIn={() => onChange(step)} hitSlop={{ top: 10, bottom: 10 }}
+              style={[styles.stepCell, {
+                backgroundColor: step <= value ? colors.primary : allowed ? colors.muted : colors.card,
+                opacity: allowed ? 1 : 0.35,
+              }]} />
+          );
+        })}
+      </View>
+      <Pressable accessibilityElementsHidden importantForAccessibility="no" disabled={disabled || value >= limit}
+        onPress={() => onChange(Math.min(limit, value + 1))} hitSlop={6}
+        style={[styles.stepEnd, { borderColor: colors.border }]}>
+        <Feather name="plus" size={13} color={colors.foreground} />
+      </Pressable>
+    </View>
+  );
+}
+
+function HonorRow({ honor, colors, pinned, pinDisabled, onTogglePin, onClaim, onRemove }: {
+  honor: HonorProgress; colors: ReturnType<typeof useColors>; pinned: boolean; pinDisabled: boolean;
+  onTogglePin: () => void; onClaim: () => void; onRemove?: () => void;
+}) {
+  const canClaim = honor.complete && !honor.claimed;
+  return (
+    <View style={[styles.questRow, { borderColor: canClaim ? colors.primary : colors.border, backgroundColor: colors.secondary }]}>
+      <View style={styles.questCopy}>
+        <View style={styles.questTitleLine}>
+          <Feather name="award" size={12} color={honor.claimed ? colors.primary : colors.mutedForeground} />
+          <Text style={[styles.questTitle, { color: colors.foreground }]}>{honor.title}</Text>
+          {honor.generated && <Text style={[styles.weeklyTag, { color: colors.primary }]}>FORGED</Text>}
+        </View>
+        <Text style={[styles.questDescription, { color: colors.mutedForeground }]}>{honor.description}</Text>
+        <View style={[styles.progressTrack, { backgroundColor: colors.muted }]}>
+          <View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${honor.ratio * 100}%` }]} />
+        </View>
+        <Text style={[styles.progressLabel, { color: colors.mutedForeground }]}>
+          {honor.progress} / {honor.target} {metricLabels[honor.metric]}
+        </Text>
+      </View>
+      {!honor.claimed && (
+        <PinToggle pinned={pinned} disabled={pinDisabled} onPress={onTogglePin} label={honor.title} colors={colors} />
+      )}
+      {onRemove && !canClaim && (
+        <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${honor.title}`} onPress={onRemove} hitSlop={6}
+          style={[styles.pinButton, { borderColor: colors.border }]}>
+          <Feather name="trash-2" size={13} color={colors.mutedForeground} />
+        </Pressable>
+      )}
+      <Pressable accessibilityRole="button" disabled={!canClaim}
+        accessibilityLabel={honor.claimed ? `${honor.title} earned` : `Claim ${honor.title}`}
+        onPress={onClaim}
+        style={[styles.claimButton, { backgroundColor: canClaim ? colors.primary : colors.card, opacity: honor.claimed ? 0.5 : 1 }]}>
+        <Text style={[styles.claimText, { color: canClaim ? colors.primaryForeground : colors.mutedForeground }]}>
+          {honor.claimed ? 'Earned' : 'Claim'}
+        </Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -1359,6 +1674,13 @@ const styles = StyleSheet.create({
   skillText: { fontSize: 10, fontWeight: '700' },
   leaveButton: { minHeight: 38, paddingHorizontal: 10, borderWidth: 1, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   footerNote: { textAlign: 'center', fontSize: 10, lineHeight: 15 },
+  pinButton: { width: 32, height: 32, borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  batchHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  batchProgress: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stepEnd: { width: 34, height: 34, borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  stepTrack: { flex: 1, flexDirection: 'row', gap: 3, height: 22, alignItems: 'stretch' },
+  stepCell: { flex: 1, borderRadius: 2 },
   bossLayer: { ...StyleSheet.absoluteFill, zIndex: 100, elevation: 100 },
   bossScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.12)' },
   bossSafeArea: { flex: 1, justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 8 },

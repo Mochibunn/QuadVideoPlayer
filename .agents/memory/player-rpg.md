@@ -19,7 +19,13 @@ Encounter enemies belong above the playing videos, not inside the quest window.
 
 **Why:** The user explicitly wants larger, more randomly moving enemies in front of the streams. The quest window is for setup and quest management, not the combat arena.
 
-**How to apply:** Keep active fights independent of quest-window visibility and preserve video touch controls outside enemy/HUD hit areas.
+**How to apply:** Keep active fights independent of quest-window visibility. Disable the video control overlays and their tap targets during enemy and boss fights; restore them when combat ends.
+
+The timer button must stay stationary in the global overlay and must not show elapsed time.
+
+**Why:** The user explicitly reversed the earlier moving-timer preference and wants time in a separately configurable transparent stats overlay.
+
+**How to apply:** Keep timer/leaderboard, chat, and stats actions in the global controls; do not reintroduce a bouncing timer button.
 
 The local AI may direct enemy movement, give enemies taunts and defeat lines in nearby speech balloons, and automatically add enemy-search tags during fights. Profanity is allowed.
 

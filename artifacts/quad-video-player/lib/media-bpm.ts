@@ -8,7 +8,14 @@ type NativeBpmAnalyzer = {
 
 export type VideoBpmResult = BeatEstimate & { analyzedSeconds: number };
 
-export async function analyzeVideoBpm(uri: string): Promise<VideoBpmResult> {
+let decodeQueue: Promise<unknown> = Promise.resolve();
+/** Manual detection and automatic scanning share one decoder budget. */
+export function analyzeVideoBpm(uri: string): Promise<VideoBpmResult> {
+  const result = decodeQueue.catch(() => undefined).then(() => decodeVideoBpm(uri));
+  decodeQueue = result.catch(() => undefined);
+  return result;
+}
+async function decodeVideoBpm(uri: string): Promise<VideoBpmResult> {
   if (Platform.OS !== 'android') {
     throw new Error('BPM detection is available in the Android app.');
   }

@@ -51,6 +51,11 @@ import { usePlayerRewardsSettings } from '@/hooks/usePlayerRewardsSettings';
 import { useSessionRegistry } from '@/hooks/useSessionRegistry';
 import SessionControls from '@/components/SessionControls';
 import ViewingSessionTimer from '@/components/ViewingSessionTimer';
+import SessionStatsOverlay from '@/components/SessionStatsOverlay';
+import { useAutomaticVideoBpm } from '@/hooks/useAutomaticVideoBpm';
+import { useLiveHeartRate } from '@/hooks/useLiveHeartRate';
+import { averageVideoBpm } from '@/lib/bpm-cache';
+import { slotMayPlay } from '@/lib/playback-policy';
 import { useViewingSessions } from '@/hooks/useViewingSessions';
 import { usePlayerRpg } from '@/hooks/usePlayerRpg';
 import { useLocalStoryModel } from '@/hooks/useLocalStoryModel';
@@ -69,7 +74,7 @@ import { pickMediaFiles } from '@/lib/media-picker';
 import { DEFAULT_CONTROLS_HIDE_SECONDS, parseControlsHideSeconds } from '@/lib/controls-visibility';
 import { readDownloadsVideos } from '@/lib/downloads-library';
 import { getVideoAudioMode } from '@/lib/audio-mode';
-import { congratulationsFor, isThemeUnlocked, themeUnlockLevels } from '@/lib/player-rewards';
+import { congratulationsFor, effectiveBorderThickness, isBorderUnlocked, isThemeUnlocked, messagesForCongratText, themeUnlockLevels } from '@/lib/player-rewards';
 import { hasVideoExtension, isVideoFile, mediaPlaybackError, videoSourceForUri } from '@/lib/media-formats';
 import {
   applyVideoWatchHistory, formatLastPlayed, pickInitialVideos, pickNextVideo,
@@ -87,7 +92,7 @@ import {
 import { PLAYER_RPG_KEY, type GoonQuestClassId } from '@/lib/player-rpg';
 import type { CombatControlScheme } from '@/lib/input-controls';
 import { PLAYER_REWARDS_KEY } from '@/lib/player-rewards';
-import { VIEWING_SESSIONS_KEY } from '@/lib/viewing-sessions';
+import { elapsedViewingTime, VIEWING_SESSIONS_KEY } from '@/lib/viewing-sessions';
 import { PLAY_EXTRAS_KEY } from '@/lib/play-extras';
 
 type ActivePanel = 'settings' | 'pool' | 'audio' | 'slideshow' | 'sources' | null;
@@ -237,6 +242,7 @@ function VideoTile({
   tileVisible,
   onToggleFocus,
   controlsVisible,
+  controlsEnabled,
   onToggleControls,
   initialSnapshot,
   playbackId,
@@ -262,6 +268,7 @@ function VideoTile({
   tileVisible: boolean;
   onToggleFocus: (index: number) => void;
   controlsVisible: boolean;
+  controlsEnabled: boolean;
   onToggleControls: () => void;
   initialSnapshot?: VideoSnapshot;
   playbackId: string;
@@ -364,8 +371,7 @@ function VideoTile({
     async (forcePlayback = false) => {
       const next = getNextVideo(index, currentAssetRef.current.id);
       if (!next) return;
-      const shouldResume = globalPlaying && (focusIndex === null || focusIndex === index) &&
-        (forcePlayback || player.playing);
+      const shouldResume = forcePlayback || restorePlaying.current;
       changingSource.current = true;
       nextSourcePlaying.current = shouldResume;
       restorePlaying.current = shouldResume;
@@ -378,7 +384,9 @@ function VideoTile({
       setIsLoading(true);
       try {
         await player.replaceAsync(videoSourceForUri(next.uri));
-        if (shouldResume) player.play();
+        const mode = playModeRef.current;
+        if (restorePlaying.current && slotMayPlay(mode.globalPlaying, mode.focusIndex, index)) player.play();
+        else player.pause();
       } catch (error) {
         setErrorMessage(
           error instanceof Error ? error.message : 'This video could not be opened.',
@@ -399,6 +407,13 @@ function VideoTile({
   });
 
   useEventListener(player, 'playingChange', ({ isPlaying: playing }) => {
+    const mode = playModeRef.current;
+    if (playing && !slotMayPlay(mode.globalPlaying, mode.focusIndex, index)) {
+      player.pause();
+      setIsPlaying(false);
+      onPlaybackStateChange(playbackId, false);
+      return;
+    }
     setIsPlaying(playing);
     if (playing) onVideoStarted(currentAssetRef.current.id);
     onPlaybackStateChange(playbackId, playing, playing ? currentAssetRef.current.uri : undefined);
@@ -449,30 +464,19 @@ function VideoTile({
     const globalChanged = previousPlayMode.current.globalPlaying !== globalPlaying;
     const focusChanged = previousPlayMode.current.focusIndex !== focusIndex;
     previousPlayMode.current = { focusIndex, globalPlaying };
-    if (focusIndex !== null && focusIndex !== index) {
-      restorePlaying.current = false;
+    if (firstGlobalEffect.current) {
+      firstGlobalEffect.current = false;
+    } else if (globalChanged) {
+      restorePlaying.current = globalPlaying;
+    } else if (focusChanged && focusIndex === index && globalPlaying) {
+      restorePlaying.current = true;
+    }
+    if (!slotMayPlay(globalPlaying, focusIndex, index)) {
       player.pause();
       return;
     }
-    if (!globalChanged && focusChanged) {
-      if (focusIndex === index && globalPlaying) {
-        restorePlaying.current = true;
-        player.play();
-      } else if (globalPlaying && restorePlaying.current) player.play();
-      else player.pause();
-      return;
-    }
-    if (firstGlobalEffect.current) {
-      firstGlobalEffect.current = false;
-      if (initialSnapshot) {
-        if (pendingPosition.current === null && restorePlaying.current && globalPlaying) player.play();
-        else player.pause();
-        return;
-      }
-    }
-    restorePlaying.current = globalPlaying;
     if (pendingPosition.current !== null || !sourcePrepared.current) return;
-    if (globalPlaying) {
+    if (restorePlaying.current) {
       player.play();
     } else {
       player.pause();
@@ -532,7 +536,9 @@ function VideoTile({
     setIsLoading(true);
     try {
       await player.replaceAsync(videoSourceForUri(currentAsset.uri));
-      if (shouldPlay) player.play();
+      const mode = playModeRef.current;
+      if (restorePlaying.current && slotMayPlay(mode.globalPlaying, mode.focusIndex, index)) player.play();
+      else player.pause();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'This video could not be opened.',
@@ -557,6 +563,7 @@ function VideoTile({
           surfaceType="textureView"
         />
         <Pressable
+          disabled={!controlsEnabled}
           style={StyleSheet.absoluteFill}
           accessibilityRole="button"
           accessibilityLabel={`Show playback controls for stream ${index + 1}`}
@@ -600,7 +607,7 @@ function VideoTile({
         )}
       </View>
 
-      <FadingControls visible={controlsVisible} interactive={false} style={[
+      <FadingControls visible={controlsVisible} style={[
         styles.tileHeader,
         {
           backgroundColor: colors.playbackOverlay,
@@ -628,6 +635,7 @@ function VideoTile({
           accessibilityRole="button"
           accessibilityLabel={focusIndex === index ? 'Return to quad stream' : `Show stream ${index + 1} full screen`}
           onPress={() => onToggleFocus(index)}
+          hitSlop={12}
           style={styles.focusButton}
         >
           <Feather name={focusIndex === index ? 'minimize-2' : 'maximize-2'} size={15} color={colors.foreground} />
@@ -780,13 +788,24 @@ export default function QuadVideoPlayerScreen() {
     setActivePanel(null);
   };
   const [questVisible, setQuestVisible] = useState(false);
+  const [chatVisible, setChatVisible] = useState(false);
+  const [statsVisible, setStatsVisible] = useState(false);
+  const [standingsVisible, setStandingsVisible] = useState(false);
+  const [combatActive, setCombatActive] = useState(false);
   const [townHubVisible, setTownHubVisible] = useState(false);
   const [questSourcesReturn, setQuestSourcesReturn] = useState(false);
   const [singleStreamIndex, setSingleStreamIndex] = useState<number | null>(null);
-  const [videoBpmById, setVideoBpmById] = useState<Record<string, VideoBpmReport>>({});
   const [sessionListRevision, setSessionListRevision] = useState(0);
   const [pool, setPool] = useState<VideoAsset[]>([]);
   const [activeVideos, setActiveVideos] = useState<VideoAsset[]>([]);
+  const [liveSlots, setLiveSlots] = useState<Record<number, VideoAsset>>({});
+  // Playback seeds stay stable (no replaceAsync race on every random advance).
+  // UI consumers separately follow the actual asset in each native player.
+  const liveVideos = activeVideos.map((seed, slot) => liveSlots[slot] ?? seed);
+  const automaticBpm = useAutomaticVideoBpm(pool, liveVideos);
+  const videoBpmById = automaticBpm.byId;
+  const liveHeartRate = useLiveHeartRate();
+  const [clockNow, setClockNow] = useState(Date.now());
   const [watchHistory, setWatchHistory] = useState<VideoWatchHistory>({});
   const [watchHistoryLoaded, setWatchHistoryLoaded] = useState(false);
   const watchHistoryRef = useRef<VideoWatchHistory>({});
@@ -876,8 +895,8 @@ export default function QuadVideoPlayerScreen() {
     if (bossVideoIndex === slot) setBossVideoEnded(true);
   }, [bossVideoIndex]);
   const recordVideoBpm = useCallback((videoId: string, result: VideoBpmReport) => {
-    setVideoBpmById((current) => ({ ...current, [videoId]: result }));
-  }, []);
+    automaticBpm.recordResult(videoId, result);
+  }, [automaticBpm.recordResult]);
   useEffect(() => {
     if (!questVisible || bossVideoIndex !== null) return;
     setQuestVideoProgress(videoProgressBySlot.current[questVideoIndex] ?? { currentTime: 0, duration: 0 });
@@ -912,6 +931,8 @@ export default function QuadVideoPlayerScreen() {
   }, [watchHistory, watchHistoryLoaded]);
   const onAssetChange = useCallback((slot: number, next: VideoAsset) => {
     activeAssetsRef.current.set(slot, next);
+    videoProgressBySlot.current[slot] = { currentTime: 0, duration: 0 };
+    setLiveSlots((current) => ({ ...current, [slot]: next }));
   }, []);
   const getNextVideoForQuadrant = useCallback((slot: number, currentId: string) => {
     const playingElsewhere = new Set([...activeAssetsRef.current.entries()]
@@ -925,6 +946,16 @@ export default function QuadVideoPlayerScreen() {
   const isPlaybackActive = hasVideos && globalPlaying && !pipClosed &&
     (appIsActive || inPip) && [...playingQuadrants].some((id) => id.startsWith(`${session}-`));
   const viewing = useViewingSessions(isPlaybackActive);
+  useEffect(() => {
+    if (liveHeartRate.bpm !== null && liveHeartRate.sampleId) viewing.recordHeartRate(liveHeartRate.bpm, liveHeartRate.sampleId);
+  }, [liveHeartRate.bpm, liveHeartRate.sampleId, viewing.recordHeartRate]);
+  useEffect(() => {
+    if (!isPlaybackActive) return;
+    setClockNow(Date.now());
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [isPlaybackActive]);
+  const sessionElapsedMs = viewing.store.active ? elapsedViewingTime(viewing.store.active, clockNow) : 0;
   const playerRpg = usePlayerRpg(isPlaybackActive, viewing.xp, viewing.ready);
   const recordVideoStarted = useCallback((videoId: string) => {
     if (viewing.ready && viewing.store.active) void viewing.recordVideosWatched([videoId]);
@@ -945,6 +976,9 @@ export default function QuadVideoPlayerScreen() {
     }
   }, [playingQuadrants, playerRpg.recordVideosWatched, session, viewing.ready, viewing.store.active?.id, viewing.recordVideosWatched]);
   const playerRewards = usePlayerRewardsSettings();
+  const frameThickness = playerRewards.settings.borderEnabled &&
+    isBorderUnlocked(playerRewards.settings.borderStyle, viewing.xp, playerRewards.settings.allRewardsUnlocked)
+    ? effectiveBorderThickness(playerRewards.settings.borderStyle, playerRewards.settings.borderThickness) : 0;
   const congratulationsMessage = congratulationsFor(
     playerRewards.settings.congratsText,
     viewing.milestone ?? viewing.celebration ?? 0,
@@ -954,6 +988,32 @@ export default function QuadVideoPlayerScreen() {
     () => localStory.generateStoryQuest(playerRpg.state),
     [localStory.generateStoryQuest, playerRpg.state],
   );
+  const [generatedCheers, setGeneratedCheers] = useState<string[]>([]);
+  const [generatingCheers, setGeneratingCheers] = useState(false);
+  const cheersSeed = playerRewards.settings.congratsText;
+  const cheerStorageKey = 'goon-quest.generated-celebrations.v1';
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(cheerStorageKey).then((raw) => {
+      if (!raw || !active) return;
+      const saved = JSON.parse(raw) as { seed?: string; lines?: unknown[] };
+      if (saved.seed === cheersSeed && Array.isArray(saved.lines)) setGeneratedCheers(saved.lines
+        .filter((line): line is string => typeof line === 'string' && line.trim().length > 0).slice(0, 32).map((line) => line.slice(0, 220)));
+      else setGeneratedCheers([]);
+    }).catch(() => { if (active) setGeneratedCheers([]); });
+    return () => { active = false; };
+  }, [cheersSeed]);
+  const generateCheers = useCallback(async () => {
+    if (!localStory.modelLoaded) throw new Error('Load a local storyteller model first.');
+    if (localStory.busy || generatingCheers) throw new Error('The storyteller is busy. Try again once it finishes.');
+    setGeneratingCheers(true);
+    try {
+      const lines = await localStory.generateCelebrations(cheersSeed);
+      if (!lines.length) throw new Error('The model did not return usable encouragement. Try again.');
+      await AsyncStorage.setItem(cheerStorageKey, JSON.stringify({ seed: cheersSeed, lines }));
+      setGeneratedCheers(lines);
+    } finally { setGeneratingCheers(false); }
+  }, [cheersSeed, generatingCheers, localStory.busy, localStory.generateCelebrations, localStory.modelLoaded]);
   const lastSpokenCelebration = useRef<string | null>(null);
   const speakDialogue = useCallback((message: string) => {
     if (!playExtras.ready || !playExtras.settings.speakDialogue || !message.trim()) return;
@@ -1072,6 +1132,7 @@ export default function QuadVideoPlayerScreen() {
     activeAssetsRef.current = new Map(selection.map((asset, index) => [index, asset]));
     setPool(library);
     setRestoredStreams(null);
+    setLiveSlots({});
     setActiveVideos(selection);
     setSession((current) => current + 1);
     setGlobalPlaying(true);
@@ -1241,6 +1302,7 @@ export default function QuadVideoPlayerScreen() {
     if (remaining.length === 0) {
       activeAssetsRef.current.clear();
       setActiveVideos([]);
+      setLiveSlots({});
       setGlobalPlaying(false);
       void viewing.finishSession();
       return;
@@ -1258,6 +1320,7 @@ export default function QuadVideoPlayerScreen() {
   const stopPlayback = () => {
     activeAssetsRef.current.clear();
     setActiveVideos([]);
+    setLiveSlots({});
     setGlobalPlaying(false);
     setSingleStreamIndex(null);
     void viewing.finishSession();
@@ -1303,6 +1366,7 @@ export default function QuadVideoPlayerScreen() {
     setPool(restoredPool);
     setRestoredStreams(streams);
     setActiveVideos(streams.map((stream) => stream.asset));
+    setLiveSlots({});
     setGlobalPlaying(saved.globalPlaying);
     setSingleStreamIndex(null);
     registry.restoreAudio(saved.audio);
@@ -1476,6 +1540,12 @@ export default function QuadVideoPlayerScreen() {
           </View>
 
           <View pointerEvents="box-none" style={styles.topActions}>
+            <ActionButton compact icon="clock" label="Timer and leaderboards"
+              onPress={() => setStandingsVisible(true)} />
+            <ActionButton compact icon="message-circle" label="Chat with Pawstar"
+              onPress={() => setChatVisible((current) => !current)} />
+            <ActionButton compact icon="bar-chart-2" label="Stats overlay settings"
+              onPress={() => setStatsVisible(true)} />
             <SessionControls
               key={sessionListRevision}
               capture={captureSession} restore={restoreSession}
@@ -1587,11 +1657,24 @@ export default function QuadVideoPlayerScreen() {
         </View>
         </FadingControls>
 
+        <ScreenBorder
+          enabled={playerRewards.settings.borderEnabled}
+          styleId={playerRewards.settings.borderStyle}
+          scroll={playerRewards.settings.scrollBorder}
+          direction={playerRewards.settings.scrollDirection}
+          speed={playerRewards.settings.scrollSpeed}
+          textureScale={playerRewards.settings.textureScale}
+          thickness={playerRewards.settings.borderThickness}
+          xp={viewing.xp}
+          allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked}
+          layout={singleStreamIndex !== null ? 'single' : 'quad'}
+        />
         {activeVideos.length > 0 ? (
-          <View style={styles.grid}>
+          <View style={[styles.grid, { padding: frameThickness, rowGap: frameThickness }]}>
             {[0, 1].map((row) => (
             <View key={row} style={[
               styles.gridRow,
+              { columnGap: frameThickness },
               singleStreamIndex !== null && Math.floor(singleStreamIndex / 2) !== row && styles.hiddenGridRow,
             ]}>
             {activeVideos.slice(row * 2, row * 2 + 2).map((asset, column) => {
@@ -1621,7 +1704,8 @@ export default function QuadVideoPlayerScreen() {
                   focusIndex={singleStreamIndex}
                   tileVisible={singleStreamIndex === null || singleStreamIndex === index}
                   onToggleFocus={(slot) => setSingleStreamIndex((current) => current === slot ? null : slot)}
-                  controlsVisible={!inPip && controls.visible}
+                  controlsVisible={!inPip && controls.visible && !combatActive}
+                  controlsEnabled={!combatActive}
                   onToggleControls={controls.toggle}
                   initialSnapshot={restoredStreams?.[index]}
                 />
@@ -1677,7 +1761,28 @@ export default function QuadVideoPlayerScreen() {
           </View>
         )}
         <SlideshowOverlay active={hasVideos && !pipClosed} />
+        <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { zIndex: 60 }]}>
+          <SessionStatsOverlay
+            elapsedMs={sessionElapsedMs}
+            heartRate={liveHeartRate.bpm}
+            recordedHeartRate={viewing.store.active?.heartRate}
+            videosWatched={viewing.store.active?.watchedVideoIds.length ?? 0}
+            poolSize={pool.length}
+            averageBpm={averageVideoBpm(liveVideos.filter((_, slot) => singleStreamIndex === null || singleStreamIndex === slot)
+              .map((asset) => videoBpmById[asset.id]))}
+            isPlaying={isPlaybackActive}
+            settingsVisible={statsVisible}
+            onCloseSettings={() => setStatsVisible(false)}
+          />
+        </View>
         <ViewingSessionTimer
+          open={standingsVisible}
+          onClose={() => setStandingsVisible(false)}
+          showButton={false}
+          showMinuteCheers={playerRewards.settings.minuteCheersEnabled}
+          celebrationLines={[...messagesForCongratText(cheersSeed), ...generatedCheers]}
+          onGenerateCelebrations={generateCheers}
+          generatingCelebrations={generatingCheers || localStory.busy !== null}
           store={viewing.store}
           totalVideoCount={pool.length}
           visible={hasVideos || !!viewing.store.active || viewing.store.leaderboard.length > 0 || viewing.store.totalPlaybackMs > 0 || !!viewing.error}
@@ -1694,17 +1799,6 @@ export default function QuadVideoPlayerScreen() {
           onRecapDismiss={() => viewing.setFinishRecap(null)}
           onEndSession={viewing.finishSession}
           onRetry={() => void viewing.retryStorage()}
-        />
-        <ScreenBorder
-          enabled={playerRewards.settings.borderEnabled}
-          styleId={playerRewards.settings.borderStyle}
-          scroll={playerRewards.settings.scrollBorder}
-          direction={playerRewards.settings.scrollDirection}
-          speed={playerRewards.settings.scrollSpeed}
-          textureScale={playerRewards.settings.textureScale}
-          xp={viewing.xp}
-          allRewardsUnlocked={playerRewards.settings.allRewardsUnlocked}
-          layout={singleStreamIndex !== null ? 'single' : 'quad'}
         />
         <KeyJingleOverlay
           enabled={playExtras.settings.keysEnabled}
@@ -1945,7 +2039,9 @@ export default function QuadVideoPlayerScreen() {
                 {settingsCategory === 'progression' && (
                   <>
                     <PlayerRewardsSettings settings={playerRewards.settings} update={playerRewards.update}
-                      xp={viewing.xp} ready={playerRewards.ready} error={playerRewards.error} />
+                      xp={viewing.xp} ready={playerRewards.ready} error={playerRewards.error}
+                      onGenerateCelebrations={generateCheers}
+                      generatingCelebrations={generatingCheers || localStory.busy !== null} />
                     <PlayerRpgDashboard state={playerRpg.state} ready={playerRpg.ready}
                       error={playerRpg.error} onRetry={() => void playerRpg.retry()}
                       onClaimQuest={playerRpg.claimQuest} onUpgradeSkill={playerRpg.upgradeSkill}
@@ -1976,6 +2072,19 @@ export default function QuadVideoPlayerScreen() {
                 {settingsCategory === 'heart-rate' && <HeartRateSettings />}
                 {settingsCategory === 'media' && (
                   <>
+                    <View style={[styles.backupCard, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+                      <Text style={[styles.settingTitle, { color: colors.foreground }]}>Automatic video BPM</Text>
+                      <Text style={[styles.settingDescription, { color: colors.mutedForeground }]}>
+                        {automaticBpm.completed} / {automaticBpm.total} clips analyzed.
+                        {automaticBpm.analyzing ? ` Scanning: ${automaticBpm.analyzing}` : ''}
+                        {'\n'}One audio decoder at a time scans up to 24 seconds per clip and caches the estimate.
+                        Speech, silence, unsupported audio, or an irregular beat may have no BPM.
+                        Average BPM means the detected musical tempos of the visible clips, not heart rate.
+                      </Text>
+                      {!!automaticBpm.error && <Text style={{ color: colors.destructive }}>{automaticBpm.error}</Text>}
+                      <ActionButton icon="refresh-cw" label="Rescan pool BPM" onPress={automaticBpm.rescan}
+                        disabled={!pool.length} />
+                    </View>
                     <ActionButton icon="globe" label="Online media sources" onPress={() => {
                       setSourcesReturn('settings');
                       setActivePanel('sources');
@@ -2140,6 +2249,13 @@ export default function QuadVideoPlayerScreen() {
         onEquipItem={playerRpg.equipItem}
       />
       <GoonQuestOverlay
+        chatVisible={chatVisible}
+        onChatClose={() => setChatVisible(false)}
+        onCombatActiveChange={setCombatActive}
+        videoBpmById={videoBpmById}
+        onGenerateChatReply={localStory.generateChatReply}
+        onGenerateHonorIdea={localStory.generateHonorIdea}
+        storytellerError={localStory.error}
         visible={questVisible}
         onClose={() => setQuestVisible(false)}
         pool={slideshow.pool}
@@ -2171,7 +2287,7 @@ export default function QuadVideoPlayerScreen() {
           setActivePanel('sources');
         }}
         onDialogue={speakDialogue}
-        videos={activeVideos}
+        videos={liveVideos}
         videoIndex={questVideoIndex}
         videoProgress={questVideoProgress}
         videoIsPlaying={playingQuadrants.has(`${session}-${questVideoIndex}`)}
@@ -2193,7 +2309,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   browserScreen: { paddingHorizontal: 12, paddingBottom: 8 },
   browserToolbar: { marginBottom: 8 },
-  toolbarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
+  toolbarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50 },
   topBar: {
     minHeight: 60,
     flexDirection: 'row',
@@ -2234,6 +2350,7 @@ const styles = StyleSheet.create({
   pressedButton: { opacity: 0.72, transform: [{ scale: 0.97 }] },
   grid: {
     flex: 1,
+    zIndex: 1,
   },
   gridRow: {
     flex: 1,

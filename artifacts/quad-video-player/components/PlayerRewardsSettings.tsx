@@ -6,7 +6,7 @@ import TouchSlider from '@/components/TouchSlider';
 import { useColors } from '@/hooks/useColors';
 import {
   ANIMATED_BORDER_LEVEL, borderOptions, experienceIntoLevel, experienceUntilNextLevel, nextRewardMilestone,
-  isBorderUnlocked, isTexturedBorder, levelForExperience, PUZZLED_TEXTURE_SCALE_MAX, PUZZLED_TEXTURE_SCALE_MIN, XP_PER_LEVEL,
+  BORDER_THICKNESS_MAX, BORDER_THICKNESS_MIN, effectiveBorderThickness, isBorderUnlocked, isTexturedBorder, TRANS_FLAG_COLORS, levelForExperience, PUZZLED_TEXTURE_SCALE_MAX, PUZZLED_TEXTURE_SCALE_MIN, XP_PER_LEVEL,
   type BorderDirection, type BorderStyleId, type PlayerRewardsSettings,
 } from '@/lib/player-rewards';
 import { playerRankTitle } from '@/lib/player-achievements';
@@ -28,12 +28,17 @@ export default function PlayerRewardsSettings({
   xp,
   ready,
   error,
+  onGenerateCelebrations,
+  generatingCelebrations = false,
 }: {
   settings: PlayerRewardsSettings;
   update: (patch: Partial<PlayerRewardsSettings>) => void;
   xp: number;
   ready: boolean;
   error: string;
+  /** Optional: regenerates the cheer lines (e.g. via the local story model). */
+  onGenerateCelebrations?: () => Promise<void>;
+  generatingCelebrations?: boolean;
 }) {
   const colors = useColors();
   const level = levelForExperience(xp);
@@ -45,6 +50,9 @@ export default function PlayerRewardsSettings({
   const directionDisabled = disabled || !animationUnlocked || !texturedSelected;
   const [scaleDraft, setScaleDraft] = useState<number | null>(null);
   const shownScale = scaleDraft ?? settings.textureScale;
+  const [thicknessDraft, setThicknessDraft] = useState<number | null>(null);
+  const shownThickness = thicknessDraft ?? effectiveBorderThickness(settings.borderStyle, settings.borderThickness);
+  const [generateError, setGenerateError] = useState('');
   const nextReward = nextRewardMilestone(xp);
   const setBorder = (id: BorderStyleId) => update({ borderStyle: id });
 
@@ -124,12 +132,16 @@ export default function PlayerRewardsSettings({
                   opacity: unlocked ? 1 : 0.52 },
               ]}
             >
-              <View style={[styles.swatch, { backgroundColor: option.id === 'gamecubed' || option.id === 'nebula' ? colors.primary
+              {option.id.startsWith('trans') ? (
+                <View style={[styles.swatch, { overflow: 'hidden' }]}>
+                  {TRANS_FLAG_COLORS.map((c, i) => <View key={i} style={{ flex: 1, backgroundColor: c }} />)}
+                </View>
+              ) : <View style={[styles.swatch, { backgroundColor: option.id === 'gamecubed' || option.id === 'nebula' ? colors.primary
                 : option.id === 'arcade' ? colors.accentForeground
                   : option.id === 'prism' ? '#f6392c' : option.id === 'aurora' ? '#76b8b2'
                     : option.id === 'pawprint' ? colors.accent : '#edb71f' }]}>
                 {option.id === 'pawprint' && <MaterialCommunityIcons name="paw" size={15} color={colors.primary} style={{ margin: 4.5 }} />}
-              </View>
+              </View>}
               <View style={styles.optionText}>
                 <Text style={[styles.optionName, { color: colors.foreground }]}>{option.name}</Text>
                 <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>
@@ -149,7 +161,7 @@ export default function PlayerRewardsSettings({
             <Text style={[styles.description, { color: colors.mutedForeground }]}>
               {texturedSelected
                 ? 'Size of the repeating pattern. Saved when you let go.'
-                : 'Applies to Puzzled and Pawprint Trail. Saved now, shown when one is picked.'}
+                : 'Applies to patterned frames. Saved now, shown when one is picked.'}
             </Text>
           </View>
           <View style={[styles.scaleBadge, { borderColor: colors.primary, backgroundColor: colors.accent }]}>
@@ -167,7 +179,7 @@ export default function PlayerRewardsSettings({
         <TouchSlider
           style={{ width: '100%', height: 48 }}
           accessibilityLabel="Border texture scale"
-          accessibilityValue={{ min: 50, max: 250, now: Math.round(shownScale * 100), text: `${shownScale.toFixed(1)} times` }}
+          accessibilityValue={{ min: 50, max: 600, now: Math.round(shownScale * 100), text: `${shownScale.toFixed(1)} times` }}
           minimumValue={PUZZLED_TEXTURE_SCALE_MIN}
           maximumValue={PUZZLED_TEXTURE_SCALE_MAX}
           step={0.1}
@@ -188,7 +200,45 @@ export default function PlayerRewardsSettings({
             onPress={() => update({ textureScale: 1 })}>
             <Text style={[styles.optionMeta, { color: colors.primary }]}>Reset 1.0×</Text>
           </Pressable>
-          <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>2.5× chunky</Text>
+          <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>6.0× huge</Text>
+        </View>
+      </View>
+
+      <View style={[styles.textureSetting, { borderColor: colors.border, backgroundColor: colors.background }]}>
+        <View style={styles.levelHeading}>
+          <View style={styles.settingCopy}>
+            <Text style={[styles.label, { color: colors.foreground }]}>Frame thickness</Text>
+            <Text style={[styles.description, { color: colors.mutedForeground }]}>
+              {settings.borderThickness == null ? 'Using the style default. ' : ''}Saved when you let go.
+            </Text>
+          </View>
+          <View style={[styles.scaleBadge, { borderColor: colors.primary, backgroundColor: colors.accent }]}>
+            <Text style={[styles.scaleValue, { color: colors.primary }]}>{shownThickness}px</Text>
+          </View>
+        </View>
+        <View style={[styles.thicknessPreview, { height: shownThickness, backgroundColor: colors.primary }]} />
+        <TouchSlider
+          style={{ width: '100%', height: 48 }}
+          accessibilityLabel="Border thickness"
+          accessibilityValue={{ min: BORDER_THICKNESS_MIN, max: BORDER_THICKNESS_MAX, now: shownThickness, text: `${shownThickness} pixels` }}
+          minimumValue={BORDER_THICKNESS_MIN}
+          maximumValue={BORDER_THICKNESS_MAX}
+          step={1}
+          value={effectiveBorderThickness(settings.borderStyle, settings.borderThickness)}
+          disabled={disabled}
+          onDraftValueChange={(next) => setThicknessDraft(Math.round(next))}
+          onSlidingComplete={(next) => { setThicknessDraft(null); update({ borderThickness: Math.round(next) }); }}
+          minimumTrackTintColor={colors.primary}
+          maximumTrackTintColor={colors.mutedForeground}
+          thumbTintColor={colors.primary}
+        />
+        <View style={styles.levelHeading}>
+          <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>{BORDER_THICKNESS_MIN}px</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Use style default thickness" disabled={disabled}
+            onPress={() => update({ borderThickness: null })}>
+            <Text style={[styles.optionMeta, { color: colors.primary }]}>Style default</Text>
+          </Pressable>
+          <Text style={[styles.optionMeta, { color: colors.mutedForeground }]}>{BORDER_THICKNESS_MAX}px</Text>
         </View>
       </View>
 
@@ -197,7 +247,7 @@ export default function PlayerRewardsSettings({
           <Text style={[styles.label, { color: colors.foreground }]}>Wandering frame pattern</Text>
           <Text style={[styles.description, { color: colors.mutedForeground }]}>
             {!texturedSelected
-              ? 'Choose Puzzled or Pawprint Trail to set its pattern in motion.'
+              ? 'Choose a patterned frame (Puzzled, Paws, Trans) to set its pattern in motion.'
               : animationUnlocked ? 'Let the pattern drift around the frame.' : `Earn guild rank ${ANIMATED_BORDER_LEVEL} to unlock.`}
           </Text>
         </View>
@@ -247,8 +297,10 @@ export default function PlayerRewardsSettings({
 
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
       <Text style={[styles.label, { color: colors.foreground }]}>Guild milestone notes</Text>
+      <SettingSwitch label="Minute cheer text" value={settings.minuteCheersEnabled}
+        disabled={disabled} onValueChange={(minuteCheersEnabled) => update({ minuteCheersEnabled })} />
       <Text style={[styles.description, { color: colors.mutedForeground }]}>
-        One note per line. Your message appears with falling guild ribbons every 10 active minutes.
+        One note per line. A line cheers you on every active minute; the 10-minute achievement shows one too.
       </Text>
       <TextInput
         accessibilityLabel="Editable session congratulations messages"
@@ -265,6 +317,23 @@ export default function PlayerRewardsSettings({
           color: colors.foreground, borderColor: colors.input, backgroundColor: colors.background,
         }]}
       />
+      {onGenerateCelebrations && (
+        <Pressable accessibilityRole="button" disabled={disabled || generatingCelebrations}
+          accessibilityState={{ disabled: disabled || generatingCelebrations, busy: generatingCelebrations }}
+          onPress={() => {
+            setGenerateError('');
+            onGenerateCelebrations().catch((reason) =>
+              setGenerateError(reason instanceof Error ? reason.message : 'Could not generate new cheers.'));
+          }}
+          style={[styles.unlockAllButton, { borderColor: colors.primary, backgroundColor: colors.background,
+            opacity: disabled || generatingCelebrations ? 0.55 : 1, minHeight: 44 }]}>
+          <Feather name="feather" size={16} color={colors.primary} />
+          <Text style={[styles.label, { color: colors.primary }]}>
+            {generatingCelebrations ? 'Writing new cheers…' : 'Generate new cheers'}
+          </Text>
+        </Pressable>
+      )}
+      {!!generateError && <Text style={[styles.error, { color: colors.destructive }]}>{generateError}</Text>}
       {!!error && <Text style={[styles.error, { color: colors.destructive }]}>{error}</Text>}
     </View>
   );
@@ -306,6 +375,7 @@ const styles = StyleSheet.create({
   directionButton: { width: '23%', flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8,
     borderRadius: 9, borderWidth: 1 },
   directionLabel: { fontSize: 10, fontWeight: '600' },
+  thicknessPreview: { borderRadius: 2, alignSelf: 'stretch' },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: 2 },
   messageInput: { borderWidth: 1, borderRadius: 10, minHeight: 115, padding: 12, fontSize: 14, lineHeight: 20 },
   error: { fontSize: 12 },

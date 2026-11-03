@@ -3,7 +3,8 @@ import { Image } from 'expo-image';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { useColors } from '@/hooks/useColors';
-import { shouldActivateCombatTap, type CombatControlScheme } from '@/lib/input-controls';
+import type { CombatControlScheme } from '@/lib/input-controls';
+import { COMBAT_HIT_SLOP, combatPress } from '@/components/quest/press';
 import {
   boundsFor, bubblePlacement, clampToBounds, directedWaypoint, enemySizeFor, nextWaypoint, spawnPoint,
   type MotionBounds, type MotionDirective,
@@ -368,10 +369,8 @@ function EnemySprite({
           accessibilityRole="button"
           accessibilityLabel={`Strike ${enemy.name}, ${enemy.hp} of ${enemy.maxHp} health`}
           disabled={dead || !loaded || paused}
-          onPress={controlScheme === 'touch' ? activate : undefined}
-          onPointerUp={controlScheme === 'spen' ? (event) => {
-            if (shouldActivateCombatTap(controlScheme, event.nativeEvent.pointerType)) activate();
-          } : undefined}
+          hitSlop={COMBAT_HIT_SLOP}
+          {...combatPress(controlScheme, activate)}
           style={[styles.frame, { borderColor: colors.primary, backgroundColor: colors.card }]}
         >
           <Image
@@ -445,7 +444,7 @@ function HudButton({
 }) {
   const colors = useColors();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress}
+    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPressIn={onPress} hitSlop={6}
       style={({ pressed }) => [styles.hudButton, {
         backgroundColor: primary ? colors.primary : colors.secondary,
         borderColor: primary ? colors.primary : colors.border,

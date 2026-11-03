@@ -32,7 +32,7 @@ test('quad layout has 4 outer strips + one shared centre line per axis at full (
 test('tile grid covers every strip at min/max scale for all scroll phases and directions', () => {
   for (const layout of ['quad', 'single']) {
     for (const [w, hgt] of [[1280, 800], [2560, 1600], [411, 913], [1001, 677]]) {
-      for (const scale of [0.5, 1, 1.7, 2.5]) {
+      for (const scale of [0.5, 1, 1.7, 2.5, 6]) {
         const tile = 160 * scale;
         for (const dir of rewards.BORDER_DIRECTIONS) {
           const loop = geo.scrollLoop(rewards.borderDirectionVector(dir), tile, 3);
@@ -67,7 +67,7 @@ test('direction parsing is backward compatible and diagonals are normalized with
   assert.ok(Math.abs(card.pxPerSecond - diag.pxPerSecond) / card.pxPerSecond < 0.01);
   const legacy = rewards.parsePlayerRewards(JSON.stringify({ scrollDirection: 'up', textureScale: 9, borderStyle: 'pawprint' }));
   assert.equal(legacy.scrollDirection, 'up');
-  assert.equal(legacy.textureScale, 2.5);
+  assert.equal(legacy.textureScale, 6);
   assert.equal(legacy.borderStyle, 'pawprint');
   assert.equal(rewards.parsePlayerRewards(JSON.stringify({ textureScale: 0.1 })).textureScale, 0.5);
   assert.equal(rewards.isTexturedBorder('pawprint'), true);

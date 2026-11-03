@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   elapsedViewingTime, emptyViewingSessions, finishViewingSession, parseViewingSessions,
   recordWatchedVideos as applyWatchedVideos, recoverViewingSessions,
+  recordHeartRate as applyHeartRate,
   VIEWING_ACHIEVEMENT_MS, VIEWING_SESSIONS_KEY, type FinishedViewingSession, type ViewingSessionStore,
 } from '@/lib/viewing-sessions';
 import { experienceForPlayback, nextSessionMilestone, SESSION_MILESTONE_MS } from '@/lib/player-rewards';
@@ -22,6 +23,7 @@ export function useViewingSessions(isPlaybackActive: boolean) {
   const [finishRecap, setFinishRecap] = useState<FinishedViewingSession | null>(null);
   const operations = useRef<Promise<void>>(Promise.resolve());
   const lastCheckpoint = useRef(0);
+  const lastHeartRateSample = useRef<string>('');
 
   const syncXp = useCallback((current: ViewingSessionStore, now: number) => {
     const activeMs = current.active ? elapsedViewingTime(current.active, now) : 0;
@@ -34,16 +36,17 @@ export function useViewingSessions(isPlaybackActive: boolean) {
 
   const commit = useCallback(<Result,>(
     update: (current: ViewingSessionStore) => { store: ViewingSessionStore; result: Result },
+    persist = true,
   ): Promise<Result> => {
     const operation = operations.current.catch(() => undefined).then(async () => {
       if (!loadedRef.current) throw new Error('Playback history is still loading.');
       const current = storeRef.current;
       const { store: next, result } = update(current);
       if (next !== current) {
-        await AsyncStorage.setItem(VIEWING_SESSIONS_KEY, JSON.stringify(next));
+        if (persist) await AsyncStorage.setItem(VIEWING_SESSIONS_KEY, JSON.stringify(next));
         storeRef.current = next;
         setStore(next);
-        setError('');
+        if (persist) setError('');
       }
       syncXp(next, Date.now());
       return result;
@@ -158,6 +161,14 @@ export function useViewingSessions(isPlaybackActive: boolean) {
   const recordVideosWatched = useCallback((ids: readonly string[]) =>
     mutate((current) => applyWatchedVideos(current, ids)), [mutate]);
 
+  // Keep live samples in memory; existing 15-second checkpoints, pause, and
+  // finish persist them together instead of writing the history every second.
+  const recordHeartRate = useCallback((bpm: number, sampleId: string) => {
+    if (!loadedRef.current || !isPlaybackActive || !storeRef.current.active || lastHeartRateSample.current === sampleId) return;
+    lastHeartRateSample.current = sampleId;
+    void commit((current) => ({ store: applyHeartRate(current, bpm), result: undefined }), false);
+  }, [commit, isPlaybackActive]);
+
   const restoreStore = useCallback(async (next: ViewingSessionStore) => {
     if (!loadedRef.current) return false;
     const now = Date.now();
@@ -181,5 +192,5 @@ export function useViewingSessions(isPlaybackActive: boolean) {
   }, [syncXp]);
 
   return { store, ready, error, celebration, setCelebration, milestone, setMilestone, xp, finishRecap,
-    setFinishRecap, finishSession, recordVideosWatched, restoreStore, retryStorage: reload };
+    setFinishRecap, finishSession, recordVideosWatched, recordHeartRate, restoreStore, retryStorage: reload };
 }

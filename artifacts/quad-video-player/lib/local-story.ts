@@ -115,3 +115,52 @@ export function storyQuestPrompt(
     'enemyLine is one short, playful line the target might say when defeated.',
   ].join(' ');
 }
+
+export const MAX_CELEBRATIONS = 5;
+
+export function celebrationPrompt(seed: string): string {
+  const clean = cleanOutput(seed, 200) || 'You did it';
+  return [
+    `Write ${MAX_CELEBRATIONS} short, upbeat celebration lines in a cozy fantasy guild voice, inspired by: "${clean}".`,
+    'Each line under 16 words, encouraging and non-graphic. Vary the wording.',
+    'Return only JSON: {"lines": [string, ...]}.',
+  ].join(' ');
+}
+
+export function parseCelebrations(text: string): string[] {
+  const json = text.match(/\{[\s\S]*\}/)?.[0];
+  let lines: unknown[] = [];
+  if (json) {
+    try {
+      const value = JSON.parse(json) as { lines?: unknown };
+      if (Array.isArray(value?.lines)) lines = value.lines;
+    } catch { /* fall through to line split */ }
+  }
+  if (!lines.length) lines = text.split(/\n+/).map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, ''));
+  const seen = new Set<string>();
+  return lines.map((line) => cleanOutput(line, 120).replace(/^"|"$/g, ''))
+    .filter((line) => line.length >= 3 && !seen.has(line.toLowerCase()) && (seen.add(line.toLowerCase()), true))
+    .slice(0, MAX_CELEBRATIONS);
+}
+
+export function honorIdeaPrompt(context: { className: string; companionName: string }): string {
+  return [
+    `Invent one guild honor title for a ${context.className} adventurer whose familiar is ${context.companionName}.`,
+    'title: 2 to 4 words. description: one short, non-graphic sentence of flavor praising persistence in battle.',
+    'Do not mention numbers, rewards, or goals; the game sets those.',
+    'Return only JSON with string fields title and description.',
+  ].join(' ');
+}
+
+export function parseHonorIdea(text: string): { title: string; description: string } | null {
+  const json = text.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) return null;
+  try {
+    const value = JSON.parse(json) as Record<string, unknown>;
+    const title = cleanOutput(value?.title, 48);
+    const description = cleanOutput(value?.description, 110);
+    return title && description ? { title, description } : null;
+  } catch {
+    return null;
+  }
+}

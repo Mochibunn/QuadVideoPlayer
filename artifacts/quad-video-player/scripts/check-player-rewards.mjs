@@ -70,7 +70,7 @@ test('saved settings are validated and scroll speed is clamped', () => {
   assert.equal(value.borderStyle, 'puzzled');
   assert.equal(value.scrollDirection, 'down');
   assert.equal(value.scrollSpeed, 10);
-  assert.equal(value.textureScale, 2.5);
+  assert.equal(value.textureScale, 3.4);
   assert.equal(value.congratsText, 'Hello');
   assert.equal(model.parsePlayerRewards(null).borderStyle, 'gamecubed');
   assert.equal(model.parsePlayerRewards(null).textureScale, 1);

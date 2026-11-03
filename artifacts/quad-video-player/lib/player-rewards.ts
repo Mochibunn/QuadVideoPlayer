@@ -4,7 +4,13 @@ export const SESSION_MILESTONE_MS = 10 * 60_000;
 export const ANIMATED_BORDER_LEVEL = 4;
 export const ADVANCED_EQ_UNLOCK_LEVEL = 5;
 export const PUZZLED_TEXTURE_SCALE_MIN = 0.5;
-export const PUZZLED_TEXTURE_SCALE_MAX = 2.5;
+export const PUZZLED_TEXTURE_SCALE_MAX = 6;
+export const BORDER_THICKNESS_MIN = 4;
+export const BORDER_THICKNESS_MAX = 64;
+export const TEXTURED_BORDER_THICKNESS = 22;
+export const SOLID_BORDER_THICKNESS = 5;
+/** Trans flag: light blue, pink, white, pink, light blue. */
+export const TRANS_FLAG_COLORS = ['#5BCEFA', '#F5A9B8', '#FFFFFF', '#F5A9B8', '#5BCEFA'] as const;
 export const PLAYER_REWARDS_KEY = 'quad.player.rewards.v1';
 
 export const DEFAULT_CONGRATS_TEXT = [
@@ -22,10 +28,13 @@ export const borderOptions = [
   { id: 'prism', name: 'Prism', unlockLevel: 5 },
   { id: 'aurora', name: 'Aurora', unlockLevel: 6 },
   { id: 'pawprint', name: 'Pawprint Trail', unlockLevel: 1 },
+  { id: 'trans-flag', name: 'Trans Flag', unlockLevel: 1 },
+  { id: 'trans-paw', name: 'Trans Paws', unlockLevel: 1 },
+  { id: 'trans-puzzle', name: 'Trans Puzzle', unlockLevel: 1 },
 ] as const;
 
 /** Border styles drawn from a repeating tile; they honour texture scale and scrolling. */
-export const TEXTURED_BORDER_STYLES: readonly BorderStyleId[] = ['puzzled', 'pawprint'];
+export const TEXTURED_BORDER_STYLES: readonly BorderStyleId[] = ['puzzled', 'pawprint', 'trans-flag', 'trans-paw', 'trans-puzzle'];
 export function isTexturedBorder(id: BorderStyleId): boolean {
   return TEXTURED_BORDER_STYLES.includes(id);
 }
@@ -88,6 +97,17 @@ export function clampTextureScale(value: unknown): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? value : 1;
   return Math.round(Math.max(PUZZLED_TEXTURE_SCALE_MIN, Math.min(PUZZLED_TEXTURE_SCALE_MAX, n)) * 10) / 10;
 }
+export function clampBorderThickness(value: unknown, fallback = TEXTURED_BORDER_THICKNESS): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  return Math.round(Math.max(BORDER_THICKNESS_MIN, Math.min(BORDER_THICKNESS_MAX, n)));
+}
+/** Style default when the player has not picked a thickness (keeps pre-thickness saves identical). */
+export function defaultBorderThickness(id: BorderStyleId): number {
+  return isTexturedBorder(id) ? TEXTURED_BORDER_THICKNESS : SOLID_BORDER_THICKNESS;
+}
+export function effectiveBorderThickness(id: BorderStyleId, thickness: number | null | undefined): number {
+  return thickness == null ? defaultBorderThickness(id) : clampBorderThickness(thickness);
+}
 export type PlayerRewardsSettings = {
   borderEnabled: boolean;
   borderStyle: BorderStyleId;
@@ -95,7 +115,10 @@ export type PlayerRewardsSettings = {
   scrollDirection: BorderDirection;
   scrollSpeed: number;
   textureScale: number;
+  /** null = per-style default (22 textured, 5 solid). */
+  borderThickness: number | null;
   congratsText: string;
+  minuteCheersEnabled: boolean;
   allRewardsUnlocked: boolean;
 };
 
@@ -106,7 +129,9 @@ export const DEFAULT_PLAYER_REWARDS: PlayerRewardsSettings = {
   scrollDirection: 'right',
   scrollSpeed: 3,
   textureScale: 1,
+  borderThickness: null,
   congratsText: DEFAULT_CONGRATS_TEXT,
+  minuteCheersEnabled: true,
   allRewardsUnlocked: false,
 };
 
@@ -184,6 +209,29 @@ export function parsePlayerRewards(raw: string | null): PlayerRewardsSettings {
     borderEnabled: typeof value.borderEnabled === 'boolean' ? value.borderEnabled : DEFAULT_PLAYER_REWARDS.borderEnabled,
     borderStyle, scrollBorder: typeof value.scrollBorder === 'boolean' ? value.scrollBorder : DEFAULT_PLAYER_REWARDS.scrollBorder,
     scrollDirection: direction, scrollSpeed: speed, textureScale, congratsText,
+    borderThickness: typeof value.borderThickness === 'number' && Number.isFinite(value.borderThickness)
+      ? clampBorderThickness(value.borderThickness) : null,
     allRewardsUnlocked: value.allRewardsUnlocked === true,
+    minuteCheersEnabled: value.minuteCheersEnabled !== false,
   };
+}
+
+/** Celebration lines from free text or a provided list; never empty. */
+export function celebrationLinesFrom(lines: readonly string[] | undefined, seedText: string): string[] {
+  const provided = (lines ?? []).map((line) => line.trim().slice(0, 140)).filter(Boolean);
+  return provided.length ? provided : messagesForCongratText(seedText);
+}
+export function celebrationLineForMinute(lines: readonly string[], minute: number): string {
+  if (!lines.length) return '';
+  const index = Math.max(0, Math.floor(Number.isFinite(minute) ? minute : 0));
+  return lines[index % lines.length];
+}
+/**
+ * Minute-cheer gate: returns the newly crossed minute only during live playback
+ * and only after a baseline was taken (so restored sessions never replay).
+ */
+export function nextCheerMinute(baseline: number | null, elapsedMs: number, playing: boolean): number | null {
+  if (baseline === null || !playing) return null;
+  const minute = Math.floor(Math.max(0, Number.isFinite(elapsedMs) ? elapsedMs : 0) / 60_000);
+  return minute > baseline ? minute : null;
 }

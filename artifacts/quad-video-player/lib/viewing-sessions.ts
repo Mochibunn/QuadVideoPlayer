@@ -2,18 +2,44 @@ export const VIEWING_SESSIONS_KEY = 'quad.player.viewing-sessions.v1';
 export const VIEWING_ACHIEVEMENT_MS = 60 * 60 * 1000;
 export const VIEWING_RECOVERY_WINDOW_MS = 15_000;
 export const VIEWING_SESSION_LIMIT = 100;
+export type HeartRateStats = { min: number; max: number; sum: number; count: number };
 export type ActiveViewingSession = {
   id: string; startedAtMs: number; elapsedMs: number; resumedAtMs: number | null; lastCheckpointMs: number;
   watchedVideoIds: string[];
+  heartRate?: HeartRateStats | null;
 };
 export type FinishedViewingSession = {
   id: string; startedAtMs: number; finishedAtMs: number; durationMs: number; watchedVideoCount: number;
+  heartRate?: HeartRateStats | null;
 };
 export type ViewingSessionStore = {
   version: 1; totalPlaybackMs: number; leaderboard: FinishedViewingSession[]; active: ActiveViewingSession | null;
+  totalVideosWatched?: number;
+  heartRate?: HeartRateStats | null;
 };
 export const emptyViewingSessions = (): ViewingSessionStore =>
-  ({ version: 1, totalPlaybackMs: 0, leaderboard: [], active: null });
+  ({ version: 1, totalPlaybackMs: 0, totalVideosWatched: 0, heartRate: null, leaderboard: [], active: null });
+
+export function mergeHeartRateStats(a: HeartRateStats | null | undefined, b: HeartRateStats | null | undefined): HeartRateStats | null {
+  if (!a) return b ? { ...b } : null;
+  if (!b) return { ...a };
+  return { min: Math.min(a.min, b.min), max: Math.max(a.max, b.max), sum: a.sum + b.sum, count: a.count + b.count };
+}
+function parseHeartRateStats(value: unknown): HeartRateStats | null {
+  if (value === undefined || value === null) return null;
+  const row = object(value);
+  const min = row.min as number, max = row.max as number, sum = row.sum as number, count = row.count as number;
+  if (![min, max, sum, count].every(Number.isSafeInteger) || min < 20 || max > 250 ||
+    max < min || count < 1 || sum < min * count || sum > max * count) {
+    throw new Error('The playback history contains invalid heart-rate statistics.');
+  }
+  return { min, max, sum, count };
+}
+export function recordHeartRate(store: ViewingSessionStore, bpm: number): ViewingSessionStore {
+  if (!store.active || store.active.resumedAtMs === null || !Number.isInteger(bpm) || bpm < 20 || bpm > 250) return store;
+  const sample = { min: bpm, max: bpm, sum: bpm, count: 1 };
+  return { ...store, active: { ...store.active, heartRate: mergeHeartRateStats(store.active.heartRate, sample) } };
+}
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('The playback history is damaged.');
@@ -61,7 +87,7 @@ export function parseViewingSessions(raw: string | null): ViewingSessionStore {
     const finishedAtMs = timestamp(row.finishedAtMs);
     if (finishedAtMs < startedAtMs) throw new Error('The completed session date is invalid.');
     return { id: identifier(row.id), startedAtMs, finishedAtMs, durationMs: duration(row.durationMs),
-      watchedVideoCount: duration(row.watchedVideoCount ?? 0) };
+      watchedVideoCount: duration(row.watchedVideoCount ?? 0), heartRate: parseHeartRateStats(row.heartRate) };
   });
   if (new Set(leaderboard.map((item) => item.id)).size !== leaderboard.length) {
     throw new Error('The playback history contains duplicate sessions.');
@@ -73,10 +99,14 @@ export function parseViewingSessions(raw: string | null): ViewingSessionStore {
     const lastCheckpointMs = timestamp(row.lastCheckpointMs);
     active = { id: identifier(row.id), startedAtMs: timestamp(row.startedAtMs),
       elapsedMs: duration(row.elapsedMs), resumedAtMs, lastCheckpointMs,
-      watchedVideoIds: videoIdentifiers(row.watchedVideoIds) };
+      watchedVideoIds: videoIdentifiers(row.watchedVideoIds), heartRate: parseHeartRateStats(row.heartRate) };
     if (resumedAtMs !== null && resumedAtMs < active.startedAtMs) throw new Error('The active session date is invalid.');
   }
-  return { version: 1, totalPlaybackMs: duration(data.totalPlaybackMs), leaderboard: sortLeaderboard(leaderboard), active };
+  return { version: 1, totalPlaybackMs: duration(data.totalPlaybackMs), leaderboard: sortLeaderboard(leaderboard), active,
+    totalVideosWatched: duration(data.totalVideosWatched ?? leaderboard.reduce((sum, item) => sum + item.watchedVideoCount, 0)),
+    heartRate: data.heartRate === undefined
+      ? leaderboard.reduce<HeartRateStats | null>((stats, item) => mergeHeartRateStats(stats, item.heartRate), null)
+      : parseHeartRateStats(data.heartRate) };
 }
 export function recoverViewingSessions(store: ViewingSessionStore, now: number): ViewingSessionStore {
   const active = store.active;
@@ -109,9 +139,12 @@ export function formatViewingTime(milliseconds: number): string {
 export function finishViewingSession(store: ViewingSessionStore, now: number) {
   if (!store.active) return { store, completed: null as FinishedViewingSession | null };
   const completed = { id: store.active.id, startedAtMs: store.active.startedAtMs, finishedAtMs: now,
-    durationMs: elapsedViewingTime(store.active, now), watchedVideoCount: store.active.watchedVideoIds.length };
+    durationMs: elapsedViewingTime(store.active, now), watchedVideoCount: store.active.watchedVideoIds.length,
+    heartRate: store.active.heartRate ?? null };
   return { store: { version: 1 as const,
     totalPlaybackMs: store.totalPlaybackMs + completed.durationMs,
+    totalVideosWatched: (store.totalVideosWatched ?? store.leaderboard.reduce((sum, item) => sum + item.watchedVideoCount, 0)) + completed.watchedVideoCount,
+    heartRate: mergeHeartRateStats(store.heartRate, completed.heartRate),
     leaderboard: completed.durationMs > 0 ? sortLeaderboard([...store.leaderboard, completed]) : store.leaderboard,
     active: null },
     completed };
