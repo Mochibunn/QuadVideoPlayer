@@ -1,7 +1,12 @@
-import { Feather, Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
+import Feather from '@/components/GameIcon';
+import OutlinedGameText from '@/components/OutlinedGameText';
+import RuneRush from '@/components/quest/RuneRush';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSavedSetting } from '@/hooks/useSavedSetting';
+import { appendGeneratedCheerText } from '@/lib/player-rewards';
 import GameIcon from '@/components/GameIcon';
+import { streamAudioMuted, streamHeaderTop, popPreviousVideo } from '@/lib/stream-controls';
 import { Directory } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
@@ -209,6 +214,7 @@ function ActionButton({
         primary
           ? { backgroundColor: colors.primary }
           : { backgroundColor: colors.secondary },
+        { borderRadius: 2, borderWidth: 2, borderBottomWidth: 4, borderColor: colors.border },
         disabled && styles.disabledButton,
         pressed && !disabled && styles.pressedButton,
       ]}
@@ -260,9 +266,15 @@ function VideoTile({
   onPlaybackEnded,
   stopAtEnd,
   toolbarHeight,
+  contentTopInset,
+  soloIndex,
+  onToggleSolo,
 }: {
   asset: VideoAsset;
   toolbarHeight: number;
+  contentTopInset: number;
+  soloIndex: number | null;
+  onToggleSolo: (index: number) => void;
   pool: VideoAsset[];
   index: number;
   bpmByVideoId: Record<string, VideoBpmReport>;
@@ -299,6 +311,9 @@ function VideoTile({
     initialSnapshot?.volume ?? START_VOLUME,
     (value) => initialSnapshot?.volume ?? (typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : START_VOLUME));
   const volume = linkedVolume ? sharedVolume : individualVolume;
+  const effectiveMuted = streamAudioMuted(isMuted, index, soloIndex);
+  const [loopCurrent, setLoopCurrent] = useSavedSetting(`goon-quest.stream-${index}.loop`, false, (value) => value === true);
+  const previousAssets = useRef<VideoAsset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [diagnosing, setDiagnosing] = useState(false);
@@ -380,9 +395,13 @@ function VideoTile({
   }, [index, player, registry]);
 
   const advance = useCallback(
-    async (forcePlayback = false) => {
-      const next = getNextVideo(index, currentAssetRef.current.id);
+    async (forcePlayback = false, selected?: VideoAsset, remember = true) => {
+      if (changingSource.current) return;
+      const next = selected ?? getNextVideo(index, currentAssetRef.current.id);
       if (!next) return;
+      if (remember && next.id !== currentAssetRef.current.id) {
+        previousAssets.current = [...previousAssets.current, currentAssetRef.current].slice(-50);
+      }
       const shouldResume = forcePlayback || restorePlaying.current;
       changingSource.current = true;
       nextSourcePlaying.current = shouldResume;
@@ -404,6 +423,8 @@ function VideoTile({
           error instanceof Error ? error.message : 'This video could not be opened.',
         );
         setIsLoading(false);
+      } finally {
+        changingSource.current = false;
       }
     },
     [focusIndex, getNextVideo, globalPlaying, index, onAssetChange, player],
@@ -415,8 +436,15 @@ function VideoTile({
       onPlaybackEnded(index);
       return;
     }
+    if (loopCurrent) return;
     void advance(true);
   });
+  useEffect(() => { player.loop = loopCurrent && !stopAtEnd; }, [loopCurrent, player, stopAtEnd]);
+  const playPrevious = () => {
+    const previous = popPreviousVideo(previousAssets.current, pool);
+    if (previous) void advance(true, previous, false);
+    else player.currentTime = 0;
+  };
 
   useEventListener(player, 'playingChange', ({ isPlaying: playing }) => {
     const mode = playModeRef.current;
@@ -469,8 +497,8 @@ function VideoTile({
   }, [normalizeLoudness, player]);
 
   useEffect(() => {
-    player.muted = isMuted;
-  }, [isMuted, player]);
+    player.muted = effectiveMuted;
+  }, [effectiveMuted, player]);
 
   useEffect(() => {
     const globalChanged = previousPlayMode.current.globalPlaying !== globalPlaying;
@@ -652,7 +680,7 @@ function VideoTile({
         styles.tileHeader,
         {
           backgroundColor: colors.playbackOverlay,
-          top: focusIndex !== null || index < 2 ? toolbarHeight : 0,
+          top: streamHeaderTop(index, focusIndex, toolbarHeight, contentTopInset),
           paddingLeft: 10 + (index % 2 === 0 ? insets.left : 0),
           paddingRight: 10 + (index % 2 === 1 ? insets.right : 0),
         },
@@ -693,6 +721,10 @@ function VideoTile({
         },
       ]}>
         <View style={styles.tileControlRow}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Previous video in stream ${index + 1}`}
+          onPress={playPrevious} style={styles.iconControl}>
+          <GameIcon name="skip-back" size={18} color={colors.foreground} />
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${isPlaying ? 'Pause' : 'Play'} stream ${index + 1}`}
@@ -704,6 +736,15 @@ function VideoTile({
             size={18}
             color={colors.foreground}
           />
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Loop current video in stream ${index + 1}`}
+          accessibilityState={{ checked: loopCurrent }} onPress={() => setLoopCurrent((current) => !current)}
+          style={styles.iconControl}>
+          <GameIcon name="repeat" size={18} color={loopCurrent ? colors.primary : colors.mutedForeground} />
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={soloIndex === index ? 'Restore all video audio' : `Solo audio for stream ${index + 1}`}
+          accessibilityState={{ checked: soloIndex === index }} onPress={() => onToggleSolo(index)} style={styles.iconControl}>
+          <GameIcon name="headphones" size={18} color={soloIndex === index ? colors.primary : colors.mutedForeground} />
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -720,7 +761,7 @@ function VideoTile({
           style={({ pressed }) => [styles.iconControl, pressed && styles.pressedButton]}
         >
           <Feather
-            name={isMuted || volume === 0 ? 'volume-x' : 'volume-2'}
+            name={effectiveMuted || volume === 0 ? 'volume-x' : 'volume-2'}
             size={17}
             color={isMuted ? colors.accentForeground : colors.foreground}
           />
@@ -832,12 +873,15 @@ export default function QuadVideoPlayerScreen() {
   };
   const [questVisible, setQuestVisible] = useState(false);
   const [chatVisible, setChatVisible] = useState(false);
+  const [runeRushVisible, setRuneRushVisible] = useState(false);
   const [statsVisible, setStatsVisible] = useState(false);
   const [standingsVisible, setStandingsVisible] = useState(false);
   const [combatActive, setCombatActive] = useState(false);
   const [townHubVisible, setTownHubVisible] = useState(false);
   const [questSourcesReturn, setQuestSourcesReturn] = useState(false);
   const [singleStreamIndex, setSingleStreamIndex] = useState<number | null>(null);
+  const [soloIndex, setSoloIndex] = useSavedSetting<number | null>('goon-quest.solo-video-audio', null,
+    (value) => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 4 ? value : null);
   const [sessionListRevision, setSessionListRevision] = useState(0);
   const [pool, setPool] = useState<VideoAsset[]>([]);
   const [activeVideos, setActiveVideos] = useState<VideoAsset[]>([]);
@@ -1055,11 +1099,11 @@ export default function QuadVideoPlayerScreen() {
   const cheersSeed = playerRewards.settings.congratsText;
   const cheersSeedRef = useRef(cheersSeed);
   cheersSeedRef.current = cheersSeed;
-  const cheerRevision = useRef(0);
-  const cheerLines = generatedCheers.length ? [...generatedCheers, ...messagesForCongratText(cheersSeed)] : messagesForCongratText(cheersSeed);
-  const congratulationsMessage = generatedCheers.length
-    ? celebrationLineForMinute(generatedCheers, Math.max(0, Math.floor((viewing.milestone ?? viewing.celebration ?? 0) / 600_000) - 1))
-    : congratulationsFor(cheersSeed, viewing.milestone ?? viewing.celebration ?? 0);
+  const rewardsSettingsRef = useRef(playerRewards.settings);
+  rewardsSettingsRef.current = playerRewards.settings;
+  const cheerLines = messagesForCongratText(cheersSeed);
+  const congratulationsMessage = celebrationLineForMinute(cheerLines,
+    Math.floor((viewing.milestone ?? viewing.celebration ?? 0) / 60_000));
   const cheerStorageKey = 'goon-quest.generated-celebrations.v1';
   useEffect(() => {
     let active = true;
@@ -1090,43 +1134,53 @@ export default function QuadVideoPlayerScreen() {
   }, [generatedAchievements, generatingAchievements, localStory.busy, localStory.generateAchievements, localStory.modelLoaded]);
   useEffect(() => {
     let active = true;
-    const revision = ++cheerRevision.current;
-    setGeneratedCheers([]);
-    AsyncStorage.getItem(cheerStorageKey).then((raw) => {
-      if (!raw || !active || revision !== cheerRevision.current) return;
+    if (!playerRewards.ready) return;
+    AsyncStorage.getItem(cheerStorageKey).then(async (raw) => {
+      if (!raw || !active) return;
       const saved = JSON.parse(raw) as { seed?: string; lines?: unknown[] };
-      if (saved.seed === cheersSeed && Array.isArray(saved.lines)) setGeneratedCheers(saved.lines
-        .filter((line): line is string => typeof line === 'string' && line.trim().length > 0).slice(0, 32).map((line) => line.slice(0, 220)));
-      else setGeneratedCheers([]);
-    }).catch(() => { if (active && revision === cheerRevision.current) setGeneratedCheers([]); });
+      if (Array.isArray(saved.lines)) {
+        const lines = saved.lines.filter((line): line is string => typeof line === 'string');
+        const merged = appendGeneratedCheerText(cheersSeedRef.current, lines);
+        if (merged.added.length) {
+          await AsyncStorage.setItem(PLAYER_REWARDS_KEY, JSON.stringify({ ...rewardsSettingsRef.current, congratsText: merged.text }));
+          if (!active) return;
+          playerRewards.update({ congratsText: merged.text });
+        }
+        setGeneratedCheers(lines);
+      }
+      await AsyncStorage.removeItem(cheerStorageKey);
+    }).catch(() => {
+      if (active) Alert.alert('Cheer migration unavailable', 'Existing saved notes were left unchanged.');
+    });
     return () => { active = false; };
-  }, [cheersSeed]);
+  }, [playerRewards.ready, playerRewards.update]);
   const generateCheers = useCallback(async () => {
     if (!localStory.modelLoaded) throw new Error('Load a local storyteller model first.');
     if (localStory.busy || generatingCheers) throw new Error('The storyteller is busy. Try again once it finishes.');
-    ++cheerRevision.current;
     setGeneratingCheers(true);
     try {
       const incoming = await localStory.generateCelebrations(cheersSeed);
-      if (cheersSeedRef.current !== cheersSeed) throw new Error('Your seed text changed. Generate again for the new text.');
-      const fresh = mergeGeneratedCheers(cheersSeed, incoming);
-      if (!fresh.length) throw new Error('No new usable notes returned. Check the storyteller error or try generating again.');
-      const lines = mergeGeneratedCheers(cheersSeed, fresh, generatedCheers);
-      if (!fresh.some((line) => !generatedCheers.includes(line))) throw new Error('The model repeated saved notes. Try again for new ones.');
-      await AsyncStorage.setItem(cheerStorageKey, JSON.stringify({ seed: cheersSeed, lines }));
-      if (cheersSeedRef.current === cheersSeed) setGeneratedCheers(lines);
+      const merged = appendGeneratedCheerText(cheersSeedRef.current, incoming);
+      if (!merged.added.length) throw new Error('No new cheer lines were returned, or the 128-line text box is full.');
+      playerRewards.update({ congratsText: merged.text });
+      setGeneratedCheers((current) => [...current, ...merged.added].slice(-128));
     } finally { setGeneratingCheers(false); }
-  }, [cheersSeed, generatedCheers, generatingCheers, localStory.busy, localStory.generateCelebrations, localStory.modelLoaded]);
+  }, [cheersSeed, generatingCheers, localStory.busy, localStory.generateCelebrations, localStory.modelLoaded, playerRewards.update]);
   const autoCheerLastRun = useRef(0);
-  const automaticCheers = useRef({ generateCheers, generatingCheers, count: generatedCheers.length });
-  automaticCheers.current = { generateCheers, generatingCheers, count: generatedCheers.length };
+  const autoCheerLastError = useRef('');
+  const automaticCheers = useRef({ generateCheers, generatingCheers, count: cheerLines.length });
+  automaticCheers.current = { generateCheers, generatingCheers, count: cheerLines.length };
   useEffect(() => {
     if (!isPlaybackActive || !localStory.modelLoaded || !localStory.preferences.autoCheerGeneration) return;
     const timer = setInterval(() => {
-      if (automaticCheers.current.count >= 5 || automaticCheers.current.generatingCheers || automaticModelBusy.current !== null ||
+      if (automaticCheers.current.count >= 128 || automaticCheers.current.generatingCheers || automaticModelBusy.current !== null ||
         Date.now() - autoCheerLastRun.current < localStory.preferences.cheerCooldownMinutes * 60_000) return;
       autoCheerLastRun.current = Date.now();
-      void automaticCheers.current.generateCheers().catch(() => undefined);
+      void automaticCheers.current.generateCheers().then(() => { autoCheerLastError.current = ''; }).catch((error) => {
+        const message = error instanceof Error ? error.message : 'The model could not generate new cheer notes.';
+        if (message !== autoCheerLastError.current) Alert.alert('Automatic cheer generation needs attention', message);
+        autoCheerLastError.current = message;
+      });
     }, 30_000);
     return () => clearInterval(timer);
   }, [isPlaybackActive,
@@ -1754,6 +1808,7 @@ export default function QuadVideoPlayerScreen() {
               label="Open town and guild hub"
               onPress={openTownHub}
             />
+            <ActionButton icon="gift" label="Rune Rush" onPress={() => setRuneRushVisible(true)} />
             {pool.length > 0 && (
               <ActionButton
                 compact
@@ -1791,6 +1846,9 @@ export default function QuadVideoPlayerScreen() {
                   key={playbackId}
                   asset={asset}
                   toolbarHeight={toolbarHeight}
+                  contentTopInset={frameThickness}
+                  soloIndex={soloIndex}
+                  onToggleSolo={(slot) => setSoloIndex((current) => current === slot ? null : slot)}
                   pool={pool}
                   index={index}
                   bpmByVideoId={videoBpmById}
@@ -1825,20 +1883,20 @@ export default function QuadVideoPlayerScreen() {
           <View style={styles.emptyState}>
             <LinearGradient
               colors={[colors.accent, colors.card]}
-              style={styles.emptyMark}
+              style={[styles.emptyMark, { borderColor: colors.background, shadowColor: colors.background }]}
             >
               <PixelFamiliar size={124} motion />
             </LinearGradient>
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+            <OutlinedGameText style={[styles.emptyTitle, { color: colors.foreground }]}>
               Your next little legend starts here.
-            </Text>
-            <Text style={[styles.emptyDescription, { color: colors.mutedForeground }]}>
+            </OutlinedGameText>
+            <OutlinedGameText style={[styles.emptyDescription, { color: colors.mutedForeground }]}>
               Choose the clips for your den, then take on quests while the streams
               play independently. Add a bouncing slideshow and background audio
               whenever you want to make the guild feel like yours.
               {'\n'}MP4, WebM, MOV, MKV and other common containers.
               {'\n'}Codec support depends on your Android device.
-            </Text>
+            </OutlinedGameText>
             <View style={styles.emptyActions}>
               <ActionButton
                 icon="folder"
@@ -1881,6 +1939,8 @@ export default function QuadVideoPlayerScreen() {
           layout={singleStreamIndex !== null ? 'single' : 'quad'}
         />
         <SlideshowOverlay active={hasVideos && !pipClosed} />
+        <RuneRush visible={runeRushVisible} onClose={() => setRuneRushVisible(false)}
+          onWin={viewing.recordMiniGameWin} />
         <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { zIndex: 60 }]}>
           <SessionStatsOverlay
             elapsedMs={sessionElapsedMs}
@@ -2441,7 +2501,7 @@ const styles = StyleSheet.create({
   webSafeArea: { paddingTop: 67, paddingBottom: 34 },
   screen: { flex: 1 },
   browserScreen: { paddingHorizontal: 12, paddingBottom: 8 },
-  browserToolbar: { marginBottom: 8 },
+  browserToolbar: { position: 'relative', marginBottom: 8, zIndex: 120, elevation: 120 },
   toolbarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 120, elevation: 120 },
   topBar: {
     minHeight: 60,
@@ -2585,6 +2645,7 @@ const styles = StyleSheet.create({
   volumeFill: { height: 4, borderRadius: 2 },
   volumePercent: { width: 28, textAlign: 'right', fontSize: 10, fontVariant: ['tabular-nums'] },
   emptyState: {
+    zIndex: 50,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2592,11 +2653,16 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
   emptyMark: {
-    width: 72,
-    height: 72,
+    width: 152,
+    height: 152,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 22,
+    borderRadius: 3,
+    borderWidth: 3,
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    shadowOffset: { width: 6, height: 6 },
+    elevation: 8,
     marginBottom: 19,
   },
   emptyGrid: { flexDirection: 'row', flexWrap: 'wrap', width: 34, gap: 4 },

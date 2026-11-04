@@ -60,6 +60,19 @@ class HealthBridgeModule : Module() {
       true
     }.runOnQueue(Queues.MAIN)
 
+    AsyncFunction("openBackgroundPowerSettings") {
+      val context = requireContext()
+      val manager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+      val intent = if (!manager.isIgnoringBatteryOptimizations(context.packageName))
+        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:${context.packageName}"))
+      else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${context.packageName}"))
+      try { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+      catch (_: Exception) {
+        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      }
+      true
+    }.runOnQueue(Queues.MAIN)
+
     AsyncFunction("getPhoneState") {
       val packet = HeartRateRuntime.latestPacket
       mapOf(
@@ -86,10 +99,14 @@ class HealthBridgeModule : Module() {
       if (!adapter.isEnabled) {
         throw IllegalStateException("Turn on Bluetooth on the tablet and phone.")
       }
-      TabletBluetoothClient.connect(adapter, address)
+      val intent = Intent(context, TabletConnectionService::class.java).putExtra("address", address)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+      else context.startService(intent)
+      TabletBluetoothClient.state()
     }.runOnQueue(Queues.DEFAULT)
 
     AsyncFunction("disconnectTablet") {
+      requireContext().stopService(Intent(requireContext(), TabletConnectionService::class.java))
       TabletBluetoothClient.disconnect()
     }.runOnQueue(Queues.DEFAULT)
   }

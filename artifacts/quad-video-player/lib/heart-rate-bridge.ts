@@ -23,6 +23,7 @@ export type SamsungHealthBridgeNative = {
   startPhoneRelay(): Promise<boolean>;
   stopPhoneRelay(): Promise<boolean>;
   openBluetoothSettings(): Promise<boolean>;
+  openBackgroundPowerSettings(): Promise<boolean>;
   connectTablet(address: string): Promise<HeartRateBridgeState>;
   disconnectTablet(): Promise<HeartRateBridgeState>;
 };

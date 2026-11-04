@@ -3,6 +3,25 @@ name: Product requirements
 description: User-stated platform, tablet, and visual requirements.
 ---
 
+Pawstar should answer verbosely and stay on the player's latest topic in Auto
+mode. New AI cheer notes must append to the current editable user cheer text,
+not exist only in a separate hidden collection; displayed notes should shuffle.
+
+**Why:** The user reported off-topic Auto-chat rants and repeated cheers, and
+explicitly requested verbose answers and editable generated notes.
+
+**How to apply:** Preserve actual player instructions during long automatic
+conversations, and keep generated cheer notes in the same visible, editable pool.
+
+Decorative borders must stay behind both the pre-playback toolbar and active
+playback controls. The UI should use pixel-art styling wherever practical.
+
+**Why:** The user repeatedly reported borders obscuring distinct startup and
+playback overlays and asked for more visible pixel-art UI.
+
+**How to apply:** Check both no-video and active-video states when changing
+overlay stacking, not just the in-session toolbar.
+
 All settings should save automatically whenever they change, independently of
 the explicit Save session action.
 

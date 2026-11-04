@@ -191,6 +191,14 @@ export default function HeartRateSettings() {
 
       <Text style={[styles.sectionTitle, { color: colors.foreground }]}>On the watch-paired phone</Text>
       <Text style={[styles.description, { color: colors.mutedForeground }]}>
+        Keep notifications allowed on both devices. For long sessions, allow unrestricted battery use on
+        the phone and tablet, and use the Battery access button in the watch app. This uses more battery.
+        A persistent notification means the bridge is running; stale readings are never shown as live.
+      </Text>
+      <ActionButton label="Background battery access" icon="battery-charging" colors={colors}
+        disabled={busy || !native}
+        onPress={() => runAction((bridge) => bridge.openBackgroundPowerSettings())} />
+      <Text style={[styles.description, { color: colors.mutedForeground }]}>
         Install the phone app and watch APK. On the watch, open Goon Quest Link and tap Start; then start this relay on the phone.
       </Text>
       <View style={styles.buttonRow}>

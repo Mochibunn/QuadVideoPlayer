@@ -19,6 +19,7 @@ import java.io.OutputStreamWriter
 import java.util.UUID
 
 class PhoneRelayService : Service() {
+  private lateinit var power: BackgroundPowerLock
   @Volatile private var running = false
   @Volatile private var serverSocket: BluetoothServerSocket? = null
   @Volatile private var clientSocket: BluetoothSocket? = null
@@ -28,6 +29,8 @@ class PhoneRelayService : Service() {
     super.onCreate()
     createNotificationChannel()
     startAsForegroundService()
+    power = BackgroundPowerLock(this, "GoonQuest:PhoneHR")
+    power.start()
     HeartRateRuntime.relayActive = true
     HeartRateRuntime.relayStatus = "Waiting for the tablet over Bluetooth"
     running = true
@@ -151,6 +154,7 @@ class PhoneRelayService : Service() {
   }
 
   override fun onDestroy() {
+    if (::power.isInitialized) power.stop()
     running = false
     HeartRateRuntime.relayActive = false
     HeartRateRuntime.tabletConnected = false

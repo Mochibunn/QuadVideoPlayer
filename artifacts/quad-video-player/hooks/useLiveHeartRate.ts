@@ -15,9 +15,9 @@ export function useLiveHeartRate() {
       try {
         const bridge = getSamsungHealthBridge();
         const [tablet, phone] = await Promise.all([bridge.getTabletState(), bridge.getPhoneState()]);
-        const source = tablet.connected && isHeartRateFresh(tablet, Date.now(), 10_000)
+        const source = tablet.connected && isHeartRateFresh(tablet, Date.now(), 30_000)
           ? { state: tablet, role: 'tablet' }
-          : phone.active && isHeartRateFresh(phone, Date.now(), 10_000) ? { state: phone, role: 'phone' } : null;
+          : phone.active && isHeartRateFresh(phone, Date.now(), 30_000) ? { state: phone, role: 'phone' } : null;
         if (alive) setReading(source
           ? { bpm: source.state.bpm, sampleId: `${source.role}:${source.state.receivedAtMs}` }
           : { bpm: null, sampleId: null });

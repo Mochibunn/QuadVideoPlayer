@@ -489,7 +489,7 @@ export function useLocalStoryModel() {
     const history = chatContext(messages);
     if (!history.length) throw new Error('Write a message for Pawstar first.');
     const text = await complete('', {
-      nPredict: 120, history, systemPrompt: chatSystemPrompt(rolePrompt, preferences.systemPrompt),
+      nPredict: 900, history, systemPrompt: chatSystemPrompt(rolePrompt, preferences.systemPrompt),
     });
     const reply = parseChatReply(text);
     if (!reply) throw new Error('Pawstar returned an empty reply. Try again or another model.');
@@ -499,7 +499,9 @@ export function useLocalStoryModel() {
   /** Non-graphic encouragement variations built from the user's own seed line. */
   const generateCelebrations = useCallback(async (seed: string): Promise<string[]> => {
     const lines = await guarded(async () => {
-      const text = await complete(celebrationPrompt(seed), { nPredict: 220, schema: LINES_RESPONSE_SCHEMA });
+      const recent = seed.split(/\r?\n/).filter(Boolean).slice(-12).join('\n').slice(-2_000);
+      const text = await complete(`${celebrationPrompt(seed)}\nDo not repeat these existing notes:\n${recent}\nReturn genuinely new lines in the requested JSON format.`,
+        { nPredict: 350, schema: LINES_RESPONSE_SCHEMA });
       const parsed = parseCelebrations(text);
       if (!parsed.length) throw new Error('The model returned no usable celebration lines.');
       return parsed;

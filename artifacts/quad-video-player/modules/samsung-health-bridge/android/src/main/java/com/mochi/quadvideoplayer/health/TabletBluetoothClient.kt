@@ -17,10 +17,14 @@ object TabletBluetoothClient {
   @Volatile private var connected = false
   @Volatile private var status = "Not connected"
 
+  private val connectionLock = Any()
+  private var generation = 0
+  @Volatile private var pendingSocket: BluetoothSocket? = null
+
   @SuppressLint("MissingPermission")
-  @Synchronized
   fun connect(adapter: BluetoothAdapter, deviceAddress: String): Map<String, Any?> {
     disconnect()
+    val attempt = synchronized(connectionLock) { generation }
     val device: BluetoothDevice = try {
       adapter.getRemoteDevice(deviceAddress)
     } catch (_: IllegalArgumentException) {
@@ -29,6 +33,11 @@ object TabletBluetoothClient {
     val candidate = device.createRfcommSocketToServiceRecord(
       UUID.fromString(PhoneRelayService.SERVICE_UUID_TEXT),
     )
+    synchronized(connectionLock) {
+      if (attempt != generation) { candidate.close(); return state() }
+      pendingSocket = candidate
+      status = "Connecting to phone bridge…"
+    }
     try {
       candidate.connect()
     } catch (error: Exception) {
@@ -37,20 +46,31 @@ object TabletBluetoothClient {
       } catch (_: IOException) {
         // The connection attempt already failed.
       }
-      connected = false
-      status = error.localizedMessage ?: "Could not connect to the phone bridge."
+      synchronized(connectionLock) {
+        if (attempt == generation) {
+          connected = false
+          status = error.localizedMessage ?: "Could not connect to the phone bridge."
+        }
+        if (pendingSocket === candidate) pendingSocket = null
+      }
       throw IllegalStateException(status, error)
     }
 
-    socket = candidate
-    connected = true
-    status = "Connected to ${device.name ?: "paired phone"}"
-    readerThread = Thread({ readHeartRate(candidate) }, "qvp-heart-rate-client").also { it.start() }
+    synchronized(connectionLock) {
+      if (attempt != generation) { candidate.close(); return state() }
+      pendingSocket = null
+      socket = candidate
+      connected = true
+      status = "Connected to ${device.name ?: "paired phone"}"
+      readerThread = Thread({ readHeartRate(candidate) }, "qvp-heart-rate-client").also { it.start() }
+    }
     return state()
   }
 
-  @Synchronized
-  fun disconnect(): Map<String, Any?> {
+  fun disconnect(): Map<String, Any?> = synchronized(connectionLock) {
+    generation++
+    try { pendingSocket?.close() } catch (_: IOException) { }
+    pendingSocket = null
     connected = false
     latestMotion = null
     try {
@@ -62,7 +82,7 @@ object TabletBluetoothClient {
     readerThread?.interrupt()
     readerThread = null
     status = "Not connected"
-    return state()
+    state()
   }
 
   fun state(): Map<String, Any?> {

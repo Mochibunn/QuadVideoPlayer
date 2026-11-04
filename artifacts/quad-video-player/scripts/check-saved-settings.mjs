@@ -152,7 +152,7 @@ test('reopening waits for the previous screen save before reading settings', asy
 
 test('all full-screen slots clear the measured global toolbar', async () => {
   const player = await readFile(new URL('../app/(tabs)/index.tsx', import.meta.url), 'utf8');
-  assert.match(player, /top: focusIndex !== null \|\| index < 2 \? toolbarHeight : 0/);
+  assert.match(player, /top: streamHeaderTop\(index, focusIndex, toolbarHeight, contentTopInset\)/);
   assert.match(player, /onLayout=\{\(event\) => setToolbarHeight\(event\.nativeEvent\.layout\.height\)\}/);
   assert.match(player, /toolbarHeight=\{toolbarHeight\}/);
   assert.doesNotMatch(player, /top: index < 2 \? 60/);

@@ -350,3 +350,31 @@ mtime_ms = 1793734293862
 storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/6e05e48d-1415-43e9-9d1f-b1a93390b01e/68770bbd-c5f6-4634-be7f-7b50cb0a661c"
 storage_version_token = "1793734333797545"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "5yNP99eru4c7Bc3gRLlLx"
+uri = "file://generated-artifacts/android/goon-quest-v1.19.0-phone-tablet-download.zip"
+type = "unspecified"
+title = "Goon Quest v1.19.0 — Phone & tablet APK"
+description = "Extract and install the APK over your existing app on both the tablet and watch-paired phone. Includes Rune Rush, pixel controls, visible AI cheers, focused verbose chat, and background HR service improvements."
+logical_id = "817bbafa-149a-4673-a138-a6e40018de4f"
+content_hash = "sha256:29518fd570da8f83c7f6156ac9ac27de587e4ff139e5bfd190158c3b99c8ae71"
+size = 61211147
+mtime_ms = 1793783951192
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/817bbafa-149a-4673-a138-a6e40018de4f/e4e6ccf2-06ec-4d9f-b341-1e12fa08b7f5"
+storage_version_token = "1793784003904615"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "Rj-2D2yTiGJXBZ1lAeQ1c"
+uri = "file://generated-artifacts/android/goon-quest-watch-v1.19.0.apk"
+type = "unspecified"
+title = "Goon Quest Link v1.19.0 — Watch APK"
+description = "Install on the Galaxy Watch. Includes the active-monitoring CPU lock and Battery access shortcut for the updated live heart-rate bridge."
+logical_id = "73e9f035-ffef-40b8-b6cf-d3628da0b0b5"
+content_hash = "sha256:c4cb116d3c44f1854a50d0bf0a5b9ddf018be8e1c862d18808e963acb32fcf4a"
+size = 4251885
+mtime_ms = 1793783938533
+storage_uri = "gcs://replit-rams-assets-kira/rams/assets/repl:b6f56dab-8085-4460-8e46-65e691036d20/73e9f035-ffef-40b8-b6cf-d3628da0b0b5/059957b8-926c-4496-916e-1ab0e60a3a6c"
+storage_version_token = "1793784005009942"
+content_type = "application/octet-stream"

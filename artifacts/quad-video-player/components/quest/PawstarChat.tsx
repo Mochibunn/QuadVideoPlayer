@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import Feather from '@/components/GameIcon';
 import React, { useEffect, useRef, useState } from 'react';
 import { useSavedSetting } from '@/hooks/useSavedSetting';
 import {
@@ -8,7 +8,7 @@ import { GameText as Text } from '@/components/GameText';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
-import { appendChat, cleanChatText, type ChatMessage } from '@/lib/pawstar-chat';
+import { appendChat, autoChatPrompt, cleanChatText, type ChatMessage } from '@/lib/pawstar-chat';
 import { MAX_CHAT_ROLE_LENGTH } from '@/lib/guild-ledger';
 import { startAutoChatLoop } from '@/lib/auto-chat-loop';
 
@@ -66,18 +66,17 @@ export default function PawstarChat({
         sending.current = true;
         setWaiting(true);
         setNotice('');
-        const prompt = current.messages.length
-          ? 'Continue this conversation with one short, new in-character thought. Keep it connected to what was said and avoid repeating earlier lines.'
-          : `Start a friendly, in-character conversation as ${current.petName}. Say one short opening line.`;
+        const visibleHistory = current.messages.filter((message) => !message.hidden);
+        const prompt = autoChatPrompt(visibleHistory, current.petName);
         const nextHistory: ChatEntry[] = [
-          ...current.messages, { role: 'user' as const, content: prompt, hidden: true },
+          ...visibleHistory, { role: 'user' as const, content: prompt, hidden: true },
         ].slice(-40);
-        setMessages(nextHistory);
+        // Automatic steering prompts are model input, not new player messages.
         try {
           const reply = await current.onSend(nextHistory, current.rolePrompt);
           if (!active) return;
           if (!reply) throw new Error(latest.current.modelError || `${current.petName} could not continue. Check the local model status.`);
-          setMessages((history) => [...history, { role: 'assistant' as const, content: reply }].slice(-40));
+          setMessages((history) => appendChat(history.filter((message) => !message.hidden), { role: 'assistant', content: reply }));
           latest.current.onExchange?.();
         } finally {
           sending.current = false;

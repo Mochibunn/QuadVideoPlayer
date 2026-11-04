@@ -40,10 +40,23 @@ class HeartRateTrackingService : Service() {
   private var lastReadingElapsedMs = 0L
   private var lastNotificationText = ""
   private var lastNotificationUpdateMs = 0L
+  private var cpuLock: android.os.PowerManager.WakeLock? = null
+  private var lockRenewedAtMs = 0L
+  private fun keepSensorAwake() {
+    val now = SystemClock.elapsedRealtime()
+    if (cpuLock == null) cpuLock = (getSystemService(POWER_SERVICE) as android.os.PowerManager)
+      .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "GoonQuest:WatchHR")
+      .apply { setReferenceCounted(false) }
+    if (cpuLock?.isHeld != true || now - lockRenewedAtMs >= 4 * 60_000L) {
+      cpuLock?.acquire(5 * 60_000L)
+      lockRenewedAtMs = now
+    }
+  }
 
   private val watchdog = object : Runnable {
     override fun run() {
       if (!trackingRequested) return
+      keepSensorAwake()
       val now = SystemClock.elapsedRealtime()
       val reference = if (lastReadingElapsedMs == 0L) connectionStartedAtMs else lastReadingElapsedMs
       if (reference > 0L && now - reference >= READING_TIMEOUT_MS) {
@@ -115,6 +128,7 @@ class HeartRateTrackingService : Service() {
       return START_NOT_STICKY
     }
     HeartRateTrackingState.active = true
+    keepSensorAwake()
 
     publishStatus("Connecting to the watch sensor…")
     connectToSensor()
@@ -248,6 +262,7 @@ class HeartRateTrackingService : Service() {
   }
 
   private fun stopTracking(clearSavedRequest: Boolean) {
+    if (cpuLock?.isHeld == true) cpuLock?.release()
     trackingRequested = false
     reconnectPending = false
     handler.removeCallbacks(watchdog)
@@ -345,6 +360,7 @@ class HeartRateTrackingService : Service() {
   }
 
   override fun onDestroy() {
+    if (cpuLock?.isHeld == true) cpuLock?.release()
     val wasUnexpectedlyStopped = trackingRequested
     handler.removeCallbacksAndMessages(null)
     disconnectSensor()

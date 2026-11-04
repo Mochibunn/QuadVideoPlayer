@@ -157,6 +157,21 @@ class MainActivity : Activity() {
       setTextColor(android.graphics.Color.rgb(170, 170, 180))
       setPadding(dp(8), dp(8), dp(8), dp(12))
     })
+    root.addView(Button(this).apply {
+      text = "Battery access"
+      typeface = gameTypeface
+      setTextColor(android.graphics.Color.WHITE)
+      backgroundTintList = null
+      background = android.graphics.drawable.GradientDrawable().apply {
+        setColor(android.graphics.Color.rgb(107, 92, 177))
+        cornerRadius = 100f
+      }
+      setOnClickListener {
+        val uri = android.net.Uri.parse("package:$packageName")
+        try { startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, uri)) }
+        catch (_: Exception) { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri)) }
+      }
+    })
     setContentView(ScrollView(this).apply {
       isFillViewport = true
       clipToPadding = false

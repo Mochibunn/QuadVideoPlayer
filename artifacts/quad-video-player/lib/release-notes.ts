@@ -8,6 +8,21 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.19.0',
+    title: 'Rune Rush & the Unstoppable Heart',
+    date: 'November 4, 2026',
+    summary: 'Pixel runes, focused Pawstar conversations, visible new cheers, and a sturdier live-heart-rate bridge.',
+    changes: [
+      'Play Rune Rush over your videos: copy three growing rune sequences to earn a mini-game victory.',
+      'More RPG and playback controls now use Raven artwork or crisp pixel symbols.',
+      'Pawstar replies have a larger generation budget and response limit; Auto chat stays anchored to your latest actual message without filling history with fake player turns.',
+      'New AI cheers append to the editable notes box. Up to 128 lines are shuffled without repeats until the deck is exhausted; automatic generation no longer stops after five saved notes.',
+      'Added previous-video, loop-current-video, and solo-audio controls per stream. Solo mutes the other streams without pausing them and restores their original mute states when turned off.',
+      'Corrected the top-row header gap, raised the no-video toolbar above the decorative border, and added dark outlines and shadows to the opening illustration and text.',
+      'Added an ongoing tablet Bluetooth service, automatic reconnection, bounded active-session CPU locks on watch/phone/tablet, and system battery-access shortcuts. These do not override user force-stop or OEM power policy.',
+    ],
+  },
+  {
     version: '1.18.6',
     title: 'Raven’s Quad Escape & the Memory Goblin',
     date: 'November 3, 2026',

@@ -178,10 +178,10 @@ export function nextSessionMilestone(elapsedMs: number, lastShownMs: number): nu
 }
 
 export function messagesForCongratText(value: string): string[] {
-  const messages = value.split(/\r?\n/)
-    .map((line) => line.trim().slice(0, 140))
-    .filter(Boolean)
-    .slice(0, 8);
+  const messages = [...new Set(value.split(/\r?\n/)
+    .map((line) => line.trim().slice(0, 220))
+    .filter(Boolean))]
+    .slice(0, 128);
   return messages.length ? messages : ['Great work reaching this milestone!'];
 }
 
@@ -208,7 +208,7 @@ export function parsePlayerRewards(raw: string | null): PlayerRewardsSettings {
   const pawSpacing = typeof value.pawSpacing === 'number' && Number.isFinite(value.pawSpacing)
     ? Math.max(0.5, Math.min(3, value.pawSpacing)) : DEFAULT_PLAYER_REWARDS.pawSpacing;
   const congratsText = typeof value.congratsText === 'string'
-    ? value.congratsText.slice(0, 1_000) : DEFAULT_PLAYER_REWARDS.congratsText;
+    ? value.congratsText.slice(0, 32_000) : DEFAULT_PLAYER_REWARDS.congratsText;
   return {
     borderEnabled: typeof value.borderEnabled === 'boolean' ? value.borderEnabled : DEFAULT_PLAYER_REWARDS.borderEnabled,
     borderStyle, scrollBorder: typeof value.scrollBorder === 'boolean' ? value.scrollBorder : DEFAULT_PLAYER_REWARDS.scrollBorder,
@@ -239,7 +239,39 @@ export function celebrationLinesFrom(lines: readonly string[] | undefined, seedT
 export function celebrationLineForMinute(lines: readonly string[], minute: number): string {
   if (!lines.length) return '';
   const index = Math.max(0, Math.floor(Number.isFinite(minute) ? minute : 0));
-  return lines[index % lines.length];
+  const deck = [...new Set(lines)];
+  // A session-specific Fisher–Yates permutation, stable while this deck is in use.
+  // Walking a complete deck prevents repeats until every unique line was shown.
+  let seed = CHEER_SHUFFLE_SEED;
+  for (const line of deck) for (const char of line) seed = Math.imul(seed ^ char.charCodeAt(0), 16777619);
+  const random = () => {
+    seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+    return (seed >>> 0) / 4_294_967_296;
+  };
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck[index % deck.length];
+}
+const CHEER_SHUFFLE_SEED = Math.floor(Math.random() * 0x7fffffff) || 1;
+
+export function appendGeneratedCheerText(text: string, incoming: readonly string[]): { text: string; added: string[] } {
+  const existing = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const keyFor = (line: string) => line.toLowerCase().replace(/\s+/g, ' ').trim();
+  const seen = new Set(existing.map(keyFor));
+  const added: string[] = [];
+  let next = text;
+  for (const raw of incoming) {
+    const line = raw.replace(/\r?\n/g, ' ').trim().slice(0, 220);
+    if (!line || seen.has(keyFor(line)) || existing.length + added.length >= 128) continue;
+    const candidate = `${next}${next.trim() ? '\n' : ''}${line}`;
+    if (candidate.length > 32_000) break;
+    next = candidate;
+    seen.add(keyFor(line));
+    added.push(line);
+  }
+  return { text: next, added };
 }
 /**
  * Minute-cheer gate: returns the newly crossed minute only during live playback

@@ -211,7 +211,7 @@ export default function LocalStorySettings({
         {([
           ['autoQuestGeneration', 'Auto-forge quests', 'Keep up to two open AI quests ready.'],
           ['autoHonorGeneration', 'Auto-forge guild honors', 'Keep a small reserve of unclaimed honors.'],
-          ['autoCheerGeneration', 'Auto-write cheer notes', 'Refresh cheer lines when the saved set runs low.'],
+          ['autoCheerGeneration', 'Auto-write cheer notes', 'Append new notes to your editable text box at the chosen cooldown, up to 128 lines.'],
         ] as const).map(([key, label, detail]) => (
           <View key={key} style={[styles.settingRow, { borderColor: colors.border }]}>
             <View style={styles.copy}>

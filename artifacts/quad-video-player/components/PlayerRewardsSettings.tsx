@@ -347,7 +347,7 @@ export default function PlayerRewardsSettings({
         accessibilityLabel="Editable session congratulations messages"
         editable={!disabled}
         multiline
-        maxLength={1_000}
+        maxLength={32_000}
         value={settings.congratsText}
         onChangeText={(congratsText) => update({ congratsText })}
         placeholder="Write one guild note per line"
